@@ -10,6 +10,7 @@ type AppNavProps = {
   promptBadge?: string;
   overallScore?: number | null;
   interactionDaysCount?: number | null;
+  userFirstName?: string | null;
 };
 
 function ScoreBadge({ score }: { score: number }) {
@@ -69,6 +70,7 @@ export default function AppNav({
   promptBadge = "",
   overallScore = null,
   interactionDaysCount = null,
+  userFirstName = "",
 }: AppNavProps) {
   const [open, setOpen] = useState(false);
   const resolvedUserId = String(userId || "").trim();
@@ -76,6 +78,8 @@ export default function AppNav({
   const resolvedInteractionDaysCount = Number.isFinite(Number(interactionDaysCount))
     ? Math.max(0, Math.round(Number(interactionDaysCount)))
     : null;
+  const resolvedFirstName = String(userFirstName || "").trim();
+  const greetingLabel = resolvedFirstName ? `Hi ${resolvedFirstName}` : "";
   const links: Array<{ label: string; href: string }> = [
     { label: "Home", href: resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login" },
     ...(resolvedUserId
@@ -102,9 +106,17 @@ export default function AppNav({
   return (
     <>
       <nav className="sticky top-0 z-50 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
-        <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <div className="h-11 w-11 shrink-0" aria-hidden="true" />
-          <div className="flex items-center gap-2">
+        <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-start">
+          <div className="min-w-0">
+            {greetingLabel ? (
+              <p className="truncate text-base font-semibold leading-none text-[#1e1b16] sm:text-lg">
+                {greetingLabel}
+              </p>
+            ) : (
+              <div className="h-5 w-16" aria-hidden="true" />
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             {resolvedOverallScore !== null ? (
               <button
                 type="button"

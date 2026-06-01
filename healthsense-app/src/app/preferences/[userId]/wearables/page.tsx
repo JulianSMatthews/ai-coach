@@ -29,7 +29,12 @@ export default async function WearablesPage(props: PageProps) {
   return (
     <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
-      <AppNav userId={userId} promptBadge={promptBadge} interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null} />
+      <AppNav
+        userId={userId}
+        promptBadge={promptBadge}
+        interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null}
+        userFirstName={data.user?.first_name || null}
+      />
 
       <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
         <WearablesPanel

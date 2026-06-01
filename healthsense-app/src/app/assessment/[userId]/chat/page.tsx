@@ -346,6 +346,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           promptBadge={promptBadge}
           overallScore={status.latest_run?.combined_overall ?? null}
           interactionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+          userFirstName={status.user?.first_name || null}
         />
       ) : null}
 
