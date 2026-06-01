@@ -1199,7 +1199,7 @@ export default function LatestAssessmentPanel({
   const [biometricPreferenceSaving, setBiometricPreferenceSaving] = useState<string | null>(null);
   const [biometricsActionError, setBiometricsActionError] = useState<string | null>(null);
   const [wearableConnectPending, setWearableConnectPending] = useState<string | null>(null);
-  const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
+  const [, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
   const [urineTest, setUrineTest] = useState<UrineTestResponse | null>(null);
   const [urineTestLoading, setUrineTestLoading] = useState(false);
   const [urineTestSaving, setUrineTestSaving] = useState(false);
@@ -1214,7 +1214,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
-  const [activeDockKey, setActiveDockKey] = useState<"bio" | "plan" | "learn" | "coach">("plan");
+  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "plan" | "learn" | "coach">("learn");
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[26px] border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -2116,30 +2116,6 @@ export default function LatestAssessmentPanel({
     [appleHealthSupported, loadRestingHeartRate, userId],
   );
 
-  const handleReviewBiometricsPress = useCallback(() => {
-    setActiveBiomarkerExplanation(null);
-    setBiometricSourceCheckOpen(false);
-    setUrineTestFlowOpen(false);
-    setBiometricsActionError(null);
-    setBiometricsModalOpen(true);
-    logUserAppEvent("biometrics_open", { source: "review_biometrics" });
-    if (
-      appleHealthSupported &&
-      !restingHeartRateLoading &&
-      !restingHeartRateEnabling &&
-      appleHealthAuthStatus !== "denied"
-    ) {
-      void syncNativeRestingHeartRate(appleHealthAuthStatus !== "authorized");
-    }
-  }, [
-    appleHealthAuthStatus,
-    appleHealthSupported,
-    logUserAppEvent,
-    restingHeartRateEnabling,
-    restingHeartRateLoading,
-    syncNativeRestingHeartRate,
-  ]);
-
   const startUrineCaptureTimer = useCallback(() => {
     setUrineTestError(null);
     setUrineCaptureStartedAt(Date.now());
@@ -2839,10 +2815,10 @@ export default function LatestAssessmentPanel({
     }
   };
 
-  const openDailyMenuSurface = (surface: "habits" | "insight" | "ask") => {
+  const openDailyMenuSurface = (surface: "tracking" | "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
       const bridge = window as Window & {
-        healthsenseSetHomeSurface?: (nextSurface: "habits" | "insight" | "ask") => void;
+        healthsenseSetHomeSurface?: (nextSurface: "tracking" | "habits" | "insight" | "ask") => void;
       };
       bridge.healthsenseSetHomeSurface?.(surface);
       window.dispatchEvent(
@@ -2924,16 +2900,16 @@ export default function LatestAssessmentPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveDockKey("bio");
-                    handleReviewBiometricsPress();
+                    setActiveDockKey("checkin");
+                    openDailyMenuSurface("tracking");
                   }}
-                  aria-pressed={activeDockKey === "bio"}
+                  aria-pressed={activeDockKey === "checkin"}
                   className={homeDockButtonClassName}
-                  style={activeDockKey === "bio" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
+                  style={activeDockKey === "checkin" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <BiometricsIcon className="h-5 w-5 text-[var(--chrome-text)]" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
-                    Bio
+                    Checkin
                   </span>
                 </button>
                 <button

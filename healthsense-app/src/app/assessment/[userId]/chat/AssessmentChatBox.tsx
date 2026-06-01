@@ -787,7 +787,7 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
-  const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
+  const [homeSurface, setHomeSurface] = useState<HomeSurface>("insight");
   const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
   const [morningSequenceDay, setMorningSequenceDay] = useState(() =>
     resolveMorningSequenceDay(initialTrackerSummary),
@@ -1472,7 +1472,7 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (!showGuidedHomeChatPanel) {
       stopFinalGiaListening();
-      setHomeSurface("tracking");
+      setHomeSurface("insight");
       setHomeSurfaceEntryMode("guided");
     }
   }, [showGuidedHomeChatPanel, stopFinalGiaListening, userId]);
@@ -1593,7 +1593,7 @@ export default function AssessmentChatBox({
       setJourneyCompleted(false);
       if (surface === "tracking") {
         setHomeSurfaceEntryMode(entryMode);
-        setHomeSurface("tracking");
+        setHomeSurface("insight");
         return;
       }
       if (surface === "insight") {
