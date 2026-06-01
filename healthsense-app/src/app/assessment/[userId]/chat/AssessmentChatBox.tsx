@@ -1019,7 +1019,7 @@ export default function AssessmentChatBox({
         : "";
   const educationFocusStreakSummary = [
     educationCompletedDaysLabel,
-    `${educationStreakLabel} lesson streak`,
+    `${educationStreakLabel} streak`,
     educationBestStreakDays > educationStreakDays ? `Best ${educationBestStreakLabel}` : "",
   ].filter(Boolean).join(" · ");
   const dailyHabits = useMemo(() => {
@@ -2554,7 +2554,14 @@ export default function AssessmentChatBox({
                     {educationProgrammeName || "Education programme"}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
-                    {selectedEducationLesson?.title || selectedEducationLesson?.concept_label || selectedEducationLesson?.pillar_label || educationLesson?.title || educationConceptTitle || "Today's lesson"}
+                    {normalizeLessonHeading(
+                      selectedEducationLesson?.title ||
+                        selectedEducationLesson?.concept_label ||
+                        selectedEducationLesson?.pillar_label ||
+                        educationLesson?.title ||
+                        educationConceptTitle ||
+                        "Today's lesson",
+                    )}
                   </p>
                   <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
                     {[
