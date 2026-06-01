@@ -19,6 +19,35 @@ import AssessmentPromptCard, {
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import RealtimeSummaryAvatar from "./RealtimeSummaryAvatar";
 
+function DockBiometricsIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 14.5h3l1.8-5 3.1 9 2.1-6h6" />
+      <path d="M7.5 5.5a3.5 3.5 0 0 1 5 0L12 6l-.5-.5a3.5 3.5 0 0 1 5 0c1.4 1.4 1.4 3.6 0 5L12 15l-4.5-4.5a3.5 3.5 0 0 1 0-5Z" />
+    </svg>
+  );
+}
+
+function DockInsightIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3a7 7 0 0 0-4 12.7c.6.4 1 1 1.2 1.7h5.6c.2-.7.6-1.3 1.2-1.7A7 7 0 0 0 12 3Z" />
+      <path d="M9.5 21h5" />
+      <path d="M10 18.5h4" />
+    </svg>
+  );
+}
+
+function DockGiaIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 18l-3 3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6Z" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+    </svg>
+  );
+}
+
 type ChatMessage = {
   id?: number;
   direction?: string;
@@ -109,7 +138,6 @@ type GiaMessageRealtimeSessionResponse = {
   error?: string;
 };
 
-const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "ask"];
 const TRACKING_STEP_PILLARS = ["Reflection", "Purpose", "Resilience", "Recovery"];
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
@@ -121,32 +149,27 @@ const HOME_SURFACE_COPY: Record<
     eyebrow: string;
     title: string;
     description: string;
-    nextLabel: string | null;
   }
 > = {
   tracking: {
-    eyebrow: "Step 1 of 4",
-    title: "Track progress",
-    description: "Start by completing today's tracking. We will take you through each pillar one at a time.",
-    nextLabel: null,
+    eyebrow: "Check-in",
+    title: "Daily check-in",
+    description: "Answer the questions for each pillar.",
   },
   habits: {
-    eyebrow: "Step 2 of 4",
+    eyebrow: "Plan",
     title: "Today's plan",
-    description: "Review the key moments for today, then continue to today's lesson.",
-    nextLabel: "Start today's focus",
+    description: "Review today's plan.",
   },
   insight: {
-    eyebrow: "Step 3 of 4",
-    title: "Today's focus",
-    description: "Watch today's short lesson, complete the quick check, then Gia will bring it together with your plan and tracker results.",
-    nextLabel: "Continue to Gia's message",
+    eyebrow: "Learn",
+    title: "Today's lesson",
+    description: "Browse today's cue cards.",
   },
   ask: {
-    eyebrow: "Step 4 of 4",
+    eyebrow: "Coach",
     title: "Gia's message",
-    description: "",
-    nextLabel: null,
+    description: "Get Gia's support.",
   },
 };
 
@@ -901,19 +924,12 @@ export default function AssessmentChatBox({
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
     return mergeDailyPlanItems(selected, fallback);
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
-  const currentHomeSurfaceIndex = HOME_SURFACE_SEQUENCE.indexOf(homeSurface);
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
   const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
   const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
   const homeSurfaceDescription = viewingHomeSurfaceFromSummary
     ? "Review this and close when you are ready."
     : homeSurfaceMeta.description;
-  const previousHomeSurface =
-    currentHomeSurfaceIndex > 0 ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex - 1] : null;
-  const nextHomeSurface =
-    currentHomeSurfaceIndex >= 0 && currentHomeSurfaceIndex < HOME_SURFACE_SEQUENCE.length - 1
-      ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex + 1]
-      : null;
   const homePanelHeightClass =
     homeSurface === "tracking"
       ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
@@ -925,7 +941,6 @@ export default function AssessmentChatBox({
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
-
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
       return;
@@ -936,11 +951,6 @@ export default function AssessmentChatBox({
       // Ignore storage failures and keep the current render path active.
     }
   }, [completionSummaryVideoStorageKey]);
-
-  const completeMorningSequence = useCallback(() => {
-    writeMorningSequenceState(userId, morningSequenceDay, "completed");
-    setJourneyCompleted(true);
-  }, [morningSequenceDay, userId]);
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -2305,11 +2315,11 @@ export default function AssessmentChatBox({
                 </p>
               </div>
           ) : educationPlan?.available ? (
-              <div className="flex min-h-full flex-col gap-4">
+              <div className="flex min-h-full flex-col">
                 {educationLessonRail.length ? (
-                  <div className="flex flex-1 items-center">
-                    <div className="-mx-4 w-full overflow-x-auto px-4 pb-1">
-                      <div className="flex justify-center gap-3 pr-4">
+                  <div className="flex flex-1 items-center justify-center py-10 sm:py-14">
+                    <div className="w-full overflow-x-auto px-4 pb-2">
+                      <div className="flex justify-start gap-3 py-1 pr-4">
                       {educationLessonRail.map((lesson) => {
                       const palette = getPillarPalette(lesson?.pillar_key);
                       const lessonDayIndex = Number(lesson?.day_index || 0);
@@ -2323,11 +2333,12 @@ export default function AssessmentChatBox({
                           key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                           type="button"
                           onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                          className="flex w-[min(82vw,24rem)] shrink-0 items-start gap-3 rounded-[22px] border px-4 py-5 text-left transition sm:w-[min(78vw,28rem)] sm:py-6"
+                          className="flex w-[15.75rem] shrink-0 items-start gap-3 rounded-[26px] px-4 py-12 text-left transition sm:w-[17.5rem] sm:py-14"
                           style={{
                             backgroundColor: "#d3541b",
-                            borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
-                            boxShadow: isSelected ? "0 0 0 1px var(--accent) inset" : "none",
+                            boxShadow: isSelected
+                              ? "0 0 0 1px rgba(255,255,255,0.45) inset"
+                              : "none",
                           }}
                         >
                           <span className="min-w-0 flex-1">
@@ -2364,7 +2375,7 @@ export default function AssessmentChatBox({
                       );
                     }
                   }}
-                  className="mt-8 w-full rounded-full border px-4 py-3 text-sm font-semibold transition sm:mt-10"
+                  className="mt-20 w-full rounded-full border px-4 py-3 text-sm font-semibold transition sm:mt-24"
                   style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
                 >
                   Explore topics
@@ -2484,64 +2495,48 @@ export default function AssessmentChatBox({
           )}
         </div>
         <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
-          {homeSurface === "tracking" && !viewingHomeSurfaceFromSummary ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.dispatchEvent(
-                    new CustomEvent("healthsense-open-tracker", {
-                      detail: {
-                        guided: true,
-                      },
-                    }),
-                  );
-                }
-              }}
-              className="w-full rounded-full border px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em]"
-              style={homePrimaryButtonStyle}
-            >
-              Start daily check-in
-            </button>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
-                {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {previousHomeSurface ? (
-                  <button
-                    type="button"
-                    onClick={() => setHomeSurface(previousHomeSurface)}
-                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
-                    style={homePlainButtonStyle}
-                  >
-                    Back
-                  </button>
-                ) : null}
-                {nextHomeSurface && homeSurfaceMeta.nextLabel ? (
-                  <button
-                    type="button"
-                    onClick={() => setHomeSurface(nextHomeSurface)}
-                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
-                    style={homePrimaryButtonStyle}
-                  >
-                    {homeSurfaceMeta.nextLabel}
-                  </button>
-                ) : homeSurface === "ask" ? (
-                  <button
-                    type="button"
-                    onClick={() => completeMorningSequence()}
-                    disabled={finalGiaMessageLoading || !finalGiaMessage}
-                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
-                    style={homePrimaryButtonStyle}
-                  >
-                    Completed
-                  </button>
-                ) : null}
-              </div>
+          <div className="mx-auto w-full max-w-[23rem] rounded-[28px] border border-[var(--chrome-border)] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(
+                      new CustomEvent("healthsense-open-tracker", {
+                        detail: {
+                          guided: true,
+                          returnSurface: "tracking",
+                        },
+                      }),
+                    );
+                  }
+                }}
+                className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
+                style={homeSurface === "tracking" ? homePrimaryButtonStyle : homePlainButtonStyle}
+              >
+                <DockBiometricsIcon className="h-5 w-5" />
+                <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Checkin</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHomeSurface("insight")}
+                className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
+                style={homeSurface === "insight" ? homePrimaryButtonStyle : homePlainButtonStyle}
+              >
+                <DockInsightIcon className="h-5 w-5" />
+                <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHomeSurface("ask")}
+                className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
+                style={homeSurface === "ask" ? homePrimaryButtonStyle : homePlainButtonStyle}
+              >
+                <DockGiaIcon className="h-5 w-5" />
+                <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Coach</span>
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </section>
