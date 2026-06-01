@@ -1062,28 +1062,6 @@ function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | nu
   );
 }
 
-function HabitStepsIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M9 6h10" />
-      <path d="M9 12h10" />
-      <path d="M9 18h10" />
-      <path d="M4 6l1.5 1.5L7.5 5" />
-      <path d="M4 12l1.5 1.5L7.5 11" />
-      <path d="M4 18l1.5 1.5L7.5 17" />
-    </svg>
-  );
-}
-
 function InsightIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
@@ -1214,7 +1192,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
-  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "plan" | "learn" | "coach">("learn");
+  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn" | "coach">("learn");
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[26px] border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -2896,7 +2874,7 @@ export default function LatestAssessmentPanel({
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[36px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-              <div className="grid grid-cols-4 p-1">
+              <div className="grid grid-cols-3 p-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -2910,21 +2888,6 @@ export default function LatestAssessmentPanel({
                   <BiometricsIcon className="h-5 w-5 text-[var(--chrome-text)]" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Checkin
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveDockKey("plan");
-                    openDailyMenuSurface("habits");
-                  }}
-                  aria-pressed={activeDockKey === "plan"}
-                  className={homeDockButtonClassName}
-                  style={activeDockKey === "plan" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
-                >
-                  <HabitStepsIcon className="h-5 w-5 text-[var(--chrome-text)]" />
-                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
-                    Plan
                   </span>
                 </button>
                 <button
