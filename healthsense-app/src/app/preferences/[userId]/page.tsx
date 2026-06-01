@@ -8,6 +8,12 @@ type PageProps = {
   params: Promise<{ userId: string }>;
 };
 
+function isTruthyToken(value: string | string[] | undefined): boolean {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const token = String(raw || "").trim().toLowerCase();
+  return token === "1" || token === "true" || token === "yes" || token === "on";
+}
+
 export default async function PreferencesPage(props: PageProps) {
   const { userId } = await props.params;
   const data = await getUserStatus(userId);
@@ -15,6 +21,8 @@ export default async function PreferencesPage(props: PageProps) {
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "dark";
+  const nutritionPillarEnabled = isTruthyToken(prefs.home_pillar_nutrition);
+  const trainingPillarEnabled = isTruthyToken(prefs.home_pillar_training);
   const promptState = (data.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -34,6 +42,8 @@ export default async function PreferencesPage(props: PageProps) {
               userId={String(userId)}
               initialEmail={user.email || ""}
               initialTheme={themePreference}
+              initialNutritionPillarEnabled={nutritionPillarEnabled}
+              initialTrainingPillarEnabled={trainingPillarEnabled}
             />
           </div>
         </Card>

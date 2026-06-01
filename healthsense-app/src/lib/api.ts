@@ -22,6 +22,8 @@ export type UserStatusResponse = {
     voice?: string;
     text_scale?: string;
     theme?: string;
+    home_pillar_nutrition?: string;
+    home_pillar_training?: string;
     training_objective?: string;
     preferred_channel?: string;
     marketing_opt_in?: string;

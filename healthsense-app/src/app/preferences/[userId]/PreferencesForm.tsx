@@ -7,12 +7,16 @@ type PreferencesFormProps = {
   userId: string;
   initialEmail?: string;
   initialTheme?: string;
+  initialNutritionPillarEnabled?: boolean;
+  initialTrainingPillarEnabled?: boolean;
 };
 
 export default function PreferencesForm({
   userId,
   initialEmail = "",
   initialTheme = "dark",
+  initialNutritionPillarEnabled = false,
+  initialTrainingPillarEnabled = false,
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
   const [theme, setTheme] = useState(() => {
@@ -20,6 +24,8 @@ export default function PreferencesForm({
     const normalized = normalizeThemePreference(stored || initialTheme);
     return normalized === "light" ? "light" : "dark";
   });
+  const [nutritionPillarEnabled, setNutritionPillarEnabled] = useState(Boolean(initialNutritionPillarEnabled));
+  const [trainingPillarEnabled, setTrainingPillarEnabled] = useState(Boolean(initialTrainingPillarEnabled));
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -43,6 +49,8 @@ export default function PreferencesForm({
         userId,
         email: email.trim(),
         theme,
+        home_pillar_nutrition: nutritionPillarEnabled ? "1" : "0",
+        home_pillar_training: trainingPillarEnabled ? "1" : "0",
         preferred_channel: "app",
       };
       if (changePassword) {
@@ -90,6 +98,37 @@ export default function PreferencesForm({
               <option value="light">Light</option>
             </select>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+        <h3 className="text-base font-semibold text-[#1e1b16]">Home pillars</h3>
+        <p className="mt-1 text-[11px] text-[#6b6257]">Choose which optional pillars appear on the home screen.</p>
+        <div className="mt-4 grid gap-4">
+          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[#efe7db] bg-white p-4">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[#1e1b16]">Nutrition</span>
+              <span className="block text-[11px] text-[#6b6257]">Show nutrition as a home pillar.</span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-5 w-5 rounded border-[#efe7db]"
+              checked={nutritionPillarEnabled}
+              onChange={(e) => setNutritionPillarEnabled(e.target.checked)}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[#efe7db] bg-white p-4">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[#1e1b16]">Training</span>
+              <span className="block text-[11px] text-[#6b6257]">Show training as a home pillar.</span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-5 w-5 rounded border-[#efe7db]"
+              checked={trainingPillarEnabled}
+              onChange={(e) => setTrainingPillarEnabled(e.target.checked)}
+            />
+          </label>
         </div>
       </section>
 

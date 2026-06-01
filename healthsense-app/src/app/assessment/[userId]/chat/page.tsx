@@ -220,6 +220,12 @@ function firstSearchValue(value: string | string[] | undefined): string {
   return String(Array.isArray(value) ? value[0] : value || "").trim();
 }
 
+function isTruthyToken(value: string | string[] | undefined): boolean {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const token = String(raw || "").trim().toLowerCase();
+  return token === "1" || token === "true" || token === "yes" || token === "on";
+}
+
 function resolveIntroAvatarOverride(value: string | string[] | undefined): boolean | null {
   const token = firstSearchValue(value).toLowerCase();
   if (!token) return null;
@@ -280,6 +286,8 @@ export default async function AssessmentChatPage(props: PageProps) {
   const onboarding = status.onboarding || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "dark";
+  const nutritionPillarEnabled = isTruthyToken(prefs.home_pillar_nutrition);
+  const trainingPillarEnabled = isTruthyToken(prefs.home_pillar_training);
   const promptState = (status.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -354,6 +362,8 @@ export default async function AssessmentChatPage(props: PageProps) {
             userId={userId}
             initialSummary={pillarTrackerSummary}
             initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
+            showNutritionPillar={nutritionPillarEnabled}
+            showTrainingPillar={trainingPillarEnabled}
           />
         ) : null}
       </section>

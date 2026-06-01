@@ -30,6 +30,8 @@ type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
   initialAssessmentReviewed?: boolean;
+  showNutritionPillar?: boolean;
+  showTrainingPillar?: boolean;
 };
 
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
@@ -1160,6 +1162,8 @@ export default function LatestAssessmentPanel({
   userId,
   initialSummary,
   initialAssessmentReviewed = false,
+  showNutritionPillar = true,
+  showTrainingPillar = true,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
@@ -1228,7 +1232,17 @@ export default function LatestAssessmentPanel({
   const pillarTileStyle = { backgroundColor: "#fcf8f0" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
-  const orderedPillarKeys = pillars
+  const visiblePillars = useMemo(
+    () =>
+      pillars.filter((pillar) => {
+        const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
+        if (pillarKey === "nutrition") return showNutritionPillar;
+        if (pillarKey === "training") return showTrainingPillar;
+        return true;
+      }),
+    [pillars, showNutritionPillar, showTrainingPillar],
+  );
+  const orderedPillarKeys = visiblePillars
     .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
     .filter((pillarKey) => Boolean(pillarKey));
   const resolveNextPillarKey = useCallback((pillarKey: string): string | null => {
@@ -2836,7 +2850,7 @@ export default function LatestAssessmentPanel({
         >
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
-              {pillars.map((pillar) => {
+              {visiblePillars.map((pillar) => {
                 const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                 const palette = getPillarPalette(pillarKey);
                 const score = resolvePillarDisplayScore(pillar);
@@ -3628,7 +3642,7 @@ export default function LatestAssessmentPanel({
                   <p className="text-sm text-[#6b6257]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
-                        ? "Set optional general tracking preferences and home pillar visibility."
+                        ? "Set optional general tracking preferences."
                         : "Choose your target for each concept this week."
                       : "Select a pillar to set or adjust this week's targets."}
                   </p>

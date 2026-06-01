@@ -42,6 +42,8 @@ export async function POST(request: Request) {
       auto_prompts: body.auto_prompts ?? undefined,
       text_scale: body.text_scale ?? undefined,
       theme: body.theme ?? undefined,
+      home_pillar_nutrition: body.home_pillar_nutrition ?? undefined,
+      home_pillar_training: body.home_pillar_training ?? undefined,
       training_objective: body.training_objective ?? undefined,
       preferred_channel: "app",
       marketing_opt_in: body.marketing_opt_in ?? undefined,

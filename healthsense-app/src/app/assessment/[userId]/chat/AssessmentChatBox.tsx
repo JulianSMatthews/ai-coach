@@ -1000,7 +1000,7 @@ export default function AssessmentChatBox({
   const pillarTileClassName = "min-h-[10.5rem] rounded-[22px] px-3 py-3 text-left transition sm:min-h-[12rem]";
   const pillarTileStyle = { backgroundColor: "#fcf8f0" };
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
-  const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
+  const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
   const insightQuizSubmitVisible =
     homeSurface === "insight" &&
@@ -2063,7 +2063,7 @@ export default function AssessmentChatBox({
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
         {showCompletionSummaryPanel ? (
-          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+          <div className="rounded-2xl rounded-[24px] bg-[#fcf8f0] px-4 py-4">
             <div className="space-y-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your personal summary</p>
@@ -2186,7 +2186,7 @@ export default function AssessmentChatBox({
 
         {summaryResultsUnlocked ? (
           <>
-            <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
+            <div className="rounded-3xl rounded-[24px] bg-[#fcf8f0] px-5 py-5">
               <div className="flex items-center gap-4">
                 <LeadAssessmentBranding
                   titleLines={[]}
@@ -2206,7 +2206,7 @@ export default function AssessmentChatBox({
             </div>
 
             {resultSummary.reflection?.selected_label && resultSummary.reflection?.top_label ? (
-              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+              <div className="rounded-2xl rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your reflection</p>
                 <p className="mt-2 text-sm text-[#3c332b]">
                   {resultSummary.reflection.matches_top
@@ -2227,7 +2227,7 @@ export default function AssessmentChatBox({
                     resultExtremes.weakest?.pillar_key === pillar.pillar_key &&
                     resultExtremes.weakest?.score === pillar.score;
                   return (
-                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
+                    <div key={pillar.pillar_key} className="rounded-2xl rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                       <div className="flex flex-col items-center text-center">
                         <ScoreRing value={pillar.score} tone={palette.accent} />
                         <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
@@ -2262,7 +2262,7 @@ export default function AssessmentChatBox({
   const coachingPlanPanel = showInlineCoachingPlan ? (
     <form
       onSubmit={onClaimIdentity}
-      className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]"
+      className="overflow-hidden rounded-[28px] rounded-[24px] bg-[#fcf8f0] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]"
       autoComplete="on"
     >
       <div className="border-b border-[#efe7db] px-4 py-4 sm:px-6">
@@ -2295,7 +2295,7 @@ export default function AssessmentChatBox({
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <input
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm"
             type="text"
             placeholder="First name"
             autoComplete="given-name"
@@ -2305,7 +2305,7 @@ export default function AssessmentChatBox({
             required
           />
           <input
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm"
             type="text"
             placeholder="Surname"
             autoComplete="family-name"
@@ -2315,7 +2315,7 @@ export default function AssessmentChatBox({
             required
           />
           <input
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
+            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm sm:col-span-2"
             type="tel"
             placeholder="Mobile number"
             autoComplete="tel"
@@ -2326,7 +2326,7 @@ export default function AssessmentChatBox({
             required
           />
           <input
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm"
             type="password"
             placeholder="Create password"
             autoComplete="new-password"
@@ -2336,7 +2336,7 @@ export default function AssessmentChatBox({
             required
           />
           <input
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm"
             type="password"
             placeholder="Confirm password"
             autoComplete="new-password"
@@ -2397,7 +2397,7 @@ export default function AssessmentChatBox({
             <div className="min-w-0 space-y-1">
               <div className="flex min-w-0 items-center gap-3">
                 {educationPillarIconSrc ? (
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-black bg-white">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full rounded-[24px] bg-[#fcf8f0]">
                     <Image
                       src={educationPillarIconSrc}
                       alt=""
@@ -2431,7 +2431,7 @@ export default function AssessmentChatBox({
         <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-36 sm:px-5 sm:pb-40">
           {homeSurface === "tracking" ? (
             <div className="flex min-h-full flex-col gap-4">
-              <div className="border border-black bg-white px-4 py-4 sm:px-5 sm:py-5">
+              <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
                 <p className="text-sm text-[#6b6257]">
                   Tap a pillar to open just that daily check-in, or start the guided flow below to move through each pillar in order.
                 </p>
@@ -2464,7 +2464,7 @@ export default function AssessmentChatBox({
                   ))}
                 </div>
               </div>
-              <div className="mt-auto border border-black bg-white px-4 py-4 sm:px-5">
+              <div className="mt-auto rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5">
                 <p className="text-sm text-[#6b6257]">
                   Use the footer button to start the guided tracker, or select a pillar above.
                 </p>
@@ -2472,7 +2472,7 @@ export default function AssessmentChatBox({
             </div>
           ) : homeSurface === "insight" ? (
             (educationPlanLoading || (!educationPlan && !educationPlanError)) ? (
-              <div className="flex min-h-full items-center border border-black bg-white px-4 py-5">
+              <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Loading today&apos;s education programme…
                 </p>
@@ -2482,7 +2482,7 @@ export default function AssessmentChatBox({
                 {educationPlanLoading && educationPlan ? (
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
-                <div className="border border-black bg-white px-4 py-3">
+                <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                     {educationProgrammeName || "Education programme"}
                   </p>
@@ -2505,7 +2505,7 @@ export default function AssessmentChatBox({
                   ) : null}
                 </div>
                 {educationPreviousLearningTitle || educationPreviousLearningText ? (
-                  <div className="border border-black bg-white px-4 py-4">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                       What we learnt yesterday
                     </p>
@@ -2522,7 +2522,7 @@ export default function AssessmentChatBox({
                   </div>
                 ) : null}
                 {educationHasVideo ? (
-                  <div className="border border-black bg-white">
+                  <div className="rounded-[24px] bg-[#fcf8f0]">
                     <video
                       key={`education-video-${educationMediaKey}`}
                       controls
@@ -2549,7 +2549,7 @@ export default function AssessmentChatBox({
                     </video>
                   </div>
                 ) : educationAvatarPending ? (
-                  <div className="border border-black bg-white px-4 py-4">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                       Avatar video
                     </p>
@@ -2558,7 +2558,7 @@ export default function AssessmentChatBox({
                     </p>
                   </div>
                 ) : educationContent?.script || educationContent?.body ? (
-                  <div className="border border-black bg-white px-4 py-4">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                       Lesson
                     </p>
@@ -2567,12 +2567,12 @@ export default function AssessmentChatBox({
                     </p>
                   </div>
                 ) : (
-                  <div className="border border-black bg-white px-4 py-4">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <p className="text-sm text-[#6b6257]">Lesson content is not available right now.</p>
                   </div>
                 )}
                 {educationLesson?.action_prompt ? (
-                  <div className="border border-black bg-white px-4 py-4">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                       Today&apos;s action
                     </p>
@@ -2580,7 +2580,7 @@ export default function AssessmentChatBox({
                   </div>
                 ) : null}
                 {educationQuizQuestions.length ? (
-                  <div className="border border-black bg-white px-4 py-4">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                         Quick check
@@ -2662,7 +2662,7 @@ export default function AssessmentChatBox({
                 {educationPlanError ? <p className="text-sm text-[#8a3e1a]">{educationPlanError}</p> : null}
               </div>
             ) : (
-              <div className="flex min-h-full items-center border border-black bg-white px-4 py-5">
+              <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   {educationPlanError || educationPlan?.reason || "Today's lesson is not available right now."}
                 </p>
@@ -2671,13 +2671,13 @@ export default function AssessmentChatBox({
           ) : homeSurface === "habits" ? (
             <div className="flex min-h-full flex-col">
               {(dailyHabitPlanLoading || (!dailyHabitPlan && !dailyHabitPlanError)) ? (
-                <div className="flex min-h-full items-center border border-black bg-white px-4 py-5">
+                <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                   <p className="text-sm text-[#6b6257]">
                     Reviewing your tracker and preparing today&apos;s plan…
                   </p>
                 </div>
               ) : dailyHabitPlanError && !dailyHabitPlan ? (
-                <div className="flex min-h-full items-center border border-black bg-white px-4 py-5">
+                <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                   <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
                 </div>
               ) : (
@@ -2697,7 +2697,7 @@ export default function AssessmentChatBox({
                         return (
                           <div
                             key={`${String(habit?.id || "").trim() || `${title || detail}-${index}`}`}
-                            className="border border-black bg-white px-4 py-4"
+                            className="rounded-[24px] bg-[#fcf8f0] px-4 py-4"
                           >
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                               {momentLabel || `Moment ${index + 1}`}
@@ -2709,7 +2709,7 @@ export default function AssessmentChatBox({
                       })}
                     </div>
                   ) : (
-                    <div className="flex min-h-full items-center border border-black bg-white px-4 py-5 text-sm text-[#6b6257]">
+                    <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5 text-sm text-[#6b6257]">
                       Today&apos;s plan is not available right now.
                     </div>
                   )}
@@ -2721,21 +2721,21 @@ export default function AssessmentChatBox({
             <div className="flex min-h-full flex-col">
               <div className="flex min-h-full flex-col justify-center">
                 {finalGiaMessageLoading || (!finalGiaMessage && !finalGiaMessageError) ? (
-                  <div className="border border-black bg-white px-4 py-5">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                     <p className="text-sm font-semibold text-[#1e1b16]">Gia is reviewing today&apos;s tracker results…</p>
                     <p className="mt-2 text-sm leading-6 text-[#6b6257]">
                       Preparing your message based on the latest results you entered.
                     </p>
                   </div>
                 ) : finalGiaMessage ? (
-                  <div className="border border-black bg-white px-4 py-5 sm:px-5 sm:py-6">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-5 sm:px-5 sm:py-6">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
                     <button
                       type="button"
                       onClick={toggleFinalGiaListening}
                       aria-pressed={finalGiaListening}
-                      className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                      className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                       style={homePlainButtonStyle}
                     >
                       {finalGiaListening ? "Stop" : "Listen"}
@@ -2751,7 +2751,7 @@ export default function AssessmentChatBox({
                     </p>
                   </div>
                 ) : (
-                  <div className="border border-black bg-white px-4 py-5">
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                     <p className="text-sm text-[#8a3e1a]">
                       {finalGiaMessageError || "Gia's message is not available right now."}
                     </p>
@@ -2763,7 +2763,7 @@ export default function AssessmentChatBox({
                         stopFinalGiaListening();
                         void requestFinalGiaMessage();
                       }}
-                      className="mt-4 border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                      className="mt-4 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                       style={homePrimaryButtonStyle}
                     >
                       Try again
@@ -2789,7 +2789,7 @@ export default function AssessmentChatBox({
                   );
                 }
               }}
-              className="w-full border px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em]"
+              className="w-full rounded-full border px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em]"
               style={homePrimaryButtonStyle}
             >
               Start daily check-in
@@ -2806,7 +2806,7 @@ export default function AssessmentChatBox({
                   <button
                     type="button"
                     onClick={() => setHomeSurface(previousHomeSurface)}
-                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                     style={homePlainButtonStyle}
                   >
                     Back
@@ -2819,7 +2819,7 @@ export default function AssessmentChatBox({
                       setEducationQuizMessage(null);
                       setHomeSurface(nextHomeSurface);
                     }}
-                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                     style={homePlainButtonStyle}
                   >
                     Skip today&apos;s focus
@@ -2829,7 +2829,7 @@ export default function AssessmentChatBox({
                   type="button"
                   onClick={() => void submitEducationQuiz()}
                   disabled={educationQuizSubmitting}
-                  className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
                   style={homePrimaryButtonStyle}
                 >
                   {educationQuizSubmitting ? "Saving" : "Submit quick check"}
@@ -2841,7 +2841,7 @@ export default function AssessmentChatBox({
               <button
                 type="button"
                 onClick={() => setJourneyCompleted(true)}
-                className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                 style={homePlainButtonStyle}
               >
                 Close
@@ -2857,7 +2857,7 @@ export default function AssessmentChatBox({
                   <button
                     type="button"
                     onClick={() => setHomeSurface(previousHomeSurface)}
-                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                     style={homePlainButtonStyle}
                   >
                     Back
@@ -2867,7 +2867,7 @@ export default function AssessmentChatBox({
                   <button
                     type="button"
                     onClick={() => setHomeSurface(nextHomeSurface)}
-                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                     style={homePrimaryButtonStyle}
                   >
                     {homeSurfaceMeta.nextLabel}
@@ -2877,7 +2877,7 @@ export default function AssessmentChatBox({
                     type="button"
                     onClick={() => completeMorningSequence()}
                     disabled={finalGiaMessageLoading || !finalGiaMessage}
-                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
                     style={homePrimaryButtonStyle}
                   >
                     Completed
@@ -2941,7 +2941,7 @@ export default function AssessmentChatBox({
         <form onSubmit={onSubmit}>
           <textarea
             id="assessment-chat-input"
-            className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+            className="w-full rounded-[24px] rounded-[24px] bg-[#fcf8f0] px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
             rows={2}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
