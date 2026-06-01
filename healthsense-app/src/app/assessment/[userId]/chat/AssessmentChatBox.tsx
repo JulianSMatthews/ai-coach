@@ -793,9 +793,12 @@ export default function AssessmentChatBox({
   const [educationPlanLoading, setEducationPlanLoading] = useState(false);
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
+  const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
+  const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
   const educationPlanRequestIdRef = useRef(0);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
+  const educationExplorerSectionRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
   const finalGiaListenRequestIdRef = useRef(0);
   const finalGiaSpeechRef = useRef<{ close?: () => void } | null>(null);
@@ -915,10 +918,41 @@ export default function AssessmentChatBox({
         const rightDay = Number(right?.day_index || 0);
         if (leftDay === currentDayIndex && rightDay !== currentDayIndex) return -1;
         if (rightDay === currentDayIndex && leftDay !== currentDayIndex) return 1;
-        return leftDay - rightDay;
+      return leftDay - rightDay;
       });
     return ordered;
   }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson]);
+  const educationExplorerPillars = useMemo(() => {
+    const seen = new Set<string>();
+    const ordered: Array<{ pillar_key: string; pillar_label: string; lesson_count: number }> = [];
+    for (const lesson of educationLessonRail) {
+      const pillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
+      if (!pillarKey || seen.has(pillarKey)) continue;
+      seen.add(pillarKey);
+      ordered.push({
+        pillar_key: pillarKey,
+        pillar_label: String(lesson?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
+        lesson_count: educationLessonRail.filter((item) => String(item?.pillar_key || "").trim().toLowerCase() === pillarKey).length,
+      });
+    }
+    return ordered;
+  }, [educationLessonRail]);
+  const activeEducationExplorerPillarKey =
+    educationExplorerPillarKey || educationExplorerPillars[0]?.pillar_key || null;
+  const educationExplorerLessons = useMemo(() => {
+    const activeKey = String(activeEducationExplorerPillarKey || "").trim().toLowerCase();
+    if (!activeKey) return [];
+    const seen = new Set<string>();
+    return educationLessonRail
+      .filter((lesson) => String(lesson?.pillar_key || "").trim().toLowerCase() === activeKey)
+      .filter((lesson) => {
+        const conceptKey = String(lesson?.concept_key || "").trim().toLowerCase();
+        const token = conceptKey || String(lesson?.programme_day_id || lesson?.day_index || "").trim().toLowerCase();
+        if (!token || seen.has(token)) return false;
+        seen.add(token);
+        return true;
+      });
+  }, [activeEducationExplorerPillarKey, educationLessonRail]);
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -941,6 +975,7 @@ export default function AssessmentChatBox({
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
+  const homeDockActiveButtonStyle = { backgroundColor: "#ece7dc", color: "#000000", borderColor: "#d9cdbb" };
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
       return;
@@ -2265,7 +2300,7 @@ export default function AssessmentChatBox({
             </>
           )}
         </div>
-        <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-36 sm:px-5 sm:pb-40">
+        <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-44 sm:px-5 sm:pb-52">
           {homeSurface === "tracking" ? (
             <div className="flex min-h-full flex-col gap-4">
               <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
@@ -2333,7 +2368,7 @@ export default function AssessmentChatBox({
                           key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                           type="button"
                           onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                          className="flex w-[15.75rem] shrink-0 items-start gap-3 rounded-[26px] px-4 py-12 text-left transition sm:w-[17.5rem] sm:py-14"
+                          className="flex w-[15.75rem] shrink-0 items-start gap-3 rounded-[26px] border px-4 py-12 text-left transition sm:w-[17.5rem] sm:py-14"
                           style={{
                             backgroundColor: "#d3541b",
                             boxShadow: isSelected
@@ -2364,22 +2399,90 @@ export default function AssessmentChatBox({
                 <button
                   type="button"
                   onClick={() => {
-                    if (typeof window !== "undefined") {
-                      window.dispatchEvent(
-                        new CustomEvent("healthsense-open-tracker", {
-                          detail: {
-                            guided: false,
-                            returnSurface: "insight",
-                          },
-                        }),
-                      );
-                    }
+                    setEducationExplorerOpen(true);
+                    setEducationExplorerPillarKey(educationExplorerPillars[0]?.pillar_key || null);
+                    window.setTimeout(() => {
+                      educationExplorerSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }, 0);
                   }}
-                  className="mt-20 w-full rounded-full border px-4 py-3 text-sm font-semibold transition sm:mt-24"
+                  className="sticky bottom-[6.5rem] z-20 mt-20 w-full rounded-full border px-4 py-3 text-sm font-semibold transition sm:mt-24"
                   style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
                 >
                   Explore topics
                 </button>
+                {educationExplorerOpen && educationExplorerPillars.length ? (
+                  <div ref={educationExplorerSectionRef} className="mt-10 space-y-4 pb-8">
+                    <div className="rounded-[28px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                        Select a pillar
+                      </p>
+                      <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+                        {educationExplorerPillars.map((pillar) => {
+                          const active = pillar.pillar_key === activeEducationExplorerPillarKey;
+                          return (
+                            <button
+                              key={pillar.pillar_key}
+                              type="button"
+                              onClick={() => setEducationExplorerPillarKey(pillar.pillar_key)}
+                              className="flex w-[10rem] shrink-0 flex-col items-start rounded-[26px] px-4 py-4 text-left transition"
+                              style={{
+                                backgroundColor: active ? "#ece7dc" : "#ffffff",
+                                borderColor: active ? "#d9cdbb" : "#e7e1d6",
+                                boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
+                              }}
+                            >
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8a7f72]">
+                                Pillar
+                              </span>
+                              <span className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.pillar_label}</span>
+                              <span className="mt-2 text-xs text-[#6b6257]">
+                                {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="rounded-[28px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                        {String(activeEducationExplorerPillarKey || "").trim() ? getPillarPalette(activeEducationExplorerPillarKey || "").label : "Lessons"}
+                      </p>
+                      <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+                        {educationExplorerLessons.map((lesson) => {
+                          const lessonDayIndex = Number(lesson?.day_index || 0);
+                          const lessonTitle = normalizeLessonHeading(
+                            lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                          );
+                          const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                          return (
+                            <button
+                              key={`explore-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
+                              type="button"
+                              onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
+                              className="flex w-[15.75rem] shrink-0 flex-col rounded-[26px] px-4 py-12 text-left transition sm:w-[17.5rem] sm:py-14"
+                              style={{
+                                backgroundColor: "#d3541b",
+                                color: "#ffffff",
+                              }}
+                            >
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                                {String(lesson?.pillar_label || "").trim() || "Lesson"}
+                              </span>
+                              <span className="mt-2 block text-sm font-semibold text-white">
+                                {lessonTitle || "Untitled lesson"}
+                              </span>
+                              {lessonDescription ? (
+                                <span className="mt-3 block text-sm leading-6 text-white/85">
+                                  {lessonDescription}
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
@@ -2512,7 +2615,7 @@ export default function AssessmentChatBox({
                   }
                 }}
                 className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
-                style={homeSurface === "tracking" ? homePrimaryButtonStyle : homePlainButtonStyle}
+                style={homeSurface === "tracking" ? homeDockActiveButtonStyle : homePlainButtonStyle}
               >
                 <DockBiometricsIcon className="h-5 w-5" />
                 <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Checkin</span>
@@ -2521,7 +2624,7 @@ export default function AssessmentChatBox({
                 type="button"
                 onClick={() => setHomeSurface("insight")}
                 className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
-                style={homeSurface === "insight" ? homePrimaryButtonStyle : homePlainButtonStyle}
+                style={homeSurface === "insight" ? homeDockActiveButtonStyle : homePlainButtonStyle}
               >
                 <DockInsightIcon className="h-5 w-5" />
                 <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
@@ -2530,7 +2633,7 @@ export default function AssessmentChatBox({
                 type="button"
                 onClick={() => setHomeSurface("ask")}
                 className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
-                style={homeSurface === "ask" ? homePrimaryButtonStyle : homePlainButtonStyle}
+                style={homeSurface === "ask" ? homeDockActiveButtonStyle : homePlainButtonStyle}
               >
                 <DockGiaIcon className="h-5 w-5" />
                 <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Coach</span>
