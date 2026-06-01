@@ -813,6 +813,8 @@ export default function AssessmentChatBox({
   const [educationPlan, setEducationPlan] = useState<EducationPlanTodayResponse | null>(null);
   const [educationPlanLoading, setEducationPlanLoading] = useState(false);
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
+  const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
+  const [educationCoursesOpen, setEducationCoursesOpen] = useState(false);
   const [educationQuizAnswers, setEducationQuizAnswers] = useState<Record<string, EducationQuizAnswerValue>>({});
   const [educationQuizSubmitting, setEducationQuizSubmitting] = useState(false);
   const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
@@ -939,6 +941,44 @@ export default function AssessmentChatBox({
   const educationPreviousLesson = educationPlan?.previous_lesson || null;
   const educationPreviousLearningTitle = String(educationPreviousLesson?.title || "").trim();
   const educationPreviousLearningText = String(educationPreviousLesson?.takeaway || "").trim();
+  const educationLessonQueue = useMemo(
+    () => (Array.isArray(educationPlan?.lessons) ? educationPlan.lessons.filter(Boolean) : []),
+    [educationPlan?.lessons],
+  );
+  const educationCurrentLessonIndex = useMemo(
+    () => educationLessonQueue.findIndex((lesson) => Boolean(lesson?.is_current)),
+    [educationLessonQueue],
+  );
+  const selectedEducationLesson = useMemo(
+    () =>
+      educationLessonQueue.find((lesson) => Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0)) ||
+      educationLessonQueue[educationCurrentLessonIndex] ||
+      educationPlan?.lesson ||
+      null,
+    [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson, selectedEducationLessonDayIndex],
+  );
+  const selectedEducationLessonDay = Number(selectedEducationLesson?.day_index || educationDayIndex || 0);
+  const selectedEducationLessonIsCurrent = Boolean(selectedEducationLesson?.is_current);
+  const educationQueueLessons = useMemo(
+    () => educationLessonQueue.filter((lesson) => !lesson?.is_current),
+    [educationLessonQueue],
+  );
+  const educationCourseGroups = useMemo(() => {
+    const order = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
+    const grouped = new Map<string, NonNullable<typeof educationLessonQueue>[number][]>();
+    educationLessonQueue.forEach((lesson) => {
+      const pillarKey = String(lesson?.pillar_key || "").trim().toLowerCase() || "uncategorized";
+      const items = grouped.get(pillarKey) || [];
+      items.push(lesson);
+      grouped.set(pillarKey, items);
+    });
+    return order
+      .filter((pillarKey) => grouped.has(pillarKey))
+      .map((pillarKey) => ({
+        pillarKey,
+        lessons: grouped.get(pillarKey) || [],
+      }));
+  }, [educationLessonQueue]);
   const educationQuizQuestions = useMemo(
     () => (Array.isArray(educationPlan?.quiz?.questions) ? educationPlan.quiz.questions : []),
     [educationPlan?.quiz?.questions],
@@ -966,7 +1006,7 @@ export default function AssessmentChatBox({
     educationCompletedDays !== null && educationDurationDays > 0
       ? `${educationCompletedDays}/${educationDurationDays} days complete`
       : educationDayIndex > 0
-        ? `Day ${educationDayIndex}`
+        ? `Lesson ${educationDayIndex}`
         : "";
   const educationFocusStreakSummary = [
     educationCompletedDaysLabel,
@@ -1116,6 +1156,25 @@ export default function AssessmentChatBox({
       }
     }
   }, [userId]);
+
+  useEffect(() => {
+    if (!educationLessonQueue.length) {
+      setSelectedEducationLessonDayIndex(null);
+      setEducationCoursesOpen(false);
+      return;
+    }
+    const currentDayIndex = Number(
+      educationLessonQueue[educationCurrentLessonIndex]?.day_index ||
+        educationPlan?.day_index ||
+        0,
+    );
+    setSelectedEducationLessonDayIndex((current) => {
+      if (current && educationLessonQueue.some((lesson) => Number(lesson?.day_index || 0) === current)) {
+        return current;
+      }
+      return currentDayIndex || current || null;
+    });
+  }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.day_index]);
 
   const recordEducationVideoProgress = useCallback(async (watchPct: number, watchedSeconds?: number) => {
     try {
@@ -2487,21 +2546,144 @@ export default function AssessmentChatBox({
                     {educationProgrammeName || "Education programme"}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
-                    {educationLesson?.title || educationConceptTitle || "Today's lesson"}
+                    {selectedEducationLesson?.title || selectedEducationLesson?.concept_label || selectedEducationLesson?.pillar_label || educationLesson?.title || educationConceptTitle || "Today's lesson"}
                   </p>
                   <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
                     {[
-                      educationConceptTitle,
-                      educationDayIndex > 0
+                      String(selectedEducationLesson?.concept_label || selectedEducationLesson?.pillar_label || educationConceptTitle || "").trim(),
+                      selectedEducationLessonDay > 0
                         ? educationDurationDays > 0
-                          ? `Day ${educationDayIndex} of ${educationDurationDays}`
-                          : `Day ${educationDayIndex}`
+                          ? `Lesson ${selectedEducationLessonDay} of ${educationDurationDays}`
+                          : `Lesson ${selectedEducationLessonDay}`
                         : "",
-                      educationPlan.level ? `${educationPlan.level} level` : "",
+                      String(selectedEducationLesson?.level || educationPlan.level || "").trim() ? `${String(selectedEducationLesson?.level || educationPlan.level || "")} level` : "",
                     ].filter(Boolean).join(" · ")}
                   </p>
-                  {!educationHasVideo && educationLesson?.summary ? (
-                    <p className="mt-3 text-sm leading-6 text-[#6b6257]">{educationLesson.summary}</p>
+                  {(selectedEducationLesson?.goal || selectedEducationLesson?.summary) ? (
+                  <p className="mt-3 text-sm leading-6 text-[#6b6257]">
+                      {selectedEducationLesson?.goal || selectedEducationLesson?.summary}
+                    </p>
+                  ) : null}
+                  <p className="mt-2 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
+                    {selectedEducationLessonIsCurrent ? "Today's lesson" : "Lesson preview"}
+                  </p>
+                </div>
+                {educationQueueLessons.length ? (
+                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                        Other lessons
+                      </p>
+                      <p className="text-xs text-[#8c7f70]">
+                        Select one to preview
+                      </p>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {educationQueueLessons.map((lesson) => {
+                        const palette = getPillarPalette(lesson?.pillar_key);
+                        const lessonDayIndex = Number(lesson?.day_index || 0);
+                        const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
+                        const lessonTitle = String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim();
+                        const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                        return (
+                          <button
+                            key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
+                            type="button"
+                            onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
+                            className="flex w-full items-start gap-3 rounded-[22px] border px-3 py-3 text-left transition"
+                            style={{
+                              backgroundColor: "var(--accent-soft)",
+                              borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
+                              boxShadow: isSelected ? "0 0 0 1px var(--accent) inset" : "none",
+                            }}
+                          >
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[var(--chrome)]">
+                              {palette.icon ? (
+                                <Image src={palette.icon} alt="" width={22} height={22} className="h-5 w-5 object-contain" />
+                              ) : null}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+                                {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
+                              </span>
+                              <span className="mt-1 block text-sm font-semibold text-[var(--text-primary)]">
+                                {lessonTitle || "Untitled lesson"}
+                              </span>
+                              {lessonDescription ? (
+                                <span className="mt-1 block text-sm leading-6 text-[var(--text-secondary)]">
+                                  {lessonDescription}
+                                </span>
+                              ) : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setEducationCoursesOpen((current) => !current)}
+                    className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
+                    style={homePlainButtonStyle}
+                  >
+                    {educationCoursesOpen ? "Hide courses" : "Explore courses"}
+                  </button>
+                  {educationCoursesOpen ? (
+                    <div className="mt-4 space-y-4">
+                      {educationCourseGroups.length ? (
+                        educationCourseGroups.map((group) => {
+                          const palette = getPillarPalette(group.pillarKey);
+                          return (
+                            <div key={group.pillarKey} className="space-y-3">
+                              <div className="flex items-center gap-3">
+                                {palette.icon ? (
+                                  <Image src={palette.icon} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
+                                ) : null}
+                                <p className="text-sm font-semibold text-[var(--text-primary)]">{palette.label || group.pillarKey}</p>
+                              </div>
+                              <div className="grid gap-3">
+                                {group.lessons.map((lesson) => {
+                                  const lessonDayIndex = Number(lesson?.day_index || 0);
+                                  const lessonTitle = String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim();
+                                  const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                                  return (
+                                    <button
+                                      key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}-course`}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                                        setEducationCoursesOpen(false);
+                                      }}
+                                      className="rounded-[22px] border px-3 py-3 text-left transition"
+                                      style={{
+                                        backgroundColor: "var(--accent-soft)",
+                                        borderColor: "var(--border-strong)",
+                                      }}
+                                    >
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+                                        {String(lesson?.pillar_label || palette.label || "").trim() || "Course"}
+                                      </p>
+                                      <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                                        {lessonTitle || "Untitled lesson"}
+                                      </p>
+                                      {lessonDescription ? (
+                                        <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                                          {lessonDescription}
+                                        </p>
+                                      ) : null}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-sm text-[var(--text-secondary)]">No courses available yet.</p>
+                      )}
+                    </div>
                   ) : null}
                 </div>
                 {educationPreviousLearningTitle || educationPreviousLearningText ? (
@@ -2579,7 +2761,7 @@ export default function AssessmentChatBox({
                     <p className="mt-2 text-sm leading-6 text-[#1e1b16]">{educationLesson.action_prompt}</p>
                   </div>
                 ) : null}
-                {educationQuizQuestions.length ? (
+                {selectedEducationLessonIsCurrent && educationQuizQuestions.length ? (
                   <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">

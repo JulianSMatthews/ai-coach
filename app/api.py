@@ -7982,6 +7982,42 @@ def api_user_education_plan_today(
                     avatar["poster_url"] = _normalize_reports_url(poster_url)
                 if summary_url:
                     avatar["summary_url"] = _normalize_reports_url(summary_url)
+    lessons = result.get("lessons")
+    if isinstance(lessons, list):
+        for item in lessons:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, dict):
+                continue
+            video_url = str(content.get("video_url") or "").strip()
+            podcast_url = str(content.get("podcast_url") or "").strip()
+            poster_url = str(content.get("poster_url") or "").strip()
+            if video_url:
+                content["video_url"] = _normalize_reports_url(video_url)
+            if podcast_url:
+                content["podcast_url"] = _normalize_reports_url(podcast_url)
+            if poster_url:
+                content["poster_url"] = _normalize_reports_url(poster_url)
+            avatar = content.get("avatar")
+            if isinstance(avatar, dict):
+                avatar_url = str(avatar.get("url") or "").strip()
+                avatar_video_url = str(avatar.get("video_url") or "").strip()
+                avatar_result_url = str(avatar.get("result_url") or avatar.get("resultUrl") or "").strip()
+                poster_url = str(avatar.get("poster_url") or "").strip()
+                summary_url = str(avatar.get("summary_url") or "").strip()
+                if avatar_url:
+                    avatar["url"] = _normalize_reports_url(avatar_url)
+                if avatar_video_url:
+                    avatar["video_url"] = _normalize_reports_url(avatar_video_url)
+                if avatar_result_url:
+                    normalized_result_url = _normalize_reports_url(avatar_result_url)
+                    avatar["result_url"] = normalized_result_url
+                    avatar["resultUrl"] = normalized_result_url
+                if poster_url:
+                    avatar["poster_url"] = _normalize_reports_url(poster_url)
+                if summary_url:
+                    avatar["summary_url"] = _normalize_reports_url(summary_url)
     _log_app_engagement_event(
         user_id=user_id,
         unit_type="education_plan_view",

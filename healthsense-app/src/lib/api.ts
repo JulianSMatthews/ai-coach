@@ -622,6 +622,34 @@ export type EducationPlanTodayResponse = {
     action_prompt?: string | null;
     content?: EducationLessonContent | null;
   } | null;
+  lessons?: Array<{
+    programme_day_id?: number | null;
+    day_index?: number | null;
+    pillar_key?: string | null;
+    pillar_label?: string | null;
+    concept_key?: string | null;
+    concept_label?: string | null;
+    title?: string | null;
+    summary?: string | null;
+    goal?: string | null;
+    action_prompt?: string | null;
+    level?: string | null;
+    lesson_variant_id?: number | null;
+    is_current?: boolean | null;
+    progress?: {
+      id?: number | null;
+      completion_status?: string | null;
+      video_completed_at?: string | null;
+      quiz_completed_at?: string | null;
+      completed_at?: string | null;
+      watch_pct?: number | null;
+      quiz_score_pct?: number | null;
+    } | null;
+    takeaway?: string | null;
+    takeaway_variant?: string | null;
+    quiz_question_count?: number | null;
+    content?: EducationLessonContent | null;
+  }> | null;
   quiz?: {
     id?: number | null;
     pass_score_pct?: number | null;
