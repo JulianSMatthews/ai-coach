@@ -1224,7 +1224,7 @@ def _normalise_generated_education_programme(
     if not raw_days and isinstance(generated.get("programme_days"), list):
         raw_days = generated.get("programme_days")
     if not raw_days:
-        raise ValueError("LLM response did not include any programme days")
+        raise ValueError("LLM response did not include any programme lessons")
     normalised_days: list[dict[str, object]] = []
     seen_indexes: set[int] = set()
     for idx, raw_day in enumerate(raw_days[:31], start=1):
@@ -1250,7 +1250,7 @@ def _normalise_generated_education_programme(
         seen_indexes.add(day_index)
         normalised_days.append(day)
     if not normalised_days:
-        raise ValueError("LLM response did not include usable programme days")
+        raise ValueError("LLM response did not include usable programme lessons")
     if requested_days > 0 and len(normalised_days) != requested_days:
         raise ValueError(f"LLM returned {len(normalised_days)} days; expected {requested_days}")
     try:
@@ -1400,9 +1400,9 @@ def _build_education_programme_generation_prompt(
         "Task:\n"
         "- Regenerate the full concept programme from the task_description and selected concept.\n"
         "- Use the existing programme only for context and continuity; replace the day plan, lesson goals, lesson scripts, daily actions, takeaways, and quizzes.\n"
-        f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
-        "- Keep every day on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
-        "- Generate one active variant per day unless the task_description explicitly asks for multiple variants.\n"
+        f"- Return exactly {requested_days} programme lessons, numbered 1 to {requested_days}.\n"
+        "- Keep every lesson on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
+        "- Generate one active variant per lesson unless the task_description explicitly asks for multiple variants.\n"
         "- Use level='build' unless the task_description asks for another level or a clear level progression.\n"
         f"{duration_instruction}"
         "- Include exactly 3 quiz questions for each variant.\n"
@@ -1451,10 +1451,10 @@ def _build_education_programme_outline_prompt(
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
         "- Create the full concept programme outline from the task_description and selected concept.\n"
-        f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
-        "- Keep every day on the selected programme concept and make the sequence feel progressive across the full concept.\n"
+        f"- Return exactly {requested_days} programme lessons, numbered 1 to {requested_days}.\n"
+        "- Keep every lesson on the selected programme concept and make the sequence feel progressive across the full concept.\n"
         f"{duration_instruction}"
-        "- For each day, return only lesson_goal, default_title, and default_summary.\n"
+        "- For each lesson, return only lesson_goal, default_title, and default_summary.\n"
         "- Do not include lesson variants, scripts, daily actions, takeaways, or quiz content in this outline response.\n"
         "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
         "CONTEXT_JSON:\n"
@@ -1514,14 +1514,14 @@ def _build_education_day_generation_prompt(
         ],
     }
     return (
-        "You are creating a HealthSense education programme day for the admin editor.\n"
+        "You are creating a HealthSense education programme lesson for the admin editor.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
-        "- Regenerate the selected day entirely from the task_description.\n"
-        "- Use the existing day only for continuity with the programme; replace the lesson goal, title, summary, script, daily action, takeaways, and quiz.\n"
-        "- Keep the day anchored to the selected concept and aligned with any programme outline or selected day outline supplied in CONTEXT_JSON.\n"
-        "- When selected_day_outline is supplied in CONTEXT_JSON, treat its lesson_goal, default_title, and default_summary as the intended direction for this day.\n"
-        "- Do not rewrite other days or refer to them in the output.\n"
+        "- Regenerate the selected lesson entirely from the task_description.\n"
+        "- Use the existing lesson only for continuity with the programme; replace the lesson goal, title, summary, script, daily action, takeaways, and quiz.\n"
+        "- Keep the lesson anchored to the selected concept and aligned with any programme outline or selected lesson outline supplied in CONTEXT_JSON.\n"
+        "- When selected_day_outline is supplied in CONTEXT_JSON, treat its lesson_goal, default_title, and default_summary as the intended direction for this lesson.\n"
+        "- Do not rewrite other lessons or refer to them in the output.\n"
         "- Generate one active variant unless the task_description explicitly asks for multiple variants.\n"
         f"- Use the existing level '{existing_level}' unless the task_description explicitly asks for another level.\n"
         f"{duration_instruction}"
@@ -1567,10 +1567,10 @@ def _build_education_day_questions_generation_prompt(
         ],
     }
     return (
-        "You are regenerating quiz questions only for a HealthSense education programme day.\n"
+        "You are regenerating quiz questions only for a HealthSense education programme lesson.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
-        "- Regenerate only the quiz questions for the selected day from the task_description and existing lesson content.\n"
+        "- Regenerate only the quiz questions for the selected lesson from the task_description and existing lesson content.\n"
         "- Do not rewrite or return lesson scripts, transcript text, video fields, daily actions, titles, summaries, takeaways, or avatar settings.\n"
         "- Use the existing lesson script, summary, action prompt, and takeaways only as source material for quiz relevance.\n"
         "- Return the same number of variants as supplied in CONTEXT_JSON, preserving each variant's level.\n"
@@ -1671,7 +1671,7 @@ def _generate_education_day_with_llm(
         "selected_day_index": day_index,
         "approx_video_duration": str(approx_video_duration or "").strip(),
         "existing_day": _compact_education_day_for_llm(existing_day),
-        "task_description": brief or "Regenerate the selected programme day from the supplied programme context.",
+        "task_description": brief or "Regenerate the selected programme lesson from the supplied programme context.",
     }
     if extra_context:
         programme_context["generation_context"] = extra_context
@@ -3548,7 +3548,7 @@ def list_education_programmes():
         "</div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
+        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Lessons</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
         + ("".join(items) if items else "<tr><td colspan='9'><em>No education programmes configured yet.</em></td></tr>")
         + "</table>"
         "</div>"
@@ -3629,11 +3629,11 @@ def simulate_education_programme(id: int):
         "</div>"
         "<div class='card'>"
         f"<h3 class='section-title'>{html.escape(programme_name)}</h3>"
-        f"<p class='help'>Run the concept programme day by day using the configured lesson video, daily action prompt, and quiz. This simulator does not change any real user progress.</p>"
+        f"<p class='help'>Run the concept programme lesson by lesson using the configured lesson video, daily action prompt, and quiz. This simulator does not change any real user progress.</p>"
         "<div class='simulator-stat-grid'>"
         f"<div class='simulator-stat'><div class='simulator-stat-label'>Concept</div><div class='simulator-stat-value'>{html.escape(concept_label or '—')}</div></div>"
         f"<div class='simulator-stat'><div class='simulator-stat-label'>Pillar</div><div class='simulator-stat-value'>{html.escape(pillar_key or '—')}</div></div>"
-        f"<div class='simulator-stat'><div class='simulator-stat-label'>Days</div><div class='simulator-stat-value'>{duration_days}</div></div>"
+        f"<div class='simulator-stat'><div class='simulator-stat-label'>Lessons</div><div class='simulator-stat-value'>{duration_days}</div></div>"
         f"<div class='simulator-stat'><div class='simulator-stat-label'>Variants</div><div class='simulator-stat-value'>{variant_count}</div></div>"
         "</div>"
         "</div>"
@@ -3641,8 +3641,8 @@ def simulate_education_programme(id: int):
         "<div class='card simulator-sidebar'>"
         "<div class='simulator-toolbar'>"
         "<div>"
-        "<h3 class='section-title'>Programme days</h3>"
-        "<p class='help' style='margin-bottom:0;'>Move sequentially through the concept and score each day's quiz before advancing.</p>"
+        "<h3 class='section-title'>Programme lessons</h3>"
+        "<p class='help' style='margin-bottom:0;'>Move sequentially through the concept and score each lesson's quiz before advancing.</p>"
         "</div>"
         "<div class='simulator-toolbar-actions'>"
         "<label class='subtle' for='simulator-level-select'>Level</label>"
@@ -4928,10 +4928,10 @@ async def generate_education_programme_day_with_llm(request: Request):
         ],
     }
     prompt = (
-        "You are creating a HealthSense education programme day for the admin editor.\n"
+        "You are creating a HealthSense education programme lesson for the admin editor.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
-        "- Regenerate the selected day entirely from the task_description.\n"
+        "- Regenerate the selected lesson entirely from the task_description.\n"
         "- Use the existing day only for continuity with the programme; replace the lesson goal, title, summary, script, daily action, takeaways, and quiz.\n"
         "- Generate one active variant unless the task_description explicitly asks for multiple variants.\n"
         f"- Use the existing level '{existing_level}' unless the task_description explicitly asks for another level.\n"
@@ -5199,9 +5199,9 @@ def edit_education_programme(id: int | None = None):
             "<input type='hidden' name='regenerate' value='1' />"
             "<button type='submit' class='danger'>Queue regeneration sequentially</button>"
             "</form>"
-            "<button type='button' class='secondary' id='review-selected-day-video-button'>Review selected day video</button>"
-            "<button type='button' class='secondary' id='generate-selected-day-video-button'>Generate selected day video</button>"
-            "<button type='button' class='secondary' id='refresh-selected-day-video-button'>Refresh selected day video</button>"
+            "<button type='button' class='secondary' id='review-selected-day-video-button'>Review selected lesson video</button>"
+            "<button type='button' class='secondary' id='generate-selected-day-video-button'>Generate selected lesson video</button>"
+            "<button type='button' class='secondary' id='refresh-selected-day-video-button'>Refresh selected lesson video</button>"
             f"<a class='button-link' href='/admin/education-programmes/avatar/job-status?programme_id={programme_id}'>View avatar progress</a>"
             "</div>"
             "</div>"
@@ -5299,24 +5299,24 @@ def edit_education_programme(id: int | None = None):
         <div class="card">
           <div class='stack' style='justify-content:space-between; margin-bottom:12px;'>
             <div>
-              <h3 class='section-title'>Programme days</h3>
-              <div class='subtle'>Review the programme as a day list. Select a day to open its edit card.</div>
+              <h3 class='section-title'>Programme lessons</h3>
+              <div class='subtle'>Review the programme as a lesson list. Select a lesson to open its edit card.</div>
             </div>
-            <button type="button" class="secondary" id="add-day-button">Add day</button>
+            <button type="button" class="secondary" id="add-day-button">Add lesson</button>
           </div>
           <div id="programme-days-summary" class="programme-day-list"></div>
         </div>
         <div class="card programme-day-detail-card" id="programme-day-detail-card">
           <div class="stack" style="justify-content:space-between;">
             <div>
-              <h3 class="section-title" id="programme-day-detail-title">Selected day</h3>
+              <h3 class="section-title" id="programme-day-detail-title">Selected lesson</h3>
               <div class="subtle" id="programme-day-detail-meta"></div>
             </div>
-            <button type="button" class="secondary" id="programme-day-list-focus">Back to days</button>
+            <button type="button" class="secondary" id="programme-day-list-focus">Back to lessons</button>
           </div>
           <details class="programme-day-llm" id="programme-day-llm">
-            <summary>Regenerate selected day with LLM</summary>
-            <p class="help">Use a task description to draft the whole selected day again, including the lesson script, daily action, takeaways, and quiz questions. Review the draft in the editor, then save the programme.</p>
+            <summary>Regenerate selected lesson with LLM</summary>
+            <p class="help">Use a task description to draft the whole selected lesson again, including the lesson script, daily action, takeaways, and quiz questions. Review the draft in the editor, then save the programme.</p>
             <div class="grid-2">
               <div class="field">
                 <label>Model<br/>
@@ -5337,7 +5337,7 @@ def edit_education_programme(id: int | None = None):
             </div>
           </details>
           <details class="programme-day-llm" id="programme-day-questions-llm">
-            <summary>Regenerate selected day quiz questions only</summary>
+            <summary>Regenerate selected lesson quiz questions only</summary>
             <p class="help">Use this when the lesson script, transcript, avatar video, daily action, and takeaways should stay unchanged. Only the 3 quiz questions for each variant are replaced in the editor; save the programme to persist them.</p>
             <div class="grid-2">
               <div class="field">
@@ -5406,7 +5406,7 @@ def edit_education_programme(id: int | None = None):
         const questionsLlmStatus = document.getElementById('questions-llm-status');
         const programmeLlmBrief = document.getElementById('programme-llm-brief');
         const programmeLlmModel = document.getElementById('programme-llm-model');
-        const programmeLlmDays = document.getElementById('programme-llm-days');
+        const programmeLlmLessons = document.getElementById('programme-llm-days');
         const programmeLlmVideoDuration = document.getElementById('programme-llm-video-duration');
         const programmeLlmButton = document.getElementById('generate-programme-llm');
         const programmeLlmStatus = document.getElementById('programme-llm-status');
@@ -5582,7 +5582,7 @@ def edit_education_programme(id: int | None = None):
           return Array.from(root.querySelectorAll(':scope > .js-day'));
         }}
 
-        function collectAllDaysFromDom() {{
+        function collectAllLessonsFromDom() {{
           return currentDayElements().map((dayEl) => collectDayData(dayEl));
         }}
 
@@ -6027,7 +6027,7 @@ def edit_education_programme(id: int | None = None):
           const variantWithVideo = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'))
             .find((variantEl) => Boolean(variantAvatarVideoUrl(variantEl)));
           if (!variantWithVideo) {{
-            window.alert('The selected day does not have a generated avatar video yet.');
+            window.alert('The selected lesson does not have a generated avatar video yet.');
             return;
           }}
           openAvatarReview(variantWithVideo);
@@ -6036,14 +6036,14 @@ def edit_education_programme(id: int | None = None):
         function selectedDayAvatarVariantElement() {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
-            window.alert('Select a programme day first.');
+            window.alert('Select a programme lesson first.');
             return null;
           }}
           const variants = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'));
           const activeVariant = variants.find((variantEl) => Boolean(variantEl.querySelector('.js-variant-active')?.checked));
           const variantEl = activeVariant || variants[0] || null;
           if (!variantEl) {{
-            window.alert('The selected day does not have a lesson variant yet.');
+            window.alert('The selected lesson does not have a lesson variant yet.');
             return null;
           }}
           return variantEl;
@@ -6239,7 +6239,7 @@ def edit_education_programme(id: int | None = None):
         function replaceSelectedDayWithGenerated(generatedDay) {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
-            window.alert('Select a programme day first.');
+            window.alert('Select a programme lesson first.');
             return;
           }}
           const existingDay = collectDayData(dayEl);
@@ -6254,7 +6254,7 @@ def edit_education_programme(id: int | None = None):
         function replaceSelectedDayQuestionsWithGenerated(generatedDay) {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
-            window.alert('Select a programme day first.');
+            window.alert('Select a programme lesson first.');
             return;
           }}
           const existingDay = collectDayData(dayEl);
@@ -6294,24 +6294,24 @@ def edit_education_programme(id: int | None = None):
           const generated = generatedProgramme && typeof generatedProgramme === 'object'
             ? (generatedProgramme.programme && typeof generatedProgramme.programme === 'object' ? generatedProgramme.programme : generatedProgramme)
             : {{}};
-          const rawDays = Array.isArray(generated.days) ? generated.days : [];
-          const existingDays = collectAllDaysFromDom();
-          const existingByIndex = new Map(existingDays.map((day) => [Number(day.day_index || 0), day]));
-          return rawDays.map((rawDay, index) => {{
+          const rawLessons = Array.isArray(generated.days) ? generated.days : [];
+          const existingLessons = collectAllLessonsFromDom();
+          const existingByIndex = new Map(existingLessons.map((day) => [Number(day.day_index || 0), day]));
+          return rawLessons.map((rawDay, index) => {{
             const generatedDay = rawDay && typeof rawDay === 'object' ? rawDay : {{}};
             const dayIndex = Number(generatedDay.day_index || index + 1);
-            const existingDay = existingByIndex.get(dayIndex) || existingDays[index] || null;
+            const existingDay = existingByIndex.get(dayIndex) || existingLessons[index] || null;
             return normaliseGeneratedDayForEditor({{ ...generatedDay, day_index: dayIndex }}, existingDay);
           }}).filter((day) => day.default_title || day.lesson_goal || (Array.isArray(day.variants) && day.variants.length));
         }}
 
         function replaceProgrammeWithGenerated(generatedProgramme) {{
-          const replacementDays = normaliseGeneratedProgrammeForEditor(generatedProgramme);
-          if (!replacementDays.length) {{
-            throw new Error('LLM response did not include usable programme days.');
+          const replacementLessons = normaliseGeneratedProgrammeForEditor(generatedProgramme);
+          if (!replacementLessons.length) {{
+            throw new Error('LLM response did not include usable programme lessons.');
           }}
           selectedDayPosition = 0;
-          renderDays(replacementDays);
+          renderLessons(replacementLessons);
           markProgrammeDraftDirty();
           selectDay(0);
         }}
@@ -6322,8 +6322,8 @@ def edit_education_programme(id: int | None = None):
             programmeConceptInput?.focus();
             return;
           }}
-          const dayCount = Math.max(1, Math.min(31, Number(programmeLlmDays?.value || currentDayElements().length || 7)));
-          const existingDays = collectAllDaysFromDom();
+          const dayCount = Math.max(1, Math.min(31, Number(programmeLlmLessons?.value || currentDayElements().length || 7)));
+          const existingLessons = collectAllLessonsFromDom();
           const brief = String(programmeLlmBrief?.value || '').trim();
           if (!window.confirm(`Replace the current editor draft with a new ${{dayCount}}-day concept programme? You still need to save afterwards.`)) {{
             return;
@@ -6345,8 +6345,8 @@ def edit_education_programme(id: int | None = None):
               pillar_key: selectedProgrammePillar(),
               programme_concept_key: selectedProgrammeConceptKey(),
               programme_concept_label: resolvedProgrammeConceptLabel(),
-              duration_days: existingDays.length,
-              days: existingDays,
+              duration_days: existingLessons.length,
+              days: existingLessons,
             }},
           }};
           const previousText = programmeLlmButton ? programmeLlmButton.textContent : '';
@@ -6399,7 +6399,7 @@ def edit_education_programme(id: int | None = None):
         async function requestSelectedDayLlmGeneration() {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
-            window.alert('Select a programme day first.');
+            window.alert('Select a programme lesson first.');
             return;
           }}
           const brief = String(dayLlmBrief?.value || '').trim();
@@ -6462,7 +6462,7 @@ def edit_education_programme(id: int | None = None):
         async function requestSelectedDayQuestionsLlmGeneration() {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
-            window.alert('Select a programme day first.');
+            window.alert('Select a programme lesson first.');
             return;
           }}
           const brief = String(questionsLlmBrief?.value || '').trim();
@@ -6517,18 +6517,18 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
-        function renderDays(days) {{
-          const sortedDays = [...days]
+        function renderLessons(days) {{
+          const sortedLessons = [...days]
             .sort((left, right) => Number(left.day_index || 0) - Number(right.day_index || 0));
-          root.innerHTML = sortedDays.map((day) => renderDay(day)).join('');
-          selectedDayPosition = Math.min(Math.max(0, selectedDayPosition), Math.max(0, sortedDays.length - 1));
+          root.innerHTML = sortedLessons.map((day) => renderDay(day)).join('');
+          selectedDayPosition = Math.min(Math.max(0, selectedDayPosition), Math.max(0, sortedLessons.length - 1));
           renderDaySummaries();
           updateAllVariantAvatarReviewStates();
         }}
 
         function renderInitial() {{
           const days = Array.isArray(seed.days) ? [...seed.days] : [];
-          renderDays(days.length ? days : [emptyDay(1)]);
+          renderLessons(days.length ? days : [emptyDay(1)]);
         }}
 
         document.getElementById('add-day-button').addEventListener('click', function() {{
@@ -6537,11 +6537,11 @@ def edit_education_programme(id: int | None = None):
             const value = Number(dayEl.querySelector('.js-day-index')?.value || 0);
             return Math.max(maxValue, value);
           }}, 0) + 1;
-          const days = collectAllDaysFromDom();
+          const days = collectAllLessonsFromDom();
           days.push(emptyDay(nextIndex));
           selectedDayPosition = days.length - 1;
           markProgrammeDraftDirty();
-          renderDays(days);
+          renderLessons(days);
         }});
 
         summaryRoot?.addEventListener('click', function(event) {{
@@ -6641,13 +6641,13 @@ def edit_education_programme(id: int | None = None):
           if (pillarDisplayInput) {{
             pillarDisplayInput.value = titleCasePillar(selectedProgrammePillar());
           }}
-          const days = collectAllDaysFromDom();
-          renderDays(days.length ? days : [emptyDay(1)]);
+          const days = collectAllLessonsFromDom();
+          renderLessons(days.length ? days : [emptyDay(1)]);
         }});
 
         programmeConceptLabelInput?.addEventListener('input', function() {{
-          const days = collectAllDaysFromDom();
-          renderDays(days.length ? days : [emptyDay(1)]);
+          const days = collectAllLessonsFromDom();
+          renderLessons(days.length ? days : [emptyDay(1)]);
         }});
 
         root.addEventListener('input', function(event) {{
@@ -6675,7 +6675,7 @@ def edit_education_programme(id: int | None = None):
 
         reviewSelectedDayVideoButton?.addEventListener('click', openSelectedDayVideoReview);
         generateSelectedDayVideoButton?.addEventListener('click', function() {{
-          if (window.confirm('Generate or regenerate the avatar video for the selected programme day?')) {{
+          if (window.confirm('Generate or regenerate the avatar video for the selected programme lesson?')) {{
             requestSelectedDayAvatar('generate');
           }}
         }});
