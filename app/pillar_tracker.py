@@ -1612,8 +1612,6 @@ def _day_score(
     evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
     day: date,
 ) -> int | None:
-    if not _day_complete(day_rows, required_concepts):
-        return None
     scores: list[int] = []
     for item in required_concepts:
         score = (
@@ -1622,7 +1620,7 @@ def _day_score(
             .get("score")
         )
         if score is None:
-            return None
+            continue
         scores.append(int(score))
     if not scores:
         return None
