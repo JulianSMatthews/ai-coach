@@ -7,6 +7,11 @@
   --surface-soft: rgba(251, 247, 240, 0.92);
   --surface-muted: #fffaf0;
   --surface-translucent: rgba(255, 250, 243, 0.88);
+  --chrome: #fffdf9;
+  --chrome-soft: #fffaf3;
+  --chrome-border: #efe7db;
+  --chrome-text: #1e1b16;
+  --chrome-muted: #6b6257;
   --border: #e7e1d6;
   --border-strong: #efe7db;
   --text-primary: #1e1b16;
@@ -40,6 +45,11 @@
   --surface-soft: rgba(27, 22, 18, 0.94);
   --surface-muted: #2a221d;
   --surface-translucent: rgba(33, 26, 22, 0.9);
+  --chrome: #221c18;
+  --chrome-soft: #2c241f;
+  --chrome-border: #4c4035;
+  --chrome-text: #f4ecdf;
+  --chrome-muted: #d1c3b4;
   --border: #4c4035;
   --border-strong: #5c4d40;
   --text-primary: #f4ecdf;
@@ -169,12 +179,24 @@ details > summary::-webkit-details-marker {
   background-color: #3d2818 !important;
 }
 
+:root[data-theme="dark"] .bg-\[\#fffdf9\],
+:root[data-theme="dark"] .bg-\[\#fffdf8\],
+:root[data-theme="dark"] .bg-\[\#fffdfa\] {
+  background-color: var(--chrome) !important;
+}
+
 :root[data-theme="dark"] .border-\[\#efe7db\],
 :root[data-theme="dark"] .border-\[\#e7e1d6\],
 :root[data-theme="dark"] .border-\[\#d9cdbb\],
 :root[data-theme="dark"] .border-\[\#eadfce\],
 :root[data-theme="dark"] .border-\[\#eadcc6\] {
   border-color: var(--border) !important;
+}
+
+:root[data-theme="dark"] .text-black,
+:root[data-theme="dark"] .text-\[\#000000\],
+:root[data-theme="dark"] .text-\[\#000\] {
+  color: var(--chrome-text) !important;
 }
 
 :root[data-theme="dark"] .border-\[\#f4c9a9\] {

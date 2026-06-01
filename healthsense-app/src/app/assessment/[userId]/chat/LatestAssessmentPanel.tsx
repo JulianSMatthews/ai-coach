@@ -2881,7 +2881,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto overflow-hidden rounded-[36px] border border-[#e7e1d6] bg-[#fffdf9] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
+            <div className="pointer-events-auto overflow-hidden rounded-[36px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
               <div className="grid grid-cols-4 p-1">
                 <button
                   type="button"
@@ -2893,7 +2893,7 @@ export default function LatestAssessmentPanel({
                   className={homeDockButtonClassName}
                   style={activeDockKey === "bio" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
-                  <BiometricsIcon className="h-5 w-5 text-black" />
+                  <BiometricsIcon className="h-5 w-5 text-[var(--chrome-text)]" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Bio
                   </span>
@@ -2908,7 +2908,7 @@ export default function LatestAssessmentPanel({
                   className={homeDockButtonClassName}
                   style={activeDockKey === "plan" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
-                  <HabitStepsIcon className="h-5 w-5 text-black" />
+                  <HabitStepsIcon className="h-5 w-5 text-[var(--chrome-text)]" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Plan
                   </span>
@@ -2923,7 +2923,7 @@ export default function LatestAssessmentPanel({
                   className={homeDockButtonClassName}
                   style={activeDockKey === "learn" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
-                  <InsightIcon className="h-5 w-5 text-black" />
+                  <InsightIcon className="h-5 w-5 text-[var(--chrome-text)]" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Learn
                   </span>
@@ -2938,7 +2938,7 @@ export default function LatestAssessmentPanel({
                   className={homeDockButtonClassName}
                   style={activeDockKey === "coach" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
-                  <GiaMessageIcon className="h-5 w-5 text-black" />
+                  <GiaMessageIcon className="h-5 w-5 text-[var(--chrome-text)]" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Coach
                   </span>

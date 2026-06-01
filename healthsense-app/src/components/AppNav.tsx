@@ -43,14 +43,14 @@ function ScoreBadge({ score }: { score: number }) {
           strokeLinecap="round"
           />
         </svg>
-      <span className="absolute text-[10px] font-semibold leading-none text-black">{score}</span>
+      <span className="absolute text-[10px] font-semibold leading-none text-[var(--chrome-text)]">{score}</span>
     </span>
   );
 }
 
 function FlameBadge({ days }: { days: number }) {
   return (
-    <span className="inline-flex h-11 items-center gap-1.5 rounded-full border border-[#efe7db] bg-[#fffdf9] px-3 text-black">
+    <span className="inline-flex h-11 items-center gap-1.5 rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] px-3 text-[var(--chrome-text)]">
       <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden="true">
         <path
           d="M12.5 3.5c.5 2.4-.7 3.8-2.1 5.4C8.8 10.3 7 12.4 7 15.1A5 5 0 0 0 12 20a5 5 0 0 0 5-4.9c0-1.8-.8-3.4-2-4.8-.4-.5-.9-1-1.3-1.6-.2.9-.7 1.7-1.5 2.4-.9-1-.8-2.5-.2-3.9.4-1 .5-1.9.5-3 0-.2 0-.4 0-.7Z"
@@ -109,7 +109,7 @@ export default function AppNav({
         <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-start">
           <div className="min-w-0">
             {greetingLabel ? (
-              <p className="truncate text-base font-semibold leading-none text-[#1e1b16] sm:text-lg">
+              <p className="truncate text-base font-semibold leading-none text-[var(--text-primary)] sm:text-lg">
                 {greetingLabel}
               </p>
             ) : (
@@ -125,7 +125,7 @@ export default function AppNav({
                     window.dispatchEvent(new CustomEvent("healthsense-open-objectives"));
                   }
                 }}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#efe7db] bg-[#fffdf9]"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)]"
                 aria-label="Open overall score"
               >
                 <ScoreBadge score={resolvedOverallScore} />
@@ -134,8 +134,7 @@ export default function AppNav({
             {resolvedInteractionDaysCount !== null ? <FlameBadge days={resolvedInteractionDaysCount} /> : null}
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#efe7db] md:hidden"
-              style={{ backgroundColor: "#fffdf9", color: "#000000" }}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] text-[var(--chrome-text)] md:hidden"
               aria-label="Open menu"
               aria-expanded={open}
               onClick={() => setOpen(true)}
@@ -163,7 +162,7 @@ export default function AppNav({
           {links.map((link) => (
             <Link
               key={link.label}
-              className="rounded-full border border-[#efe7db] bg-[#fffdf9] px-3 py-1 text-sm text-black"
+              className="rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] px-3 py-1 text-sm text-[var(--chrome-text)]"
               href={link.href}
             >
               {link.label}
@@ -186,7 +185,7 @@ export default function AppNav({
           className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
-          style={{ backgroundColor: "#fffdf9", color: "#000000" }}
+          style={{ backgroundColor: "var(--chrome)", color: "var(--chrome-text)" }}
         >
           <div className="flex items-center justify-between">
             <Link
@@ -198,8 +197,7 @@ export default function AppNav({
             </Link>
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#efe7db]"
-              style={{ backgroundColor: "#fffdf9", color: "#000000" }}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] text-[var(--chrome-text)]"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
@@ -215,14 +213,14 @@ export default function AppNav({
             </button>
           </div>
 
-          <div className="mt-4 grid gap-2 text-[13px] text-black">
+          <div className="mt-4 grid gap-2 text-[13px] text-[var(--chrome-text)]">
             {links.map((link) => (
               <Link
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="rounded-[18px] border border-[#e7e1d6] px-4 py-2.5 text-sm text-black transition"
-                style={{ backgroundColor: "#f6f1e7" }}
+                className="rounded-[18px] border border-[var(--chrome-border)] px-4 py-2.5 text-sm text-[var(--chrome-text)] transition"
+                style={{ backgroundColor: "var(--chrome-soft)" }}
               >
                 {link.label}
               </Link>
@@ -238,7 +236,7 @@ export default function AppNav({
           <div className="mt-4">
             <LogoutButton
               className="w-full rounded-[18px] px-4 py-2.5 text-center"
-              style={{ backgroundColor: "#f6f1e7", borderColor: "#e7e1d6", color: "#000000" }}
+              style={{ backgroundColor: "var(--chrome-soft)", borderColor: "var(--chrome-border)", color: "var(--chrome-text)" }}
             />
           </div>
 
