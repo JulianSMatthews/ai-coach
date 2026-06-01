@@ -101,8 +101,6 @@ type AssessmentCompletionSummaryMedia = {
 
 type HomeSurface = "tracking" | "habits" | "insight" | "ask";
 type HomeSurfaceEntryMode = "guided" | "summary";
-type EducationQuizAnswerValue = string | number | boolean | string[] | null;
-type EducationQuizQuestion = NonNullable<NonNullable<EducationPlanTodayResponse["quiz"]>["questions"]>[number];
 type GiaMessageRealtimeSessionResponse = {
   session_id?: string;
   speech_token?: string;
@@ -641,56 +639,6 @@ function firstNonEmptyString(...values: unknown[]): string {
   return "";
 }
 
-function normaliseSerializedEducationQuizValue(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  const token = value.trim();
-  if (!token) return "";
-  if (token.length >= 2 && token[0] === token[token.length - 1] && (token[0] === "'" || token[0] === '"')) {
-    const inner = token.slice(1, -1).trim();
-    return inner ? normaliseSerializedEducationQuizValue(inner) : "";
-  }
-  if (
-    token.length >= 2 &&
-    (
-      (token.startsWith('"') && token.endsWith('"')) ||
-      (token.startsWith("[") && token.endsWith("]")) ||
-      (token.startsWith("{") && token.endsWith("}"))
-    )
-  ) {
-    try {
-      return normaliseSerializedEducationQuizValue(JSON.parse(token));
-    } catch {
-      return token;
-    }
-  }
-  return token;
-}
-
-function educationQuizOptionLabel(option: unknown): string {
-  const normalizedOption = normaliseSerializedEducationQuizValue(option);
-  if (typeof normalizedOption === "string" || typeof normalizedOption === "number" || typeof normalizedOption === "boolean") {
-    return String(normalizedOption).trim();
-  }
-  if (normalizedOption && typeof normalizedOption === "object") {
-    const row = normalizedOption as Record<string, unknown>;
-    return educationQuizOptionLabel(row.label || row.text || row.value || "");
-  }
-  return "";
-}
-
-function educationQuizOptions(question: EducationQuizQuestion | null | undefined): string[] {
-  const options = Array.isArray(question?.options) ? question.options : [];
-  return options.map(educationQuizOptionLabel).filter((option) => Boolean(option));
-}
-
-function educationQuizAnswerLabel(answer: unknown): string {
-  const normalizedAnswer = normaliseSerializedEducationQuizValue(answer);
-  if (Array.isArray(normalizedAnswer)) {
-    return normalizedAnswer.map(educationQuizOptionLabel).filter(Boolean).join(", ");
-  }
-  return educationQuizOptionLabel(normalizedAnswer);
-}
-
 function fallbackLocalIsoDate(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -824,15 +772,7 @@ export default function AssessmentChatBox({
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
   const [educationCoursesOpen, setEducationCoursesOpen] = useState(false);
-  const [educationQuizAnswers, setEducationQuizAnswers] = useState<Record<string, EducationQuizAnswerValue>>({});
-  const [educationQuizSubmitting, setEducationQuizSubmitting] = useState(false);
-  const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
   const educationPlanRequestIdRef = useRef(0);
-  const educationVideoProgressRef = useRef<{ key: string; sent80: boolean; sent100: boolean }>({
-    key: "",
-    sent80: false,
-    sent100: false,
-  });
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
@@ -921,11 +861,6 @@ export default function AssessmentChatBox({
   const educationVideoUrl = explicitEducationVideoUrl || (
     isLikelyVideoUrl(fallbackEducationMediaUrl) ? fallbackEducationMediaUrl : ""
   );
-  const educationVideoPosterUrl = firstNonEmptyString(
-    educationAvatarRecord?.poster_url,
-    educationAvatarRecord?.posterUrl,
-    educationContent?.poster_url,
-  );
   const educationHasVideo = Boolean(educationVideoUrl);
   const educationAvatarStatus = String(educationAvatarRecord?.status || "").trim().toLowerCase();
   const educationAvatarPending = Boolean(
@@ -933,9 +868,6 @@ export default function AssessmentChatBox({
       educationAvatarRecord?.job_id &&
       !["failed", "cancelled", "canceled"].includes(educationAvatarStatus),
   );
-  const educationMediaKey = `${String(educationPlan?.plan_id || "education")}:${String(
-    educationLesson?.lesson_variant_id || "",
-  )}:${educationVideoUrl}`;
   const educationProgrammeName = normalizeLessonHeading(educationPlan?.programme?.name || "");
   const educationPillarPalette = getPillarPalette(educationPlan?.pillar_key);
   const educationPillarIconSrc = educationPillarPalette.icon;
@@ -947,9 +879,6 @@ export default function AssessmentChatBox({
   );
   const educationDayIndex = Number(educationPlan?.day_index || 0);
   const educationDurationDays = Number(educationPlan?.programme?.duration_days || 0);
-  const educationPreviousLesson = educationPlan?.previous_lesson || null;
-  const educationPreviousLearningTitle = normalizeLessonHeading(educationPreviousLesson?.title || "");
-  const educationPreviousLearningText = String(educationPreviousLesson?.takeaway || "").trim();
   const educationLessonQueue = useMemo(
     () => (Array.isArray(educationPlan?.lessons) ? educationPlan.lessons.filter(Boolean) : []),
     [educationPlan?.lessons],
@@ -1006,16 +935,7 @@ export default function AssessmentChatBox({
         lessons: grouped.get(pillarKey) || [],
       }));
   }, [educationLessonQueue]);
-  const educationQuizQuestions = useMemo(
-    () => (Array.isArray(educationPlan?.quiz?.questions) ? educationPlan.quiz.questions : []),
-    [educationPlan?.quiz?.questions],
-  );
   const educationCompletionStatus = String(educationPlan?.progress?.completion_status || "").trim().toLowerCase();
-  const educationQuizCompleted = Boolean(
-    educationPlan?.progress?.quiz_completed_at ||
-      educationCompletionStatus.includes("quiz") ||
-      educationCompletionStatus === "completed",
-  );
   const educationFocusCompleted = Boolean(
     educationPlan?.progress?.completed_at || educationCompletionStatus === "completed",
   );
@@ -1069,10 +989,6 @@ export default function AssessmentChatBox({
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
-  const insightQuizSubmitVisible =
-    homeSurface === "insight" &&
-    educationQuizQuestions.length > 0 &&
-    !educationQuizCompleted;
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -1202,80 +1118,6 @@ export default function AssessmentChatBox({
       return currentDayIndex || current || null;
     });
   }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.day_index]);
-
-  const recordEducationVideoProgress = useCallback(async (watchPct: number, watchedSeconds?: number) => {
-    try {
-      const res = await fetch("/api/education-plan/video-progress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          watch_pct: Math.max(0, Math.min(100, Math.round(watchPct))),
-          watched_seconds: Number.isFinite(Number(watchedSeconds)) ? Math.max(0, Math.round(Number(watchedSeconds))) : undefined,
-        }),
-      });
-      const text = await res.text().catch(() => "");
-      if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to save lesson progress."));
-      }
-      const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
-      setEducationPlan(data);
-      setEducationPlanError(null);
-    } catch {
-      setEducationPlanError(null);
-    }
-  }, [userId]);
-
-  const selectEducationQuizAnswer = useCallback((questionId: number | undefined, answer: EducationQuizAnswerValue) => {
-    if (!questionId) return;
-    setEducationQuizAnswers((current) => ({
-      ...current,
-      [String(questionId)]: answer,
-    }));
-    setEducationQuizMessage(null);
-  }, []);
-
-  const submitEducationQuiz = useCallback(async () => {
-    const answers = educationQuizQuestions
-      .map((question) => {
-        const questionId = Number(question?.id || 0);
-        if (!questionId) return null;
-        const answer = educationQuizAnswers[String(questionId)];
-        return {
-          question_id: questionId,
-          answer,
-        };
-      })
-      .filter((item): item is { question_id: number; answer: EducationQuizAnswerValue } => Boolean(item));
-    const missingAnswer = answers.some((item) => item.answer === undefined || item.answer === null || item.answer === "");
-    if (!answers.length || missingAnswer || answers.length < educationQuizQuestions.length) {
-      setEducationQuizMessage("Complete the quick check before submitting.");
-      return;
-    }
-    setEducationQuizSubmitting(true);
-    setEducationQuizMessage(null);
-    try {
-      const res = await fetch("/api/education-plan/quiz-submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          answers,
-        }),
-      });
-      const text = await res.text().catch(() => "");
-      if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to submit the quick check."));
-      }
-      const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
-      setEducationPlan(data);
-      setEducationQuizMessage("Quick check saved.");
-    } catch (error) {
-      setEducationQuizMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setEducationQuizSubmitting(false);
-    }
-  }, [educationQuizAnswers, educationQuizQuestions, userId]);
 
   const refreshChatState = useCallback(
     async (options?: { showLoading?: boolean; clearStatus?: boolean }) => {
@@ -1725,15 +1567,6 @@ export default function AssessmentChatBox({
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (educationVideoProgressRef.current.key === educationMediaKey) return;
-    educationVideoProgressRef.current = {
-      key: educationMediaKey,
-      sent80: false,
-      sent100: false,
-    };
-  }, [educationMediaKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2725,162 +2558,6 @@ export default function AssessmentChatBox({
                     </div>
                   ) : null}
                 </div>
-                {educationPreviousLearningTitle || educationPreviousLearningText ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      What we learnt in the previous lesson
-                    </p>
-                    {educationPreviousLearningTitle ? (
-                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
-                        {educationPreviousLearningTitle}
-                      </p>
-                    ) : null}
-                    {educationPreviousLearningText ? (
-                      <p className="mt-2 text-sm leading-6 text-[#6b6257]">
-                        {educationPreviousLearningText}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {educationHasVideo ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0]">
-                    <video
-                      key={`education-video-${educationMediaKey}`}
-                      controls
-                      preload="metadata"
-                      playsInline
-                      poster={educationVideoPosterUrl || undefined}
-                      onTimeUpdate={(event) => {
-                        const video = event.currentTarget;
-                        if (!video.duration || !Number.isFinite(video.duration)) return;
-                        const pct = (video.currentTime / video.duration) * 100;
-                        if (pct >= 80 && !educationVideoProgressRef.current.sent80) {
-                          educationVideoProgressRef.current.sent80 = true;
-                          void recordEducationVideoProgress(pct, video.currentTime);
-                        }
-                      }}
-                      onEnded={(event) => {
-                        if (educationVideoProgressRef.current.sent100) return;
-                        educationVideoProgressRef.current.sent100 = true;
-                        void recordEducationVideoProgress(100, event.currentTarget.currentTime);
-                      }}
-                      className="max-h-[22rem] w-full bg-white object-contain"
-                    >
-                      <source src={educationVideoUrl} />
-                    </video>
-                  </div>
-                ) : educationAvatarPending ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      Avatar video
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-[#6b6257]">
-                      Today&apos;s avatar video is being prepared. This will update automatically when the video is ready.
-                    </p>
-                  </div>
-                ) : educationContent?.script || educationContent?.body ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      Lesson
-                    </p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">
-                      {educationContent.script || educationContent.body}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <p className="text-sm text-[#6b6257]">Lesson content is not available right now.</p>
-                  </div>
-                )}
-                {educationLesson?.action_prompt ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      Today&apos;s action
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-[#1e1b16]">{educationLesson.action_prompt}</p>
-                  </div>
-                ) : null}
-                {selectedEducationLessonIsCurrent && educationQuizQuestions.length ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        Quick check
-                      </p>
-                      {educationQuizCompleted ? (
-                        <p className="text-xs font-semibold text-[#5d5348]">
-                          {educationPlan.progress?.quiz_score_pct != null
-                            ? `${Math.round(Number(educationPlan.progress.quiz_score_pct))}%`
-                            : "Complete"}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="mt-3 space-y-4">
-                      {educationQuizQuestions.map((question, index) => {
-                        const questionId = Number(question?.id || 0);
-                        const selectedAnswer = educationQuizAnswers[String(questionId)] ?? question?.submitted_answer;
-                        const selectedAnswerLabel = educationQuizAnswerLabel(selectedAnswer);
-                        const options = educationQuizOptions(question);
-                        const answered = question?.submitted_answer !== undefined && question?.submitted_answer !== null;
-                        const isCorrect = typeof question?.is_correct === "boolean" ? question.is_correct : null;
-                        const correctAnswerLabel = educationQuizAnswerLabel(question?.correct_answer);
-                        return (
-                          <div key={questionId || index}>
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-sm font-semibold text-[#1e1b16]">
-                                {question?.question_text || `Question ${index + 1}`}
-                              </p>
-                              {answered && isCorrect !== null ? (
-                                <p className={`shrink-0 text-xs font-semibold ${isCorrect ? "text-[#317a4d]" : "text-[#9a3f2d]"}`}>
-                                  {isCorrect ? "Correct" : "Not quite"}
-                                </p>
-                              ) : null}
-                            </div>
-                            {options.length ? (
-                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                                {options.map((option) => {
-                                  const active = selectedAnswerLabel === educationQuizOptionLabel(option);
-                                  const optionButtonStyle =
-                                    active && answered && isCorrect === true
-                                      ? { backgroundColor: "#ffffff", color: "#1e1b16", borderColor: "#7fb48f" }
-                                      : active && answered && isCorrect === false
-                                        ? { backgroundColor: "#ffffff", color: "#1e1b16", borderColor: "#c98977" }
-                                        : active
-                                          ? { backgroundColor: "#ffffff", color: "#1e1b16", borderColor: "#d3541b" }
-                                          : { backgroundColor: "#ffffff", color: "#6b6257", borderColor: "#efe7db" };
-                                  return (
-                                    <button
-                                      key={option}
-                                      type="button"
-                                      onClick={() => selectEducationQuizAnswer(questionId, option)}
-                                      disabled={educationQuizCompleted || educationQuizSubmitting}
-                                      className="rounded-[14px] border px-3 py-2 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-70"
-                                      style={optionButtonStyle}
-                                    >
-                                      {option}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : null}
-                            {answered && isCorrect === false && correctAnswerLabel ? (
-                              <p className="mt-2 text-xs text-[#6b6257]">Correct answer: {correctAnswerLabel}</p>
-                            ) : null}
-                            {answered && question?.explanation ? (
-                              <p className="mt-2 text-xs leading-5 text-[#6b6257]">{question.explanation}</p>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {educationPlan.takeaway ? (
-                      <p className="mt-4 text-sm leading-6 text-[#5d5348]">{educationPlan.takeaway}</p>
-                    ) : null}
-                    {educationQuizMessage ? (
-                      <p className="mt-3 text-sm text-[#8a3e1a]">{educationQuizMessage}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {educationPlanError ? <p className="text-sm text-[#8a3e1a]">{educationPlanError}</p> : null}
               </div>
             ) : (
               <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
@@ -3015,48 +2692,6 @@ export default function AssessmentChatBox({
             >
               Start daily check-in
             </button>
-          ) : insightQuizSubmitVisible ? (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
-                {viewingHomeSurfaceFromSummary
-                  ? "Daily view"
-                  : `${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {previousHomeSurface && !viewingHomeSurfaceFromSummary ? (
-                  <button
-                    type="button"
-                    onClick={() => setHomeSurface(previousHomeSurface)}
-                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
-                    style={homePlainButtonStyle}
-                  >
-                    Back
-                  </button>
-                ) : null}
-                {nextHomeSurface && !viewingHomeSurfaceFromSummary ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEducationQuizMessage(null);
-                      setHomeSurface(nextHomeSurface);
-                    }}
-                    className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
-                    style={homePlainButtonStyle}
-                  >
-                    Skip today&apos;s focus
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void submitEducationQuiz()}
-                  disabled={educationQuizSubmitting}
-                  className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
-                  style={homePrimaryButtonStyle}
-                >
-                  {educationQuizSubmitting ? "Saving" : "Submit quick check"}
-                </button>
-              </div>
-            </div>
           ) : viewingHomeSurfaceFromSummary ? (
             <div className="flex justify-end">
               <button
