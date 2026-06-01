@@ -1072,7 +1072,6 @@ export default function AssessmentChatBox({
     educationPlanRequestIdRef.current = requestId;
     setEducationPlanLoading(true);
     setEducationPlanError(null);
-    setEducationQuizMessage(null);
     try {
       const params = new URLSearchParams({ userId });
       const res = await fetch(`/api/education-plan/today?${params.toString()}`, {
@@ -1391,8 +1390,6 @@ export default function AssessmentChatBox({
     setEducationPlan(null);
     setEducationPlanError(null);
     setEducationPlanLoading(false);
-    setEducationQuizAnswers({});
-    setEducationQuizMessage(null);
   }, [assessmentCompleted, initialMorningSequenceDay, initialTrackerSummary, stopFinalGiaListening, userId]);
 
   useEffect(() => {
@@ -1576,8 +1573,6 @@ export default function AssessmentChatBox({
       setDailyHabitPlanError(null);
       setEducationPlan(null);
       setEducationPlanError(null);
-      setEducationQuizAnswers({});
-      setEducationQuizMessage(null);
       setFinalGiaMessage(null);
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
