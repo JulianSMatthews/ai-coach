@@ -771,7 +771,6 @@ export default function AssessmentChatBox({
   const [educationPlanLoading, setEducationPlanLoading] = useState(false);
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
-  const [educationCoursesOpen, setEducationCoursesOpen] = useState(false);
   const educationPlanRequestIdRef = useRef(0);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
@@ -868,17 +867,6 @@ export default function AssessmentChatBox({
       educationAvatarRecord?.job_id &&
       !["failed", "cancelled", "canceled"].includes(educationAvatarStatus),
   );
-  const educationProgrammeName = normalizeLessonHeading(educationPlan?.programme?.name || "");
-  const educationPillarPalette = getPillarPalette(educationPlan?.pillar_key);
-  const educationPillarIconSrc = educationPillarPalette.icon;
-  const educationPillarLabel = String(
-    educationPlan?.pillar_label || educationPillarPalette.label || "",
-  ).trim();
-  const educationConceptTitle = normalizeLessonHeading(
-    educationPlan?.concept_label || educationLesson?.title || educationPlan?.pillar_label || "",
-  );
-  const educationDayIndex = Number(educationPlan?.day_index || 0);
-  const educationDurationDays = Number(educationPlan?.programme?.duration_days || 0);
   const educationLessonQueue = useMemo(
     () => (Array.isArray(educationPlan?.lessons) ? educationPlan.lessons.filter(Boolean) : []),
     [educationPlan?.lessons],
@@ -887,16 +875,6 @@ export default function AssessmentChatBox({
     () => educationLessonQueue.findIndex((lesson) => Boolean(lesson?.is_current)),
     [educationLessonQueue],
   );
-  const selectedEducationLesson = useMemo(
-    () =>
-      educationLessonQueue.find((lesson) => Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0)) ||
-      educationLessonQueue[educationCurrentLessonIndex] ||
-      educationPlan?.lesson ||
-      null,
-    [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson, selectedEducationLessonDayIndex],
-  );
-  const selectedEducationLessonDay = Number(selectedEducationLesson?.day_index || educationDayIndex || 0);
-  const selectedEducationLessonIsCurrent = Boolean(selectedEducationLesson?.is_current);
   const educationLessonRail = useMemo(() => {
     const currentLesson = educationLessonQueue[educationCurrentLessonIndex] || educationPlan?.lesson || null;
     const currentDayIndex = Number(currentLesson?.day_index || 0);
@@ -919,47 +897,6 @@ export default function AssessmentChatBox({
       });
     return ordered;
   }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson]);
-  const educationCourseGroups = useMemo(() => {
-    const order = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
-    const grouped = new Map<string, NonNullable<typeof educationLessonQueue>[number][]>();
-    educationLessonQueue.forEach((lesson) => {
-      const pillarKey = String(lesson?.pillar_key || "").trim().toLowerCase() || "uncategorized";
-      const items = grouped.get(pillarKey) || [];
-      items.push(lesson);
-      grouped.set(pillarKey, items);
-    });
-    return order
-      .filter((pillarKey) => grouped.has(pillarKey))
-      .map((pillarKey) => ({
-        pillarKey,
-        lessons: grouped.get(pillarKey) || [],
-      }));
-  }, [educationLessonQueue]);
-  const educationCompletionStatus = String(educationPlan?.progress?.completion_status || "").trim().toLowerCase();
-  const educationFocusCompleted = Boolean(
-    educationPlan?.progress?.completed_at || educationCompletionStatus === "completed",
-  );
-  const educationStreakDays = Math.max(0, Math.floor(Number(educationPlan?.streak_days || 0) || 0));
-  const educationBestStreakDays = Math.max(0, Math.floor(Number(educationPlan?.best_streak_days || 0) || 0));
-  const educationStreakLabel = `${educationStreakDays} lesson${educationStreakDays === 1 ? "" : "s"}`;
-  const educationBestStreakLabel = `${educationBestStreakDays} lesson${educationBestStreakDays === 1 ? "" : "s"}`;
-  const educationCompletedDays = educationDurationDays > 0 && educationDayIndex > 0
-    ? Math.min(
-        educationDurationDays,
-        Math.max(0, educationDayIndex - (educationFocusCompleted ? 0 : 1)),
-      )
-    : null;
-  const educationCompletedDaysLabel =
-    educationCompletedDays !== null && educationDurationDays > 0
-      ? `${educationCompletedDays}/${educationDurationDays} lessons complete`
-      : educationDayIndex > 0
-        ? `Lesson ${educationDayIndex}`
-        : "";
-  const educationFocusStreakSummary = [
-    educationCompletedDaysLabel,
-    `${educationStreakLabel} streak`,
-    educationBestStreakDays > educationStreakDays ? `Best ${educationBestStreakLabel}` : "",
-  ].filter(Boolean).join(" · ");
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -2306,29 +2243,8 @@ export default function AssessmentChatBox({
     <section className="-mx-3 overflow-hidden bg-transparent sm:mx-0">
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         <div className="shrink-0 px-4 py-4 sm:px-5">
-          {homeSurface === "insight" && educationPlan?.available ? (
-            <div className="min-w-0 space-y-1">
-              <div className="flex min-w-0 items-center gap-3">
-                {educationPillarIconSrc ? (
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full rounded-[24px] bg-[#fcf8f0]">
-                    <Image
-                      src={educationPillarIconSrc}
-                      alt=""
-                      aria-hidden="true"
-                      width={24}
-                      height={24}
-                      className="h-6 w-6 object-contain"
-                    />
-                  </span>
-                ) : null}
-                <p className="min-w-0 text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                  {[educationPillarLabel, homeSurfaceMeta.title].filter(Boolean).join(" · ")}
-                </p>
-              </div>
-              {educationFocusStreakSummary ? (
-                <p className="text-xs text-[#8c7f70]">{educationFocusStreakSummary}</p>
-              ) : null}
-            </div>
+          {homeSurface === "insight" ? (
+            <div className="min-w-0" />
           ) : (
             <>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
@@ -2390,169 +2306,63 @@ export default function AssessmentChatBox({
                   Loading today&apos;s education programme…
                 </p>
               </div>
-            ) : educationPlan?.available ? (
-              <div className="flex min-h-full flex-col gap-3">
-                {educationPlanLoading && educationPlan ? (
-                  <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
-                ) : null}
-                <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    {educationProgrammeName || "Education programme"}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
-                    {normalizeLessonHeading(
-                      selectedEducationLesson?.title ||
-                        selectedEducationLesson?.concept_label ||
-                        selectedEducationLesson?.pillar_label ||
-                        educationLesson?.title ||
-                        educationConceptTitle ||
-                        "Today's lesson",
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
-                    {[
-                      String(selectedEducationLesson?.concept_label || selectedEducationLesson?.pillar_label || educationConceptTitle || "").trim(),
-                      selectedEducationLessonDay > 0
-                        ? educationDurationDays > 0
-                          ? `Lesson ${selectedEducationLessonDay} of ${educationDurationDays}`
-                          : `Lesson ${selectedEducationLessonDay}`
-                        : "",
-                      String(selectedEducationLesson?.level || educationPlan.level || "").trim() ? `${String(selectedEducationLesson?.level || educationPlan.level || "")} level` : "",
-                    ].filter(Boolean).join(" · ")}
-                  </p>
-                  {(selectedEducationLesson?.goal || selectedEducationLesson?.summary) ? (
-                  <p className="mt-3 text-sm leading-6 text-[#6b6257]">
-                      {selectedEducationLesson?.goal || selectedEducationLesson?.summary}
-                    </p>
-                  ) : null}
-                  <p className="mt-2 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
-                    {selectedEducationLessonIsCurrent ? "Today" : "Lesson preview"}
-                  </p>
-                </div>
+          ) : educationPlan?.available ? (
+              <div className="flex min-h-full flex-col gap-4">
                 {educationLessonRail.length ? (
-                  <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        Lessons
-                      </p>
-                      <p className="text-xs text-[#8c7f70]">
-                        Swipe to browse
-                      </p>
-                    </div>
-                    <div className="mt-3 -mx-4 overflow-x-auto px-4 pb-1">
-                      <div className="flex gap-3 pr-4">
-                        {educationLessonRail.map((lesson) => {
-                        const palette = getPillarPalette(lesson?.pillar_key);
-                        const lessonDayIndex = Number(lesson?.day_index || 0);
-                        const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
-                        const lessonTitle = normalizeLessonHeading(
-                          lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
-                        );
-                        const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
-                        return (
-                          <button
-                            key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
-                            type="button"
-                            onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                            className="flex w-[17rem] shrink-0 items-start gap-3 rounded-[22px] border px-3 py-3 text-left transition sm:w-[18.5rem]"
-                            style={{
-                              backgroundColor: "var(--accent-soft)",
-                              borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
-                              boxShadow: isSelected ? "0 0 0 1px var(--accent) inset" : "none",
-                            }}
-                          >
-                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[var(--chrome)]">
-                              {palette.icon ? (
-                                <Image src={palette.icon} alt="" width={22} height={22} className="h-5 w-5 object-contain" />
-                              ) : null}
+                  <div className="-mx-4 overflow-x-auto px-4 pb-1">
+                    <div className="flex gap-3 pr-4">
+                      {educationLessonRail.map((lesson) => {
+                      const palette = getPillarPalette(lesson?.pillar_key);
+                      const lessonDayIndex = Number(lesson?.day_index || 0);
+                      const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
+                      const lessonTitle = normalizeLessonHeading(
+                        lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                      );
+                      const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                      return (
+                        <button
+                          key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
+                          type="button"
+                          onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
+                          className="flex w-[17rem] shrink-0 items-start gap-3 rounded-[22px] border px-3 py-3 text-left transition sm:w-[18.5rem]"
+                          style={{
+                            backgroundColor: "var(--accent-soft)",
+                            borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
+                            boxShadow: isSelected ? "0 0 0 1px var(--accent) inset" : "none",
+                          }}
+                        >
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[var(--chrome)]">
+                            {palette.icon ? (
+                              <Image src={palette.icon} alt="" width={22} height={22} className="h-5 w-5 object-contain" />
+                            ) : null}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+                              {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
                             </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
-                                {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
-                              </span>
-                              <span className="mt-1 block text-sm font-semibold text-[var(--text-primary)]">
-                                {lessonTitle || "Untitled lesson"}
-                              </span>
-                              {lessonDescription ? (
-                                <span className="mt-1 block text-sm leading-6 text-[var(--text-secondary)]">
-                                  {lessonDescription}
-                                </span>
-                              ) : null}
+                            <span className="mt-1 block text-sm font-semibold text-[var(--text-primary)]">
+                              {lessonTitle || "Untitled lesson"}
                             </span>
-                          </button>
-                        );
-                        })}
-                      </div>
+                            {lessonDescription ? (
+                              <span className="mt-1 block text-sm leading-6 text-[var(--text-secondary)]">
+                                {lessonDescription}
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                      );
+                      })}
                     </div>
                   </div>
                 ) : null}
-                <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
-                  <button
-                    type="button"
-                    onClick={() => setEducationCoursesOpen((current) => !current)}
-                    className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
-                    style={homePlainButtonStyle}
-                  >
-                    {educationCoursesOpen ? "Hide topics" : "Explore topics"}
-                  </button>
-                  {educationCoursesOpen ? (
-                    <div className="mt-4 space-y-4">
-                      {educationCourseGroups.length ? (
-                        educationCourseGroups.map((group) => {
-                          const palette = getPillarPalette(group.pillarKey);
-                          return (
-                            <div key={group.pillarKey} className="space-y-3">
-                              <div className="flex items-center gap-3">
-                                {palette.icon ? (
-                                  <Image src={palette.icon} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
-                                ) : null}
-                                <p className="text-sm font-semibold text-[var(--text-primary)]">{palette.label || group.pillarKey}</p>
-                              </div>
-                              <div className="grid gap-3">
-                                {group.lessons.map((lesson) => {
-                                  const lessonDayIndex = Number(lesson?.day_index || 0);
-                                  const lessonTitle = normalizeLessonHeading(
-                                    lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
-                                  );
-                                  const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
-                                  return (
-                                    <button
-                                      key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}-course`}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedEducationLessonDayIndex(lessonDayIndex || null);
-                                        setEducationCoursesOpen(false);
-                                      }}
-                                      className="rounded-[22px] border px-3 py-3 text-left transition"
-                                      style={{
-                                        backgroundColor: "var(--accent-soft)",
-                                        borderColor: "var(--border-strong)",
-                                      }}
-                                    >
-                                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
-                                        {String(lesson?.pillar_label || palette.label || "").trim() || "Course"}
-                                      </p>
-                                      <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
-                                        {lessonTitle || "Untitled lesson"}
-                                      </p>
-                                      {lessonDescription ? (
-                                        <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
-                                          {lessonDescription}
-                                        </p>
-                                      ) : null}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <p className="text-sm text-[var(--text-secondary)]">No courses available yet.</p>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setEducationCoursesOpen((current) => !current)}
+                  className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
+                  style={homePlainButtonStyle}
+                >
+                  Explore topics
+                </button>
               </div>
             ) : (
               <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
