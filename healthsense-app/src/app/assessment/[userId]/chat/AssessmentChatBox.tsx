@@ -2323,7 +2323,7 @@ export default function AssessmentChatBox({
                           key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                           type="button"
                           onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                          className="flex w-[19rem] shrink-0 items-start gap-3 rounded-[22px] border px-4 py-4 text-left transition sm:w-[22rem]"
+                          className="flex w-[min(82vw,24rem)] shrink-0 items-start gap-3 rounded-[22px] border px-4 py-5 text-left transition sm:w-[min(78vw,28rem)] sm:py-6"
                           style={{
                             backgroundColor: "#d3541b",
                             borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
@@ -2364,7 +2364,7 @@ export default function AssessmentChatBox({
                       );
                     }
                   }}
-                  className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
+                  className="mt-8 w-full rounded-full border px-4 py-3 text-sm font-semibold transition sm:mt-10"
                   style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
                 >
                   Explore topics
@@ -2503,17 +2503,6 @@ export default function AssessmentChatBox({
             >
               Start daily check-in
             </button>
-          ) : viewingHomeSurfaceFromSummary ? (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setJourneyCompleted(true)}
-                className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
-                style={homePlainButtonStyle}
-              >
-                Close
-              </button>
-            </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
