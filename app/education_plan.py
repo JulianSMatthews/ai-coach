@@ -51,6 +51,15 @@ _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
 _LEVEL_PRIORITY = ("support", "foundation", "build", "perform")
 
+
+def _normalize_lesson_heading(text: str | None) -> str | None:
+    token = str(text or "").strip()
+    if not token:
+        return None
+    token = re.sub(r"\bDAY\s+(\d+)\b", r"Lesson \1", token, flags=re.IGNORECASE)
+    token = token.replace("Days", "Lessons").replace("days", "lessons")
+    return token
+
 _EDUCATION_SCHEMA_TABLES = (
     EducationProgramme.__table__,
     EducationProgrammeDay.__table__,
@@ -2141,10 +2150,10 @@ def _education_plan_lesson_payload(
         "concept_key": concept_key or None,
         "concept_label": str(getattr(programme_day, "concept_label", "") or "").strip() or str(getattr(programme_day, "concept_key", "") or "").strip() or None,
         "title": (
-            str(getattr(lesson_variant, "title", "") or "").strip()
-            or str((content_item.title if content_item is not None else None) or "").strip()
-            or str(getattr(programme_day, "default_title", "") or "").strip()
-            or str(getattr(programme_day, "concept_label", "") or getattr(programme_day, "concept_key", "") or "").strip()
+            _normalize_lesson_heading(getattr(lesson_variant, "title", "") or "")
+            or _normalize_lesson_heading((content_item.title if content_item is not None else None) or "")
+            or _normalize_lesson_heading(getattr(programme_day, "default_title", "") or "")
+            or _normalize_lesson_heading(getattr(programme_day, "concept_label", "") or getattr(programme_day, "concept_key", "") or "")
             or "Today's lesson"
         ),
         "summary": (
