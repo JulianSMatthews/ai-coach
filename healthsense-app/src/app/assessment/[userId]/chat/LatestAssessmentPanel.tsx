@@ -1228,12 +1228,6 @@ export default function LatestAssessmentPanel({
     borderColor: "#d9d0c3",
     color: "#000000",
   };
-  const isCompactPillarGrid = visiblePillars.length <= 4;
-  const pillarGridClassName = isCompactPillarGrid ? "grid grid-cols-2 gap-4 sm:gap-5" : "grid grid-cols-2 gap-3";
-  const pillarTileClassName = isCompactPillarGrid
-    ? "min-h-[clamp(16rem,38vh,24rem)] rounded-[32px] px-3 py-4 text-left transition sm:min-h-[clamp(18rem,34vh,26rem)]"
-    : "min-h-[12.5rem] rounded-[32px] px-3 py-3 text-left transition sm:min-h-[14.5rem]";
-  const pillarTileStyle = { backgroundColor: "#fcf8f0" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const visiblePillars = useMemo(
@@ -1246,6 +1240,12 @@ export default function LatestAssessmentPanel({
       }),
     [pillars, showNutritionPillar, showTrainingPillar],
   );
+  const isCompactPillarGrid = visiblePillars.length <= 4;
+  const pillarGridClassName = isCompactPillarGrid ? "grid grid-cols-2 gap-4 sm:gap-5" : "grid grid-cols-2 gap-3";
+  const pillarTileClassName = isCompactPillarGrid
+    ? "min-h-[clamp(16rem,38vh,24rem)] rounded-[32px] px-3 py-4 text-left transition sm:min-h-[clamp(18rem,34vh,26rem)]"
+    : "min-h-[12.5rem] rounded-[32px] px-3 py-3 text-left transition sm:min-h-[14.5rem]";
+  const pillarTileStyle = { backgroundColor: "#fcf8f0" };
   const orderedPillarKeys = visiblePillars
     .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
     .filter((pillarKey) => Boolean(pillarKey));
