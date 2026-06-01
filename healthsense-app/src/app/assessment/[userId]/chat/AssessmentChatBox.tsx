@@ -2396,27 +2396,29 @@ export default function AssessmentChatBox({
                     </div>
                   </div>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEducationExplorerOpen(true);
-                    setEducationExplorerPillarKey(educationExplorerPillars[0]?.pillar_key || null);
-                    window.setTimeout(() => {
-                      educationExplorerSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }, 0);
-                  }}
-                  className="sticky bottom-[6.5rem] z-20 mt-20 w-full rounded-full border px-4 py-3 text-sm font-semibold transition sm:mt-24"
-                  style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
-                >
-                  Explore topics
-                </button>
+                <div className="mt-28 pb-2 sm:mt-32">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEducationExplorerOpen(true);
+                      setEducationExplorerPillarKey(educationExplorerPillars[0]?.pillar_key || null);
+                      window.setTimeout(() => {
+                        educationExplorerSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }, 0);
+                    }}
+                    className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
+                    style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
+                  >
+                    Explore topics
+                  </button>
+                </div>
                 {educationExplorerOpen && educationExplorerPillars.length ? (
                   <div ref={educationExplorerSectionRef} className="mt-10 space-y-4 pb-8">
                     <div className="rounded-[28px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                         Select a pillar
                       </p>
-                      <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+                      <div className="mt-4 space-y-3">
                         {educationExplorerPillars.map((pillar) => {
                           const active = pillar.pillar_key === activeEducationExplorerPillarKey;
                           return (
@@ -2424,19 +2426,28 @@ export default function AssessmentChatBox({
                               key={pillar.pillar_key}
                               type="button"
                               onClick={() => setEducationExplorerPillarKey(pillar.pillar_key)}
-                              className="flex w-[10rem] shrink-0 flex-col items-start rounded-[26px] px-4 py-4 text-left transition"
+                              className="flex w-full items-center justify-between rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
                               style={{
-                                backgroundColor: active ? "#ece7dc" : "#ffffff",
-                                borderColor: active ? "#d9cdbb" : "#e7e1d6",
+                                backgroundColor: active ? "#ece7dc" : "#f8f4eb",
                                 boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
                               }}
                             >
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8a7f72]">
-                                Pillar
+                              <span className="min-w-0 pr-4">
+                                <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">
+                                  Pillar
+                                </span>
+                                <span className="mt-2 block text-[26px] leading-[1.06] font-semibold text-[#1e1b16] sm:text-[30px]">
+                                  {pillar.pillar_label}
+                                </span>
+                                <span className="mt-3 block text-sm text-[#6b6257]">
+                                  {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
+                                </span>
                               </span>
-                              <span className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.pillar_label}</span>
-                              <span className="mt-2 text-xs text-[#6b6257]">
-                                {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
+                              <span
+                                className="ml-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold"
+                                style={{ backgroundColor: "#ffffff", color: "#1e1b16" }}
+                              >
+                                {pillar.lesson_count}
                               </span>
                             </button>
                           );
