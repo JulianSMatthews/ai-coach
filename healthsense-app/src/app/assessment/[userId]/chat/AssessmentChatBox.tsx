@@ -1039,7 +1039,6 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (!educationLessonQueue.length) {
       setSelectedEducationLessonDayIndex(null);
-      setEducationCoursesOpen(false);
       return;
     }
     const currentDayIndex = Number(
@@ -2357,7 +2356,18 @@ export default function AssessmentChatBox({
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => setEducationCoursesOpen((current) => !current)}
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.dispatchEvent(
+                        new CustomEvent("healthsense-open-tracker", {
+                          detail: {
+                            guided: false,
+                            returnSurface: "insight",
+                          },
+                        }),
+                      );
+                    }
+                  }}
                   className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
                   style={homePlainButtonStyle}
                 >
