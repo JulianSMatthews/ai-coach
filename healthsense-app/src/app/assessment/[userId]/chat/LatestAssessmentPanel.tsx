@@ -3886,198 +3886,272 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {selectedPillarKey ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
-            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
-              <div className="min-w-0 space-y-1">
-                <div className="flex min-w-0 items-center gap-3">
-                  <WeeklyObjectiveSectionIcon sectionKey={trackerPillarKey} />
-                  <p className="min-w-0 text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-[var(--bg)]">
+          <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--bg)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+            <div className="shrink-0 px-4 py-4 sm:px-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[2rem] font-semibold leading-none text-[var(--text-primary)]">
                     {trackerPillarLabel}
+                  </p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
                     {viewingCurrentWeek
                       ? savingPastDay
-                        ? ` · Catching up ${activeLabel || "yesterday"}`
-                        : " · Tracking today"
-                      : " · Last week results"}
+                        ? `Catching up ${activeLabel || "yesterday"}`
+                        : "Daily check-in"
+                      : "Last week results"}
                   </p>
                 </div>
-                <p className="text-sm text-[#6b6257]">{trackerScoreLabel}</p>
-                {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
-                  <p className="text-xs text-[#8c7f70]">
-                    {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
-              {loadingDetail ? <p className="text-sm text-[#6b6257]">Loading tracker…</p> : null}
-              {detailError ? <p className="text-sm text-[#8a3e1a]">{detailError}</p> : null}
-
-              {detail && !loadingDetail ? (
-                <div className="space-y-5">
-                  {(detail.editable_dates || []).length > 1 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {(detail.editable_dates || []).map((item) => {
-                        const itemDate = String(item.date || "").trim();
-                        const active = Boolean(item.is_active);
-                        return (
-                          <button
-                            key={itemDate}
-                            type="button"
-                            disabled={!itemDate || active || saving}
-                            onClick={() =>
-                              void openTracker(
-                                String(detail.pillar?.pillar_key || selectedPillarKey || ""),
-                                itemDate,
-                                {
-                                  guided: guidedTrackingActive,
-                                  returnSurface: trackerReturnSurface,
-                                },
-                              )
-                            }
-                            className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                              active
-                                ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
-                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                            } disabled:cursor-default disabled:opacity-100`}
-                          >
-                            {item.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                      {viewingCurrentWeek ? "This week" : "Last week"}
-                    </p>
-                    <div className="mt-3 grid grid-cols-7 gap-2">
-                      {(detail.days || []).map((day) => (
-                        <div
-                          key={day.date}
-                          className={`rounded-xl border px-2 py-2 text-center text-[11px] ${completeDayTone(day.complete, day.score, day.is_today)}`}
-                        >
-                          <p className="font-semibold">{day.label}</p>
-                          <p className="mt-1">{day.complete ? day.score ?? "Done" : day.is_today ? "Today" : "—"}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {(detail.concepts || []).map((concept) => {
-                    const conceptKey = String(concept.concept_key || "").trim();
-                    const selectedValue = draft[conceptKey];
-                    const targetLabel = String(concept.target_label || "").trim();
-                    const okrStatusLabel = String(concept.okr_status_label || "").trim();
-                    const okrStatusDetail = String(concept.okr_status_detail || "").trim();
-                    const showInlineOkrProgress = Boolean(okrStatusDetail);
-                    const okrStatusTone =
-                      concept.okr_on_track === true
-                        ? "text-[#4e7a1f]"
-                        : concept.okr_on_track === false
-                          ? "text-[#b55b1d]"
-                          : "text-[#6b6257]";
-                    return (
-                      <div key={conceptKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-[#1e1b16]">{concept.label}</p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8c7f70]">{concept.helper}</p>
-                            {targetLabel || okrStatusLabel ? (
-                              <p className="mt-2 text-xs text-[#6b6257]">
-                                {targetLabel}
-                                {targetLabel && showInlineOkrProgress ? " · " : null}
-                                {showInlineOkrProgress ? okrStatusDetail : null}
-                                {(targetLabel || showInlineOkrProgress) && okrStatusLabel ? " · " : null}
-                                {okrStatusLabel ? (
-                                  <span className={`font-medium ${okrStatusTone}`}>{okrStatusLabel}</span>
-                                ) : null}
-                              </p>
-                            ) : null}
-                          </div>
-                          <p className="text-xs text-[#8c7f70]">{`${concept.streak_days || 0} day streak`}</p>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-7 gap-2">
-                          {(concept.week || []).map((day) => (
-                            <div
-                              key={`${conceptKey}-${day.date}`}
-                              className={`rounded-xl border px-2 py-2 text-center text-[11px] ${circleDayTone(day.daily_status, day.is_active)}`}
-                            >
-                              <p className="font-semibold">{day.label}</p>
-                              <p className="mt-1 truncate">{day.value_label || "—"}</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {canEditActiveWeek
-                            ? (concept.options || []).map((option) => {
-                                const value = Number(option.value);
-                                const active = Number.isFinite(value) && value === selectedValue;
-                                return (
-                                  <button
-                                    key={`${conceptKey}-${option.label}-${option.value}`}
-                                    type="button"
-                                    onClick={() =>
-                                      setDraft((current) => ({
-                                        ...current,
-                                        [conceptKey]: value,
-                                      }))
-                                    }
-                                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                                      active
-                                        ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                        : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                                    }`}
-                                  >
-                                    {option.label}
-                                  </button>
-                                );
-                              })
-                            : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {saveError ? <p className="text-sm text-[#8a3e1a]">{saveError}</p> : null}
-                </div>
-                ) : null}
-              </div>
-
-            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
-              {canEditActiveWeek ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleTrackerDismiss()}
-                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
-                  >
-                    {closeTrackerLabel}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void saveTracker()}
-                    disabled={!canSave}
-                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {saving
-                      ? "Saving tracker…"
-                      : "Save"}
-                  </button>
-                </div>
-              ) : (
                 <button
                   type="button"
                   onClick={() => void handleTrackerDismiss()}
-                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] text-xl font-semibold text-[var(--chrome-text)]"
+                  aria-label={closeTrackerLabel}
                 >
-                  {closeTrackerLabel}
+                  ×
                 </button>
-              )}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden pb-28">
+              {loadingDetail ? <p className="px-4 text-sm text-[var(--text-muted)]">Loading tracker...</p> : null}
+              {detailError ? <p className="px-4 text-sm text-[#8a3e1a]">{detailError}</p> : null}
+
+              {detail && !loadingDetail ? (
+                <div className="h-full overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
+                  <div className="flex h-full gap-4 pr-4 sm:gap-5">
+                    <section className="flex h-full min-h-[30rem] w-[min(84vw,25rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[#d8ad82] px-7 py-7 text-[#181512] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:w-[26rem]">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-70">Start</p>
+                          <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal">
+                            {trackerPillarLabel} check-in
+                          </h2>
+                        </div>
+                        <WeeklyObjectiveSectionIcon sectionKey={trackerPillarKey} />
+                      </div>
+                      <p className="mt-6 text-[1.35rem] font-medium leading-8 opacity-80">
+                        Swipe across each card and answer the questions for today.
+                      </p>
+                      <div className="mt-auto space-y-4">
+                        <p className="text-sm font-semibold opacity-75">{trackerScoreLabel}</p>
+                        {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
+                          <p className="text-sm opacity-75">
+                            {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
+                          </p>
+                        ) : null}
+                        {(detail.editable_dates || []).length > 1 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {(detail.editable_dates || []).map((item) => {
+                              const itemDate = String(item.date || "").trim();
+                              const active = Boolean(item.is_active);
+                              return (
+                                <button
+                                  key={itemDate}
+                                  type="button"
+                                  disabled={!itemDate || active || saving}
+                                  onClick={() =>
+                                    void openTracker(
+                                      String(detail.pillar?.pillar_key || selectedPillarKey || ""),
+                                      itemDate,
+                                      {
+                                        guided: guidedTrackingActive,
+                                        returnSurface: trackerReturnSurface,
+                                      },
+                                    )
+                                  }
+                                  className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
+                                    active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
+                                  } disabled:cursor-default`}
+                                >
+                                  {item.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    </section>
+
+                    {(detail.concepts || []).map((concept, conceptIndex) => {
+                      const conceptKey = String(concept.concept_key || "").trim();
+                      const selectedValue = draft[conceptKey];
+                      const targetLabel = String(concept.target_label || "").trim();
+                      const okrStatusLabel = String(concept.okr_status_label || "").trim();
+                      const okrStatusDetail = String(concept.okr_status_detail || "").trim();
+                      const showInlineOkrProgress = Boolean(okrStatusDetail);
+                      const okrStatusTone =
+                        concept.okr_on_track === true
+                          ? "text-[#4e7a1f]"
+                          : concept.okr_on_track === false
+                            ? "text-[#b55b1d]"
+                            : "text-[#6b6257]";
+                      return (
+                        <section
+                          key={conceptKey}
+                          className="flex h-full min-h-[30rem] w-[min(84vw,25rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem]"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">
+                                {`${conceptIndex + 1} of ${detail.concepts?.length || 0}`}
+                              </p>
+                              <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-normal text-[#181512]">
+                                {concept.label}
+                              </h2>
+                            </div>
+                            <p className="shrink-0 rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#6b6257]">
+                              {`${concept.streak_days || 0}d`}
+                            </p>
+                          </div>
+                          <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[#3c332b]">
+                            {concept.helper}
+                          </p>
+                          {targetLabel || okrStatusLabel ? (
+                            <p className="mt-4 text-sm leading-6 text-[#6b6257]">
+                              {targetLabel}
+                              {targetLabel && showInlineOkrProgress ? " · " : null}
+                              {showInlineOkrProgress ? okrStatusDetail : null}
+                              {(targetLabel || showInlineOkrProgress) && okrStatusLabel ? " · " : null}
+                              {okrStatusLabel ? (
+                                <span className={`font-medium ${okrStatusTone}`}>{okrStatusLabel}</span>
+                              ) : null}
+                            </p>
+                          ) : null}
+                          <div className="mt-auto space-y-5">
+                            <div className="grid grid-cols-7 gap-1.5">
+                              {(concept.week || []).map((day) => (
+                                <div
+                                  key={`${conceptKey}-${day.date}`}
+                                  className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(day.daily_status, day.is_active)}`}
+                                >
+                                  <p className="font-semibold">{day.label}</p>
+                                  <p className="mt-1 truncate">{day.value_label || "-"}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {canEditActiveWeek ? (
+                              <div className="grid gap-2">
+                                {(concept.options || []).map((option) => {
+                                  const value = Number(option.value);
+                                  const active = Number.isFinite(value) && value === selectedValue;
+                                  return (
+                                    <button
+                                      key={`${conceptKey}-${option.label}-${option.value}`}
+                                      type="button"
+                                      onClick={() =>
+                                        setDraft((current) => ({
+                                          ...current,
+                                          [conceptKey]: value,
+                                        }))
+                                      }
+                                      className={`rounded-full px-4 py-3 text-left text-sm font-semibold transition ${
+                                        active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
+                                      }`}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
+                        </section>
+                      );
+                    })}
+
+                    <section className="flex h-full min-h-[30rem] w-[min(84vw,25rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">Complete</p>
+                      <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal text-[#181512]">
+                        Finish check-in
+                      </h2>
+                      <p className="mt-6 text-[1.35rem] font-medium leading-8 text-[#6b6257]">
+                        Save your answers for {trackerPillarLabel}. If this is a guided check-in, the next pillar will open automatically.
+                      </p>
+                      <div className="mt-6 grid grid-cols-7 gap-2">
+                        {(detail.days || []).map((day) => (
+                          <div
+                            key={day.date}
+                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${completeDayTone(day.complete, day.score, day.is_today)}`}
+                          >
+                            <p className="font-semibold">{day.label}</p>
+                            <p className="mt-1">{day.complete ? day.score ?? "Done" : day.is_today ? "Today" : "-"}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {saveError ? <p className="mt-auto text-sm font-semibold text-[#8a3e1a]">{saveError}</p> : null}
+                      <div className="mt-auto grid gap-2">
+                        {canEditActiveWeek ? (
+                          <button
+                            type="button"
+                            onClick={() => void saveTracker()}
+                            disabled={!canSave}
+                            className="rounded-full bg-[#111111] px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            {saving ? "Saving..." : "Complete check-in"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void handleTrackerDismiss()}
+                          className="rounded-full bg-white px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-[#1e1b16]"
+                        >
+                          {closeTrackerLabel}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+                ) : null}
+              </div>
+
+            <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
+              <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
+                <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
+                  <div className="grid grid-cols-3 p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDockKey("checkin");
+                      }}
+                      aria-pressed
+                      className={homeDockButtonClassName}
+                      style={homeDockButtonStyleActive}
+                    >
+                      <BiometricsIcon className="h-4 w-4 text-[var(--chrome-text)]" />
+                      <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Checkin</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeTracker();
+                        setActiveDockKey("learn");
+                        openDailyMenuSurface("insight");
+                      }}
+                      aria-pressed={false}
+                      className={homeDockButtonClassName}
+                      style={homeDockButtonStyleInactive}
+                    >
+                      <InsightIcon className="h-4 w-4 text-[var(--chrome-text)]" />
+                      <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeTracker();
+                        setActiveDockKey("coach");
+                        openDailyMenuSurface("ask");
+                      }}
+                      aria-pressed={false}
+                      className={homeDockButtonClassName}
+                      style={homeDockButtonStyleInactive}
+                    >
+                      <GiaMessageIcon className="h-4 w-4 text-[var(--chrome-text)]" />
+                      <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Coach</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

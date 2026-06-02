@@ -391,6 +391,19 @@ function normalizePromptOption(raw: unknown): AssessmentPromptOption | null {
   };
 }
 
+function normalizeEducationQuizOption(raw: unknown): { value: unknown; label: string } | null {
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    const label = String(raw).trim();
+    return label ? { value: raw, label } : null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const value = row.value ?? row.id ?? row.label ?? row.text ?? row.title;
+  const label = String(row.label ?? row.text ?? row.title ?? row.value ?? "").trim();
+  if (!label) return null;
+  return { value, label };
+}
+
 function normalizePromptSection(raw: unknown): AssessmentPromptSection | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -817,6 +830,10 @@ export default function AssessmentChatBox({
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
   const [activeEducationLesson, setActiveEducationLesson] = useState<any | null>(null);
+  const [educationQuizAnswers, setEducationQuizAnswers] = useState<Record<string, unknown>>({});
+  const [educationQuizSubmitting, setEducationQuizSubmitting] = useState(false);
+  const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
+  const [educationQuizError, setEducationQuizError] = useState<string | null>(null);
   const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
   const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "concepts" | "lessons">("pillars");
@@ -1065,6 +1082,9 @@ export default function AssessmentChatBox({
     );
     setSelectedEducationLessonDayIndex(lessonDayIndex || null);
     setActiveEducationLesson(lesson || null);
+    setEducationQuizAnswers({});
+    setEducationQuizMessage(null);
+    setEducationQuizError(null);
     if (options?.closeExplorer) {
       setEducationExplorerOpen(false);
       setEducationExplorerMode("pillars");
@@ -1108,16 +1128,75 @@ export default function AssessmentChatBox({
     String(activeEducationLesson?.title || activeEducationLesson?.concept_label || activeEducationLesson?.pillar_label || "").trim(),
   );
   const activeEducationLessonDescription = String(activeEducationLesson?.goal || activeEducationLesson?.summary || "").trim();
-  const activeEducationLessonScript = String(
-    activeEducationLessonContent?.script ||
-      activeEducationLessonAvatar?.script ||
-      activeEducationLessonContent?.body ||
-      activeEducationLesson?.summary ||
+  const activeEducationLessonVariantId = Number(activeEducationLesson?.lesson_variant_id || activeEducationLessonContent?.lesson_variant_id || 0);
+  const currentEducationLessonVariantId = Number(educationPlan?.lesson?.lesson_variant_id || 0);
+  const activeEducationQuiz =
+    activeEducationLesson?.quiz ||
+    (activeEducationLessonVariantId && activeEducationLessonVariantId === currentEducationLessonVariantId ? educationPlan?.quiz : null) ||
+    null;
+  const activeEducationQuizQuestions = Array.isArray(activeEducationQuiz?.questions)
+    ? activeEducationQuiz.questions.filter((question: any) => String(question?.question_text || "").trim())
+    : [];
+  const activeEducationQuizCompletedAt = String(
+    activeEducationLesson?.progress?.quiz_completed_at ||
+      (activeEducationLessonVariantId && activeEducationLessonVariantId === currentEducationLessonVariantId
+        ? educationPlan?.progress?.quiz_completed_at
+        : "") ||
       "",
   ).trim();
-  const activeEducationLessonAction = String(
-    activeEducationLesson?.action_prompt || activeEducationLessonContent?.action_prompt || "",
-  ).trim();
+  const activeEducationQuizScore = Number(
+    activeEducationLesson?.progress?.quiz_score_pct ??
+      (activeEducationLessonVariantId && activeEducationLessonVariantId === currentEducationLessonVariantId
+        ? educationPlan?.progress?.quiz_score_pct
+        : null),
+  );
+  const activeEducationQuizQuestionCount = Number(activeEducationLesson?.quiz_question_count || activeEducationQuizQuestions.length || 0);
+  const submitActiveEducationQuiz = useCallback(async () => {
+    if (!activeEducationQuizQuestions.length || educationQuizSubmitting) return;
+    setEducationQuizSubmitting(true);
+    setEducationQuizError(null);
+    setEducationQuizMessage(null);
+    try {
+      const answers = activeEducationQuizQuestions.map((question: any) => ({
+        question_id: Number(question?.id || 0),
+        answer: educationQuizAnswers[String(question?.id || "")],
+      }));
+      const res = await fetch("/api/education-plan/quiz-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, answers }),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to submit quiz."));
+      }
+      const payload = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
+      setEducationPlan(payload);
+      setEducationQuizMessage("Quiz submitted.");
+      const updatedLesson = Array.isArray(payload.lessons)
+        ? payload.lessons.find((lesson: any) => Number(lesson?.day_index || 0) === Number(activeEducationLesson?.day_index || 0))
+        : null;
+      if (updatedLesson) {
+        setActiveEducationLesson(updatedLesson);
+      } else if (
+        Number(payload.lesson?.lesson_variant_id || 0) === activeEducationLessonVariantId ||
+        Number(payload.lesson?.programme_day_id || 0) === Number(activeEducationLesson?.programme_day_id || 0)
+      ) {
+        setActiveEducationLesson(payload.lesson);
+      }
+    } catch (error) {
+      setEducationQuizError(error instanceof Error ? error.message : "Failed to submit quiz.");
+    } finally {
+      setEducationQuizSubmitting(false);
+    }
+  }, [
+    activeEducationLesson,
+    activeEducationLessonVariantId,
+    activeEducationQuizQuestions,
+    educationQuizAnswers,
+    educationQuizSubmitting,
+    userId,
+  ]);
   const renderEducationLessonCard = useCallback(
     (
       lesson: any,
@@ -2632,24 +2711,91 @@ export default function AssessmentChatBox({
                           poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
                         />
                       ) : null}
-                      {activeEducationLessonScript ? (
-                        <div className="mt-5 space-y-3 text-[1.05rem] leading-7 text-[#3c332b]">
-                          {activeEducationLessonScript
-                            .split(/\n{2,}/)
-                            .map((paragraph) => paragraph.trim())
-                            .filter(Boolean)
-                            .slice(0, 6)
-                            .map((paragraph, index) => (
-                              <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                            ))}
+                      <div className="mt-5 rounded-[24px] bg-[#f6f1e7] px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">Quiz</p>
+                          {activeEducationQuizCompletedAt && Number.isFinite(activeEducationQuizScore) ? (
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#1e1b16]">
+                              {Math.round(activeEducationQuizScore)}%
+                            </span>
+                          ) : null}
                         </div>
-                      ) : null}
-                      {activeEducationLessonAction ? (
-                        <div className="mt-5 rounded-[24px] bg-[#f6f1e7] px-4 py-4">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">Action</p>
-                          <p className="mt-2 text-[1.05rem] leading-7 text-[#3c332b]">{activeEducationLessonAction}</p>
-                        </div>
-                      ) : null}
+                        {activeEducationQuizQuestions.length ? (
+                          <div className="mt-4 space-y-5">
+                            {activeEducationQuizQuestions.map((question: any, questionIndex: number) => {
+                              const questionId = String(question?.id || questionIndex);
+                              const selectedAnswer = educationQuizAnswers[questionId];
+                              const options = Array.isArray(question?.options)
+                                ? question.options.map(normalizeEducationQuizOption).filter(Boolean)
+                                : [];
+                              return (
+                                <fieldset key={questionId} className="space-y-3">
+                                  <legend className="text-[1.05rem] font-semibold leading-6 text-[#1e1b16]">
+                                    {questionIndex + 1}. {String(question?.question_text || "").trim()}
+                                  </legend>
+                                  <div className="space-y-2">
+                                    {options.map((option: any, optionIndex: number) => {
+                                      const optionToken = JSON.stringify(option.value);
+                                      const selectedToken = JSON.stringify(selectedAnswer);
+                                      const selected = optionToken === selectedToken;
+                                      return (
+                                        <button
+                                          key={`${questionId}-${optionIndex}`}
+                                          type="button"
+                                          onClick={() => {
+                                            setEducationQuizAnswers((current) => ({
+                                              ...current,
+                                              [questionId]: option.value,
+                                            }));
+                                            setEducationQuizMessage(null);
+                                            setEducationQuizError(null);
+                                          }}
+                                          className="flex w-full items-center justify-between rounded-[18px] bg-white px-4 py-3 text-left text-sm font-semibold text-[#1e1b16] transition"
+                                        >
+                                          <span>{option.label}</span>
+                                          <span
+                                            className={`ml-3 h-5 w-5 rounded-full border ${
+                                              selected ? "border-[#1e1b16] bg-[#1e1b16]" : "border-[#d9d0c3] bg-white"
+                                            }`}
+                                            aria-hidden="true"
+                                          />
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </fieldset>
+                              );
+                            })}
+                            {educationQuizError ? (
+                              <p className="text-sm font-semibold text-[#9b3218]">{educationQuizError}</p>
+                            ) : educationQuizMessage ? (
+                              <p className="text-sm font-semibold text-[#335f16]">{educationQuizMessage}</p>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => void submitActiveEducationQuiz()}
+                              disabled={
+                                educationQuizSubmitting ||
+                                activeEducationQuizQuestions.some((question: any, index: number) => {
+                                  const questionId = String(question?.id || index);
+                                  return educationQuizAnswers[questionId] === undefined;
+                                })
+                              }
+                              className="mt-1 rounded-full bg-[#111111] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {educationQuizSubmitting ? "Submitting..." : activeEducationQuizCompletedAt ? "Update quiz" : "Submit quiz"}
+                            </button>
+                          </div>
+                        ) : activeEducationQuizQuestionCount > 0 ? (
+                          <p className="mt-3 text-[1.05rem] leading-7 text-[#3c332b]">
+                            This lesson has {activeEducationQuizQuestionCount} quiz questions. Open the current lesson to answer them.
+                          </p>
+                        ) : (
+                          <p className="mt-3 text-[1.05rem] leading-7 text-[#3c332b]">
+                            No quiz is available for this lesson yet.
+                          </p>
+                        )}
+                      </div>
                     </article>
                   </div>
                 </div>
