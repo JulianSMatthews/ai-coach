@@ -264,6 +264,17 @@ function normalizeLessonHeading(value: string | null | undefined): string {
     .replace(/\bday\s+(\d+)\b/gi, "Lesson $1");
 }
 
+function isEducationLessonCompleted(lesson: any): boolean {
+  const progress = lesson?.progress && typeof lesson.progress === "object" ? lesson.progress : {};
+  const completionStatus = String(progress?.completion_status || "").trim().toLowerCase();
+  return Boolean(progress?.completed_at) || completionStatus === "completed";
+}
+
+function firstIncompleteEducationLessonToken(lessons: any[]): string {
+  const lesson = lessons.find((item) => !isEducationLessonCompleted(item));
+  return String(lesson?.programme_day_id || lesson?.day_index || "").trim();
+}
+
 function mergeDailyPlanItems(
   primaryItems: DailyHabitPlanItem[],
   fallbackItems: DailyHabitPlanItem[],
@@ -1086,6 +1097,7 @@ export default function AssessmentChatBox({
         selected?: boolean;
         pill?: string;
         featured?: boolean;
+        isStartable?: boolean;
       },
     ) => {
       const lessonDayIndex = Number(lesson?.day_index || 0);
@@ -1095,10 +1107,8 @@ export default function AssessmentChatBox({
       const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
       const lessonConcept = String(lesson?.concept_label || lesson?.concept_key || "").trim();
       const posterUrl = String(lesson?.content?.poster_url || lesson?.content?.avatar?.poster_url || "").trim();
-      const progress = lesson?.progress && typeof lesson.progress === "object" ? lesson.progress : {};
-      const completionStatus = String(progress?.completion_status || "").trim().toLowerCase();
-      const lessonCompleted = Boolean(progress?.completed_at) || completionStatus === "completed";
-      const lessonIsNext = Boolean(lesson?.is_current) && !lessonCompleted;
+      const lessonCompleted = isEducationLessonCompleted(lesson);
+      const lessonIsNext = Boolean(options?.isStartable) && !lessonCompleted;
       return (
         <button
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
@@ -2678,12 +2688,15 @@ export default function AssessmentChatBox({
                     ) : (
                       <div className="-mx-1 overflow-x-auto px-1 pb-1">
                         <div className="flex gap-3 pr-4">
-                          {educationExplorerLessons.map((lesson) =>
-                            renderEducationLessonCard(lesson, {
+                          {educationExplorerLessons.map((lesson) => {
+                            const startableToken = firstIncompleteEducationLessonToken(educationExplorerLessons);
+                            const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
+                            return renderEducationLessonCard(lesson, {
                               selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
                               pill: "explore",
-                            }),
-                          )}
+                              isStartable: Boolean(startableToken && lessonToken === startableToken),
+                            });
+                          })}
                         </div>
                       </div>
                     )}
@@ -2694,12 +2707,15 @@ export default function AssessmentChatBox({
                   <div className="flex-1 px-4 py-4 sm:px-5">
                     <div className="-mx-1 overflow-x-auto px-1 pb-2">
                       <div className="flex gap-3 pr-4">
-                        {educationLessonRail.map((lesson, index) =>
-                          renderEducationLessonCard(lesson, {
+                        {educationLessonRail.map((lesson, index) => {
+                          const startableToken = firstIncompleteEducationLessonToken(educationLessonRail);
+                          const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
+                          return renderEducationLessonCard(lesson, {
                             featured: index === 0,
                             selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
-                          }),
-                        )}
+                            isStartable: Boolean(startableToken && lessonToken === startableToken),
+                          });
+                        })}
                       </div>
                     </div>
                   </div>
