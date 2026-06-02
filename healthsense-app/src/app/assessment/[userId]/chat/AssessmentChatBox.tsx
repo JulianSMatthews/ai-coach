@@ -1021,6 +1021,7 @@ export default function AssessmentChatBox({
       options?: {
         selected?: boolean;
         pill?: string;
+        featured?: boolean;
       },
     ) => {
       const lessonDayIndex = Number(lesson?.day_index || 0);
@@ -1034,14 +1035,18 @@ export default function AssessmentChatBox({
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
           type="button"
           onClick={() => openEducationLesson(lesson, { closeExplorer: Boolean(options?.pill) })}
-          className="relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
+          className={
+            options?.featured
+              ? "relative mx-auto flex w-full max-w-[25rem] overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition"
+              : "relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
+          }
           style={{
             backgroundColor: "#d6ab81",
-            minHeight: "30rem",
+            minHeight: options?.featured ? "32rem" : "30rem",
             boxShadow: options?.selected ? "0 0 0 1px rgba(0,0,0,0.08) inset" : undefined,
           }}
         >
-          <span className="relative z-10 flex min-h-[30rem] w-full flex-col justify-between p-5 sm:p-6">
+          <span className="relative z-10 flex min-h-full w-full flex-col justify-between p-5 sm:p-6">
             <span>
               <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
                 {String(lesson?.pillar_label || "").trim() || "Lesson"}
@@ -2605,15 +2610,14 @@ export default function AssessmentChatBox({
               ) : (
                 <div className="flex min-h-full flex-col">
                   <div className="flex-1 px-4 py-4 sm:px-5">
-                    <div className="-mx-1 overflow-x-auto px-1 pb-2">
-                      <div className="flex gap-3 pr-4">
-                        {educationLessonRail.map((lesson) =>
-                          renderEducationLessonCard(lesson, {
-                            selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
-                          }),
-                        )}
+                    {educationLessonRail[0] ? (
+                      <div className="pb-2">
+                        {renderEducationLessonCard(educationLessonRail[0], {
+                          featured: true,
+                          selected: Number(educationLessonRail[0]?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
+                        })}
                       </div>
-                    </div>
+                    ) : null}
                   </div>
                   <div className="mt-16 pb-2 sm:mt-20">
                     <button
