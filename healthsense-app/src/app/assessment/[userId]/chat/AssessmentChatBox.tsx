@@ -2665,10 +2665,7 @@ export default function AssessmentChatBox({
                               }}
                             >
                               <span className="min-w-0 pr-4">
-                                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">
-                                  Concept
-                                </span>
-                                <span className="mt-3 block text-[1.85rem] font-semibold leading-[0.98] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.2rem]">
+                                <span className="block text-[1.85rem] font-semibold leading-[0.98] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.2rem]">
                                   {concept.concept_label}
                                 </span>
                                 <span className="mt-4 block text-sm text-[#6b6257]">
