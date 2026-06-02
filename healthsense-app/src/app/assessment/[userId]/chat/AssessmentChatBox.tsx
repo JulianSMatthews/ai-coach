@@ -1093,7 +1093,12 @@ export default function AssessmentChatBox({
         String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim(),
       );
       const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+      const lessonConcept = String(lesson?.concept_label || lesson?.concept_key || "").trim();
       const posterUrl = String(lesson?.content?.poster_url || lesson?.content?.avatar?.poster_url || "").trim();
+      const progress = lesson?.progress && typeof lesson.progress === "object" ? lesson.progress : {};
+      const completionStatus = String(progress?.completion_status || "").trim().toLowerCase();
+      const lessonCompleted = Boolean(progress?.completed_at) || completionStatus === "completed";
+      const lessonIsNext = Boolean(lesson?.is_current) && !lessonCompleted;
       return (
         <button
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
@@ -1101,26 +1106,43 @@ export default function AssessmentChatBox({
           onClick={() => openEducationLesson(lesson, { closeExplorer: Boolean(options?.pill) })}
           className="relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
           style={{
-            backgroundColor: "#d6ab81",
+            backgroundColor: lessonCompleted ? "#fffdf9" : "#d6ab81",
             minHeight: "30rem",
-            boxShadow: options?.selected ? "0 0 0 1px rgba(0,0,0,0.08) inset" : undefined,
+            boxShadow: lessonCompleted
+              ? "0 0 0 1px rgba(231,225,214,0.9) inset"
+              : options?.selected
+                ? "0 0 0 1px rgba(0,0,0,0.08) inset"
+                : undefined,
           }}
         >
           <span className="relative z-10 flex min-h-full w-full flex-col justify-between p-5 sm:p-6">
             <span>
               <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
-                {String(lesson?.pillar_label || "").trim() || "Lesson"}
+                {lessonConcept || String(lesson?.pillar_label || "").trim() || "Lesson"}
               </span>
               <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:max-w-[11ch] sm:text-[3rem]">
                 {lessonTitle || "Untitled lesson"}
               </span>
               {lessonDescription ? (
-                <span className="mt-4 block max-w-[18rem] text-[0.95rem] leading-7 text-[#3c332b]">
+                <span className="mt-5 block max-w-[18.5rem] text-[1.18rem] leading-8 text-[#3c332b]">
                   {lessonDescription}
                 </span>
               ) : null}
             </span>
-            <span className="relative z-10 flex items-end justify-end gap-3">
+            <span className="relative z-10 flex items-end justify-between gap-3">
+              {lessonIsNext ? (
+                <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
+                  Start lesson
+                </span>
+              ) : lessonCompleted ? (
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#18110d] text-white">
+                  <svg viewBox="0 0 24 24" className="h-8 w-8" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+              ) : (
+                <span />
+              )}
               <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
                 {String(lesson?.day_index || 0).padStart(2, "0")}
               </span>
