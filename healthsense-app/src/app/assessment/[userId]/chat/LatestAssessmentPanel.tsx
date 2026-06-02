@@ -69,6 +69,14 @@ const BIOMETRIC_CONNECT_OPTIONS = [
   { provider: "fitbit", label: "Fitbit", connectable: true },
   { provider: "garmin", label: "Garmin", connectable: false },
 ];
+const HOME_PILLAR_QUOTE_FALLBACKS: Record<string, string> = {
+  reflection: "Notice one honest signal today and let it guide your next choice.",
+  purpose: "Choose one action that makes today feel aligned with what matters.",
+  resilience: "Pause early, respond deliberately, and protect your calm under pressure.",
+  recovery: "Give your body enough space to reset before asking for more.",
+  nutrition: "Make the next meal simple, steady, and supportive of your energy.",
+  training: "Move with intent today; consistency is the part that compounds.",
+};
 const URINE_SCREENING_MARKERS = [
   { key: "concentration", label: "Hydration" },
   { key: "uti", label: "UTI Signs" },
@@ -1062,6 +1070,12 @@ function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | nu
   );
 }
 
+function resolveHomePillarQuote(pillar: PillarTrackerPillar, pillarKey: string): string {
+  const quote = String(pillar.daily_quote || "").trim();
+  if (quote) return quote;
+  return HOME_PILLAR_QUOTE_FALLBACKS[pillarKey] || "Take one small step today that supports your wellbeing.";
+}
+
 function InsightIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
@@ -1232,20 +1246,15 @@ export default function LatestAssessmentPanel({
       }),
     [pillars, showNutritionPillar, showTrainingPillar],
   );
-  const isCompactPillarGrid = visiblePillars.length <= 4;
-  const pillarGridClassName = isCompactPillarGrid ? "grid grid-cols-2 gap-4 sm:gap-5" : "grid grid-cols-2 gap-3";
-  const pillarTileClassName = isCompactPillarGrid
-    ? "min-h-[clamp(12rem,30vh,18rem)] rounded-[32px] px-3 py-4 text-left transition sm:min-h-[clamp(13.5rem,26vh,19.5rem)]"
-    : "min-h-[12.5rem] rounded-[32px] px-3 py-3 text-left transition sm:min-h-[14.5rem]";
-  const pillarTileStyle =
+  const pillarCueCardStyle =
     displayTheme === "dark"
       ? {
           backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
+          color: "var(--text-primary)",
         }
       : {
-          backgroundColor: "#fcf8f0",
-          borderColor: "#efe7db",
+          backgroundColor: "#d8ad82",
+          color: "#181512",
         };
   const orderedPillarKeys = visiblePillars
     .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
@@ -2840,33 +2849,45 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="px-4 py-4 pb-28 sm:px-5 sm:py-5 sm:pb-32"
+          className="py-5 pb-28 sm:py-6 sm:pb-32"
         >
-          <div className="relative">
-            <div className={pillarGridClassName}>
-              {visiblePillars.map((pillar) => {
-                const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
-                const palette = getPillarPalette(pillarKey);
-                const score = resolvePillarDisplayScore(pillar);
-                return (
-                  <button
-                    key={pillarKey}
-                    type="button"
-                    onClick={() =>
-                      void openTracker(pillarKey, undefined, {
-                        guided: false,
-                      })
-                    }
-                    className={`${pillarTileClassName} h-full`}
-                    style={pillarTileStyle}
-                  >
-                    <div className="flex h-full flex-col items-center justify-center text-center">
-                      <WeeklyScoreRing value={score} tone={palette.accent} />
-                      <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{pillar.label}</p>
-                    </div>
+          <div className="relative overflow-hidden">
+            <div className="overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
+              <div className="flex gap-4 pr-4 sm:gap-5">
+                {visiblePillars.map((pillar) => {
+                  const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
+                  const palette = getPillarPalette(pillarKey);
+                  const score = resolvePillarDisplayScore(pillar);
+                  const quote = resolveHomePillarQuote(pillar, pillarKey);
+                  return (
+                    <button
+                      key={pillarKey}
+                      type="button"
+                      onClick={() =>
+                        void openTracker(pillarKey, undefined, {
+                          guided: false,
+                        })
+                      }
+                      className="relative flex min-h-[28rem] w-[min(82vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                      style={pillarCueCardStyle}
+                    >
+                      <div className="absolute right-5 top-5">
+                        <WeeklyScoreRing value={score} tone={palette.accent} />
+                      </div>
+                      <div className="pr-24">
+                        <p className="text-[2.4rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.8rem]">
+                          {pillar.label}
+                        </p>
+                      </div>
+                      <div className="mt-auto max-w-[18rem]">
+                        <p className="text-[1.45rem] font-medium leading-[1.18] text-current opacity-80 sm:text-[1.65rem]">
+                          {quote}
+                        </p>
+                      </div>
                     </button>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>

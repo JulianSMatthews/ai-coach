@@ -14,6 +14,7 @@ from .db import SessionLocal, engine
 from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 from .pillar_config import active_pillar_keys, pillar_label
+from .prompts import run_llm_prompt
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
 _FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
@@ -29,6 +30,15 @@ _VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
 _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
+_HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote"
+_HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
+    "reflection": "Notice one honest signal today and let it guide your next choice.",
+    "purpose": "Choose one action that makes today feel aligned with what matters.",
+    "resilience": "Pause early, respond deliberately, and protect your calm under pressure.",
+    "recovery": "Give your body enough space to reset before asking for more.",
+    "nutrition": "Make the next meal simple, steady, and supportive of your energy.",
+    "training": "Move with intent today; consistency is the part that compounds.",
+}
 _HEAT_EXPOSURE_MINUTE_OPTIONS = {10, 15, 20, 25, 30}
 _COLD_EXPOSURE_MINUTE_OPTIONS = {1, 2, 3, 5, 10}
 _SUPPLEMENT_TRACKER_CONFIG: tuple[dict[str, str], ...] = (
@@ -1732,8 +1742,73 @@ def _week_score(
     return int(round(sum(completed_scores) / max(1, len(completed_scores))))
 
 
+def _fallback_daily_pillar_quote(pillar_key: str, label: str) -> str:
+    key = str(pillar_key or "").strip().lower()
+    fallback = _HOME_PILLAR_QUOTE_FALLBACKS.get(key)
+    if fallback:
+        return fallback
+    resolved_label = str(label or "wellbeing").strip() or "wellbeing"
+    return f"Take one small step today that supports your {resolved_label.lower()}."
+
+
+def _normalise_daily_pillar_quote(value: str | None) -> str:
+    quote = str(value or "").strip()
+    if not quote:
+        return ""
+    quote = quote.strip("\"'“”‘’")
+    quote = " ".join(quote.split())
+    words = quote.split()
+    if len(words) > 24:
+        quote = " ".join(words[:24]).rstrip(" ,.;:") + "."
+    return quote
+
+
+def _daily_pillar_quote(user_id: int, pillar_key: str, label: str, score: int, anchor: date) -> str:
+    key = str(pillar_key or "").strip().lower()
+    resolved_label = str(label or _pillar_label(key)).strip() or key.title()
+    cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}"
+    try:
+        with SessionLocal() as session:
+            pref = (
+                session.query(UserPreference)
+                .filter(UserPreference.user_id == int(user_id), UserPreference.key == cache_key)
+                .first()
+            )
+            cached = _normalise_daily_pillar_quote(getattr(pref, "value", None))
+            if cached:
+                return cached
+
+            prompt = (
+                "Write one short daily coaching quote for a mobile wellbeing score card.\n"
+                f"Pillar: {resolved_label}\n"
+                f"Score: {int(round(float(score or 0)))} out of 100\n"
+                "Requirements: one sentence, 10 to 18 words, direct and practical, British English, no quotation marks, no emoji."
+            )
+            generated = _normalise_daily_pillar_quote(
+                run_llm_prompt(
+                    prompt,
+                    user_id=int(user_id),
+                    touchpoint="home_pillar_daily_quote",
+                    prompt_variant="home_pillar_daily_quote",
+                    task_label="home_pillar_daily_quote",
+                    log=True,
+                )
+            )
+            quote = generated or _fallback_daily_pillar_quote(key, resolved_label)
+            if pref:
+                pref.value = quote
+            else:
+                session.add(UserPreference(user_id=int(user_id), key=cache_key, value=quote))
+            session.commit()
+            return quote
+    except Exception as exc:
+        print(f"[pillar_tracker] daily quote failed user_id={user_id} pillar={key}: {exc}")
+        return _fallback_daily_pillar_quote(key, resolved_label)
+
+
 def _summary_pillar_payload(
     *,
+    user_id: int,
     pillar_key: str,
     entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
     required_concepts: tuple[PillarTrackerConceptDefinition, ...],
@@ -1749,13 +1824,15 @@ def _summary_pillar_payload(
     if resolved_score is None:
         resolved_score = 0
     resolved_source = "tracker" if tracker_score is not None else "assessment" if baseline_score is not None else "default"
+    label = _pillar_label(pillar_key)
     return {
         "pillar_key": pillar_key,
-        "label": _pillar_label(pillar_key),
+        "label": label,
         "score": resolved_score,
         "tracker_score": tracker_score,
         "baseline_score": baseline_score,
         "source": resolved_source,
+        "daily_quote": _daily_pillar_quote(int(user_id), pillar_key, label, int(round(float(resolved_score or 0))), anchor),
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
         "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),
@@ -1778,6 +1855,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
         evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
         pillars.append(
             _summary_pillar_payload(
+                user_id=int(user_id),
                 pillar_key=pillar_key,
                 entries_by_day=entries_by_day,
                 required_concepts=required_concepts,
@@ -1822,6 +1900,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     is_editable = resolved_anchor in editable_dates
     is_current_week = start_of_week(resolved_anchor) == start_of_week(current_day)
     current_summary = _summary_pillar_payload(
+        user_id=int(user_id),
         pillar_key=key,
         entries_by_day=entries_by_day,
         required_concepts=required_concepts,
