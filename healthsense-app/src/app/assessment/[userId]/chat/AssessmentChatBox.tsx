@@ -1035,14 +1035,10 @@ export default function AssessmentChatBox({
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
           type="button"
           onClick={() => openEducationLesson(lesson, { closeExplorer: Boolean(options?.pill) })}
-          className={
-            options?.featured
-              ? "relative mx-auto flex w-full max-w-[25rem] overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition"
-              : "relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
-          }
+          className="relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
           style={{
             backgroundColor: "#d6ab81",
-            minHeight: options?.featured ? "32rem" : "30rem",
+            minHeight: "30rem",
             boxShadow: options?.selected ? "0 0 0 1px rgba(0,0,0,0.08) inset" : undefined,
           }}
         >
