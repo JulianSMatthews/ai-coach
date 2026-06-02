@@ -2610,14 +2610,16 @@ export default function AssessmentChatBox({
               ) : (
                 <div className="flex min-h-full flex-col">
                   <div className="flex-1 px-4 py-4 sm:px-5">
-                    {educationLessonRail[0] ? (
-                      <div className="pb-2">
-                        {renderEducationLessonCard(educationLessonRail[0], {
-                          featured: true,
-                          selected: Number(educationLessonRail[0]?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
-                        })}
+                    <div className="-mx-1 overflow-x-auto px-1 pb-2">
+                      <div className="flex gap-3 pr-4">
+                        {educationLessonRail.map((lesson, index) =>
+                          renderEducationLessonCard(lesson, {
+                            featured: index === 0,
+                            selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
+                          }),
+                        )}
                       </div>
-                    ) : null}
+                    </div>
                   </div>
                   <div className="mt-16 pb-2 sm:mt-20">
                     <button
