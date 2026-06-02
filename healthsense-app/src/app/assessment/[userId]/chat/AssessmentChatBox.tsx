@@ -2592,9 +2592,12 @@ export default function AssessmentChatBox({
                       </button>
                       <p className="text-[2rem] font-semibold tracking-[-0.02em] text-[#1e1b16]">
                         {educationExplorerMode === "pillars"
-                          ? "Pillars"
+                          ? ""
                           : educationExplorerMode === "concepts"
-                            ? "Concepts"
+                            ? String(
+                                educationExplorerPillars.find((pillar) => pillar.pillar_key === activeEducationExplorerPillarKey)
+                                  ?.pillar_label || "Concepts",
+                              )
                             : String(
                                 educationExplorerConcepts.find((concept) => concept.concept_key === activeEducationExplorerConceptKey)
                                   ?.concept_label || "Lessons",
@@ -2625,10 +2628,7 @@ export default function AssessmentChatBox({
                               }}
                             >
                               <span className="min-w-0 pr-4">
-                                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">
-                                  Pillar
-                                </span>
-                                <span className="mt-3 block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.8rem]">
+                                <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.8rem]">
                                   {pillar.pillar_label}
                                 </span>
                                 <span className="mt-4 block text-sm text-[#6b6257]">
