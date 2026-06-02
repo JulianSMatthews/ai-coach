@@ -361,6 +361,7 @@ export type PillarTrackerPillar = {
     complete?: boolean | null;
     is_today?: boolean | null;
     is_yesterday?: boolean | null;
+    is_last_week?: boolean | null;
   }> | null;
 };
 

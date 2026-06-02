@@ -2547,9 +2547,16 @@ export default function LatestAssessmentPanel({
       const detail = (event as CustomEvent<{ visible?: boolean }>).detail;
       setSummaryPanelVisible(Boolean(detail?.visible));
     };
+    const onShowSummaryPanel = () => {
+      setSummaryPanelVisible(true);
+      setSelectedPillarKey(null);
+      setActiveDockKey("checkin");
+    };
     window.addEventListener("healthsense-score-panel-visibility", onSummaryVisibilityChange as EventListener);
+    window.addEventListener("healthsense-show-score-panel", onShowSummaryPanel);
     return () => {
       window.removeEventListener("healthsense-score-panel-visibility", onSummaryVisibilityChange as EventListener);
+      window.removeEventListener("healthsense-show-score-panel", onShowSummaryPanel);
     };
   }, []);
 
@@ -2644,7 +2651,7 @@ export default function LatestAssessmentPanel({
     setDraft({});
     setDetailError(null);
     setSaveError(null);
-    if (guided && typeof window !== "undefined") {
+    if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
           detail: {
@@ -2849,7 +2856,9 @@ export default function LatestAssessmentPanel({
                         <div className="mt-4 grid gap-2">
                           {resolvedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
-                            const optionLabel = String(option?.label || (option?.is_yesterday ? "Yesterday" : "Today")).trim();
+                            const optionLabel = String(
+                              option?.label || (option?.is_last_week ? "Last week" : option?.is_yesterday ? "Yesterday" : "Today"),
+                            ).trim();
                             const complete = option?.complete === true;
                             return (
                               <button
@@ -2860,11 +2869,11 @@ export default function LatestAssessmentPanel({
                                     guided: false,
                                   })
                                 }
-                                className={`rounded-full px-4 py-3 text-left text-sm font-semibold transition ${
+                                className={`min-h-[3.6rem] rounded-full px-5 py-4 text-left text-[1.05rem] font-semibold transition ${
                                   complete ? "bg-white/75 text-[#1e1b16]" : "bg-[#111111] text-white"
                                 }`}
                               >
-                                {complete ? `Edit ${optionLabel}` : optionLabel}
+                                {option?.is_last_week ? optionLabel : complete ? `Edit ${optionLabel}` : optionLabel}
                               </button>
                             );
                           })}
@@ -2898,6 +2907,7 @@ export default function LatestAssessmentPanel({
                           },
                         }),
                       );
+                      window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
                       window.scrollTo({ top: 0, behavior: "smooth" });
                     }
                   }}
@@ -3899,59 +3909,6 @@ export default function LatestAssessmentPanel({
               {detail && !loadingDetail ? (
                 <div className="h-full overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
                   <div className="flex h-full gap-4 pr-4 sm:gap-5">
-                    <section className="flex h-full min-h-[30rem] w-[min(84vw,25rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[#d8ad82] px-7 py-7 text-[#181512] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:w-[26rem]">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-70">Start</p>
-                          <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal">
-                            {trackerPillarLabel} check-in
-                          </h2>
-                        </div>
-                        <WeeklyObjectiveSectionIcon sectionKey={trackerPillarKey} />
-                      </div>
-                      <p className="mt-6 text-[1.35rem] font-medium leading-8 opacity-80">
-                        Swipe across each card and answer the questions for today.
-                      </p>
-                      <div className="mt-auto space-y-4">
-                        <p className="text-sm font-semibold opacity-75">{trackerScoreLabel}</p>
-                        {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
-                          <p className="text-sm opacity-75">
-                            {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
-                          </p>
-                        ) : null}
-                        {(detail.editable_dates || []).length > 1 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {(detail.editable_dates || []).map((item) => {
-                              const itemDate = String(item.date || "").trim();
-                              const active = Boolean(item.is_active);
-                              return (
-                                <button
-                                  key={itemDate}
-                                  type="button"
-                                  disabled={!itemDate || active || saving}
-                                  onClick={() =>
-                                    void openTracker(
-                                      String(detail.pillar?.pillar_key || selectedPillarKey || ""),
-                                      itemDate,
-                                      {
-                                        guided: guidedTrackingActive,
-                                        returnSurface: trackerReturnSurface,
-                                      },
-                                    )
-                                  }
-                                  className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
-                                    active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
-                                  } disabled:cursor-default`}
-                                >
-                                  {item.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    </section>
-
                     {(detail.concepts || []).map((concept, conceptIndex) => {
                       const conceptKey = String(concept.concept_key || "").trim();
                       const selectedValue = draft[conceptKey];
@@ -4103,6 +4060,7 @@ export default function LatestAssessmentPanel({
                               },
                             }),
                           );
+                          window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
                           window.scrollTo({ top: 0, behavior: "smooth" });
                         }
                       }}

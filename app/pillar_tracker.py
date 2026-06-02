@@ -1821,6 +1821,10 @@ def _summary_pillar_payload(
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
     editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
+    last_week_anchor = _last_week_anchor(current_day)
+    checkin_dates = list(editable_dates)
+    if _week_has_completed_tracker_days(int(user_id), pillar_key, last_week_anchor):
+        checkin_dates.insert(0, last_week_anchor)
     resolved_score = tracker_score if tracker_score is not None else baseline_score
     if resolved_score is None:
         resolved_score = 0
@@ -1840,12 +1844,17 @@ def _summary_pillar_payload(
         "checkin_options": [
             {
                 "date": item.isoformat(),
-                "label": _format_tracker_day_label(item, current_day),
-                "complete": _day_complete(entries_by_day.get(item, {}), required_concepts),
+                "label": "Last week" if _is_last_week_anchor(item, current_day) else _format_tracker_day_label(item, current_day),
+                "complete": (
+                    True
+                    if _is_last_week_anchor(item, current_day)
+                    else _day_complete(entries_by_day.get(item, {}), required_concepts)
+                ),
                 "is_today": item == current_day,
                 "is_yesterday": item == current_day - timedelta(days=1),
+                "is_last_week": _is_last_week_anchor(item, current_day),
             }
-            for item in editable_dates
+            for item in checkin_dates
         ],
     }
 

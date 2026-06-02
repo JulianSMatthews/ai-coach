@@ -3063,13 +3063,7 @@ export default function AssessmentChatBox({
                 onClick={() => {
                   setHomeSurface("blank");
                   if (typeof window !== "undefined") {
-                    window.dispatchEvent(
-                      new CustomEvent("healthsense-open-tracker", {
-                        detail: {
-                          returnSurface: "tracking",
-                        },
-                      }),
-                    );
+                    window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }
                 }}
