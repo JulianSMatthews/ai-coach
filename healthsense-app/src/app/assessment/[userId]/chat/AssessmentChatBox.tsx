@@ -816,6 +816,7 @@ export default function AssessmentChatBox({
   const [educationPlanLoading, setEducationPlanLoading] = useState(false);
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
+  const [activeEducationLesson, setActiveEducationLesson] = useState<any | null>(null);
   const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
   const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "concepts" | "lessons">("pillars");
@@ -1063,6 +1064,7 @@ export default function AssessmentChatBox({
       String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim(),
     );
     setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+    setActiveEducationLesson(lesson || null);
     if (options?.closeExplorer) {
       setEducationExplorerOpen(false);
       setEducationExplorerMode("pillars");
@@ -1090,6 +1092,32 @@ export default function AssessmentChatBox({
       );
     }
   }, []);
+  const activeEducationLessonContent = activeEducationLesson?.content || null;
+  const activeEducationLessonAvatar = activeEducationLessonContent?.avatar || null;
+  const activeEducationLessonVideoUrl = firstNonEmptyString(
+    activeEducationLessonAvatar?.video_url,
+    activeEducationLessonAvatar?.videoUrl,
+    activeEducationLessonAvatar?.url,
+    activeEducationLessonContent?.video_url,
+  );
+  const activeEducationLessonPodcastUrl = String(activeEducationLessonContent?.podcast_url || "").trim();
+  const activeEducationLessonMediaUrl = activeEducationLessonVideoUrl || (
+    isLikelyVideoUrl(activeEducationLessonPodcastUrl) ? activeEducationLessonPodcastUrl : ""
+  );
+  const activeEducationLessonTitle = normalizeLessonHeading(
+    String(activeEducationLesson?.title || activeEducationLesson?.concept_label || activeEducationLesson?.pillar_label || "").trim(),
+  );
+  const activeEducationLessonDescription = String(activeEducationLesson?.goal || activeEducationLesson?.summary || "").trim();
+  const activeEducationLessonScript = String(
+    activeEducationLessonContent?.script ||
+      activeEducationLessonAvatar?.script ||
+      activeEducationLessonContent?.body ||
+      activeEducationLesson?.summary ||
+      "",
+  ).trim();
+  const activeEducationLessonAction = String(
+    activeEducationLesson?.action_prompt || activeEducationLessonContent?.action_prompt || "",
+  ).trim();
   const renderEducationLessonCard = useCallback(
     (
       lesson: any,
@@ -2567,7 +2595,65 @@ export default function AssessmentChatBox({
                 </p>
               </div>
               ) : educationPlan?.available ? (
-              educationExplorerOpen ? (
+              activeEducationLesson ? (
+                <div className="flex min-h-full flex-col">
+                  <div className="shrink-0 px-1 py-4 sm:px-2">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setActiveEducationLesson(null)}
+                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e7e1d6] bg-[#ffffff] text-[#1e1b16] transition"
+                        aria-label="Back"
+                      >
+                        <span className="text-3xl leading-none">‹</span>
+                      </button>
+                      <div className="h-12 w-12" />
+                    </div>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-44 sm:px-5 sm:pb-52">
+                    <article className="rounded-[30px] bg-[#fffdf9] px-5 py-5 text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] sm:px-6 sm:py-6">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8a7f72]">
+                        {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
+                      </p>
+                      <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-[-0.02em] text-[#18110d] sm:text-[2.8rem]">
+                        {activeEducationLessonTitle || "Lesson"}
+                      </h2>
+                      {activeEducationLessonDescription ? (
+                        <p className="mt-4 text-[1.2rem] leading-8 text-[#3c332b]">
+                          {activeEducationLessonDescription}
+                        </p>
+                      ) : null}
+                      {activeEducationLessonMediaUrl ? (
+                        <video
+                          className="mt-5 w-full rounded-[24px] bg-black"
+                          src={activeEducationLessonMediaUrl}
+                          controls
+                          playsInline
+                          poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
+                        />
+                      ) : null}
+                      {activeEducationLessonScript ? (
+                        <div className="mt-5 space-y-3 text-[1.05rem] leading-7 text-[#3c332b]">
+                          {activeEducationLessonScript
+                            .split(/\n{2,}/)
+                            .map((paragraph) => paragraph.trim())
+                            .filter(Boolean)
+                            .slice(0, 6)
+                            .map((paragraph, index) => (
+                              <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
+                            ))}
+                        </div>
+                      ) : null}
+                      {activeEducationLessonAction ? (
+                        <div className="mt-5 rounded-[24px] bg-[#f6f1e7] px-4 py-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">Action</p>
+                          <p className="mt-2 text-[1.05rem] leading-7 text-[#3c332b]">{activeEducationLessonAction}</p>
+                        </div>
+                      ) : null}
+                    </article>
+                  </div>
+                </div>
+              ) : educationExplorerOpen ? (
                 <div className="flex min-h-full flex-col">
                   <div className="shrink-0 px-1 py-4 sm:px-2">
                     <div className="flex items-center justify-between">
