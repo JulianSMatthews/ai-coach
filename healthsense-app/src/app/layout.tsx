@@ -40,9 +40,9 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      data-theme="dark"
-      data-theme-preference="dark"
-      style={{ colorScheme: "dark", backgroundColor: "var(--background)" }}
+      data-theme="light"
+      data-theme-preference="light"
+      style={{ colorScheme: "light", backgroundColor: "var(--background)" }}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript() }} />

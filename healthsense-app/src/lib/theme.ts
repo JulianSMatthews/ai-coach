@@ -9,7 +9,7 @@ export function normalizeThemePreference(value: unknown): ThemePreference {
   if (token === "light" || token === "dark" || token === "system") {
     return token;
   }
-  return "dark";
+  return "light";
 }
 
 export function resolveTheme(preference: ThemePreference): ResolvedTheme {
@@ -78,9 +78,9 @@ export function themeBootstrapScript(): string {
         var raw = window.localStorage.getItem(KEY);
         if (!raw) {
           var cookieMatch = document.cookie.match(new RegExp("(?:^|; )" + COOKIE_KEY + "=([^;]+)"));
-          raw = cookieMatch && cookieMatch[1] ? decodeURIComponent(cookieMatch[1]) : "dark";
+          raw = cookieMatch && cookieMatch[1] ? decodeURIComponent(cookieMatch[1]) : "light";
         }
-        var preference = raw === "light" || raw === "dark" || raw === "system" ? raw : "dark";
+        var preference = raw === "light" || raw === "dark" || raw === "system" ? raw : "light";
         var resolved = preference === "system"
           ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
           : preference;

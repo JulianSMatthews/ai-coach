@@ -15,7 +15,7 @@ export default async function WearablesPage(props: PageProps) {
   const [data, wearables] = await Promise.all([getUserStatus(userId), getWearables(userId)]);
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
-  const themePreference = prefs.theme || "dark";
+  const themePreference = prefs.theme || "light";
   const promptState = (data.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"

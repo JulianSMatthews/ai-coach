@@ -129,6 +129,18 @@ type AssessmentCompletionSummaryMedia = {
 
 type HomeSurface = "tracking" | "habits" | "insight" | "ask";
 type HomeSurfaceEntryMode = "guided" | "summary";
+type EducationExplorerConcept = {
+  concept_key: string;
+  concept_label: string;
+  lesson_count: number;
+  lessons: any[];
+};
+type EducationExplorerPillar = {
+  pillar_key: string;
+  pillar_label: string;
+  lesson_count: number;
+  concepts: EducationExplorerConcept[];
+};
 type GiaMessageRealtimeSessionResponse = {
   session_id?: string;
   speech_token?: string;
@@ -923,9 +935,43 @@ export default function AssessmentChatBox({
       });
     return ordered;
   }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson]);
-  const educationExplorerPillars = useMemo(() => {
+  const educationExplorerPillars = useMemo<EducationExplorerPillar[]>(() => {
+    const catalogPillars = Array.isArray(educationPlan?.explore_catalog?.pillars)
+      ? educationPlan.explore_catalog.pillars
+      : [];
+    if (catalogPillars.length) {
+      return catalogPillars
+        .map((pillar) => {
+          const pillarKey = String(pillar?.pillar_key || "").trim().toLowerCase();
+          if (!pillarKey) return null;
+          const concepts = (Array.isArray(pillar?.concepts) ? pillar.concepts : [])
+            .map((concept) => {
+              const conceptKey = String(concept?.concept_key || "").trim().toLowerCase();
+              if (!conceptKey) return null;
+              const lessons = Array.isArray(concept?.lessons) ? concept.lessons : [];
+              const lessonCount = Number(concept?.lesson_count ?? lessons.length);
+              return {
+                concept_key: conceptKey,
+                concept_label: String(concept?.concept_label || conceptKey.replace(/_/g, " ")).trim() || "Concept",
+                lesson_count: Number.isFinite(lessonCount) ? lessonCount : lessons.length,
+                lessons,
+              };
+            })
+            .filter((concept): concept is EducationExplorerConcept => Boolean(concept));
+          const lessonCount = Number(pillar?.lesson_count ?? concepts.reduce((total, concept) => {
+            return total + concept.lesson_count;
+          }, 0));
+          return {
+            pillar_key: pillarKey,
+            pillar_label: String(pillar?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
+            lesson_count: Number.isFinite(lessonCount) ? lessonCount : 0,
+            concepts,
+          };
+        })
+        .filter((pillar): pillar is EducationExplorerPillar => Boolean(pillar));
+    }
     const seen = new Set<string>();
-    const ordered: Array<{ pillar_key: string; pillar_label: string; lesson_count: number }> = [];
+    const ordered: EducationExplorerPillar[] = [];
     for (const lesson of educationLessonRail) {
       const pillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
       if (!pillarKey || seen.has(pillarKey)) continue;
@@ -934,16 +980,28 @@ export default function AssessmentChatBox({
         pillar_key: pillarKey,
         pillar_label: String(lesson?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
         lesson_count: educationLessonRail.filter((item) => String(item?.pillar_key || "").trim().toLowerCase() === pillarKey).length,
+        concepts: [],
       });
     }
     return ordered;
-  }, [educationLessonRail]);
+  }, [educationLessonRail, educationPlan?.explore_catalog?.pillars]);
   const activeEducationExplorerPillarKey =
     educationExplorerPillarKey || educationExplorerPillars[0]?.pillar_key || null;
-  const educationExplorerConcepts = useMemo(() => {
+  const educationExplorerConcepts = useMemo<EducationExplorerConcept[]>(() => {
     const activeKey = String(activeEducationExplorerPillarKey || "").trim().toLowerCase();
     if (!activeKey) return [];
-    const groups = new Map<string, { concept_key: string; concept_label: string; lesson_count: number }>();
+    const catalogPillar = educationExplorerPillars.find((pillar) => pillar.pillar_key === activeKey);
+    const catalogConcepts = Array.isArray(catalogPillar?.concepts) ? catalogPillar.concepts : [];
+    if (catalogConcepts.length) {
+      return catalogConcepts
+        .map((concept) => ({
+          concept_key: concept.concept_key,
+          concept_label: concept.concept_label,
+          lesson_count: concept.lesson_count,
+          lessons: concept.lessons,
+        }));
+    }
+    const groups = new Map<string, EducationExplorerConcept>();
     for (const lesson of educationLessonRail) {
       const lessonPillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
       if (lessonPillarKey !== activeKey) continue;
@@ -957,17 +1015,23 @@ export default function AssessmentChatBox({
           concept_key: conceptKey,
           concept_label: conceptLabel,
           lesson_count: 1,
+          lessons: [lesson],
         });
+        continue;
       }
+      entry.lessons.push(lesson);
     }
     return Array.from(groups.values());
-  }, [activeEducationExplorerPillarKey, educationLessonRail]);
+  }, [activeEducationExplorerPillarKey, educationExplorerPillars, educationLessonRail]);
   const activeEducationExplorerConceptKey =
     educationExplorerConceptKey || educationExplorerConcepts[0]?.concept_key || null;
   const educationExplorerLessons = useMemo(() => {
     const activePillarKey = String(activeEducationExplorerPillarKey || "").trim().toLowerCase();
     const activeConceptKey = String(activeEducationExplorerConceptKey || "").trim().toLowerCase();
     if (!activePillarKey || !activeConceptKey) return [];
+    const catalogConcept = educationExplorerConcepts.find((concept) => concept.concept_key === activeConceptKey);
+    const catalogLessons = Array.isArray(catalogConcept?.lessons) ? catalogConcept.lessons : [];
+    if (catalogLessons.length) return catalogLessons;
     const seen = new Set<string>();
     return educationLessonRail
       .filter((lesson) => String(lesson?.pillar_key || "").trim().toLowerCase() === activePillarKey)
@@ -981,7 +1045,7 @@ export default function AssessmentChatBox({
         seen.add(token);
         return true;
       });
-  }, [activeEducationExplorerConceptKey, activeEducationExplorerPillarKey, educationLessonRail]);
+  }, [activeEducationExplorerConceptKey, activeEducationExplorerPillarKey, educationExplorerConcepts, educationLessonRail]);
   const openEducationLesson = useCallback((lesson: any, options?: { closeExplorer?: boolean }) => {
     const lessonDayIndex = Number(lesson?.day_index || 0);
     const lessonTitle = normalizeLessonHeading(
@@ -2511,7 +2575,7 @@ export default function AssessmentChatBox({
                     {educationExplorerMode === "pillars" ? (
                       <div className="space-y-3">
                         {educationExplorerPillars.map((pillar) => {
-                          const active = pillar.pillar_key === activeEducationExplorerPillarKey;
+                          const active = pillar.pillar_key === educationExplorerPillarKey;
                           const palette = getPillarPalette(pillar.pillar_key);
                           return (
                             <button
@@ -2623,7 +2687,7 @@ export default function AssessmentChatBox({
                       onClick={() => {
                         setEducationExplorerOpen(true);
                         setEducationExplorerMode("pillars");
-                        setEducationExplorerPillarKey(educationExplorerPillars[0]?.pillar_key || null);
+                        setEducationExplorerPillarKey(null);
                         setEducationExplorerConceptKey(null);
                       }}
                       className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"

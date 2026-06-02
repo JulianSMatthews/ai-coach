@@ -20,7 +20,7 @@ export default async function PreferencesPage(props: PageProps) {
   const user = data.user || {};
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
-  const themePreference = prefs.theme || "dark";
+  const themePreference = prefs.theme || "light";
   const nutritionPillarEnabled = isTruthyToken(prefs.home_pillar_nutrition);
   const trainingPillarEnabled = isTruthyToken(prefs.home_pillar_training);
   const promptState = (data.prompt_state_override || "").toLowerCase();

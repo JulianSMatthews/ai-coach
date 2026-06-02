@@ -2184,6 +2184,96 @@ def _education_plan_lesson_payload(
     }
 
 
+def _education_explore_catalog_payload(
+    session,
+    *,
+    plan: UserEducationPlan,
+    anchor: date,
+    context: dict[str, Any],
+    assessment: dict[str, Any],
+    progress_by_day_id: dict[int, UserEducationDayProgress],
+    concept_level_by_key: dict[tuple[str, str], UserEducationConceptLevel],
+) -> dict[str, Any]:
+    programmes = (
+        session.execute(
+            select(EducationProgramme)
+            .where(
+                EducationProgramme.is_released.is_(True),
+                EducationProgramme.concept_key.isnot(None),
+                EducationProgramme.concept_key != "",
+            )
+            .order_by(
+                EducationProgramme.pillar_key.asc(),
+                EducationProgramme.concept_label.asc(),
+                EducationProgramme.concept_key.asc(),
+                desc(EducationProgramme.updated_at),
+                desc(EducationProgramme.id),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pillars: dict[str, dict[str, Any]] = {}
+    seen_concepts: set[tuple[str, str]] = set()
+    for programme in programmes:
+        pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+        concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+        if not pillar_key or not concept_key:
+            continue
+        concept_token = (pillar_key, concept_key)
+        if concept_token in seen_concepts:
+            continue
+        seen_concepts.add(concept_token)
+        programme_days = (
+            session.execute(
+                select(EducationProgrammeDay)
+                .where(EducationProgrammeDay.programme_id == int(programme.id))
+                .order_by(EducationProgrammeDay.day_index.asc(), EducationProgrammeDay.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        lessons = [
+            _education_plan_lesson_payload(
+                session,
+                plan=plan,
+                programme=programme,
+                programme_day=day,
+                anchor=anchor,
+                context=context,
+                assessment=assessment,
+                progress_by_day_id=progress_by_day_id,
+                concept_level_by_key=concept_level_by_key,
+            )
+            for day in programme_days
+        ]
+        pillar_entry = pillars.setdefault(
+            pillar_key,
+            {
+                "pillar_key": pillar_key,
+                "pillar_label": _pillar_label(pillar_key),
+                "lesson_count": 0,
+                "concepts": [],
+            },
+        )
+        concept_label = (
+            str(getattr(programme, "concept_label", "") or "").strip()
+            or (str(getattr(programme_days[0], "concept_label", "") or "").strip() if programme_days else "")
+            or concept_key.replace("_", " ").title()
+        )
+        pillar_entry["concepts"].append(
+            {
+                "programme_id": int(programme.id),
+                "concept_key": concept_key,
+                "concept_label": concept_label,
+                "lesson_count": len(lessons),
+                "lessons": lessons,
+            }
+        )
+        pillar_entry["lesson_count"] = int(pillar_entry.get("lesson_count") or 0) + len(lessons)
+    return {"pillars": list(pillars.values())}
+
+
 def _completed_programme_ids_for_user(session, user_id: int) -> set[int]:
     plans = (
         session.execute(
@@ -2920,7 +3010,6 @@ def _lesson_state(
             select(UserEducationConceptLevel)
             .where(
                 UserEducationConceptLevel.user_id == int(user_id),
-                UserEducationConceptLevel.pillar_key == pillar_key,
             )
             .order_by(desc(UserEducationConceptLevel.updated_at), desc(UserEducationConceptLevel.id))
         )
@@ -2955,6 +3044,15 @@ def _lesson_state(
         )
         for day in programme_days
     ]
+    explore_catalog = _education_explore_catalog_payload(
+        session,
+        plan=plan,
+        anchor=anchor,
+        context=context,
+        assessment=assessment,
+        progress_by_day_id=progress_by_day_id,
+        concept_level_by_key=concept_level_by_key,
+    )
     _sync_plan_streaks(session, plan)
     session.flush()
     takeaway = str(getattr(progress, "takeaway_text_shown", "") or "").strip() or None
@@ -2989,6 +3087,7 @@ def _lesson_state(
         "tracker_day_label": str(tracker_pillar.get("active_label") or "").strip() or None,
         "previous_lesson": previous_lesson,
         "lessons": lessons,
+        "explore_catalog": explore_catalog,
         "lesson": {
             "programme_day_id": int(programme_day.id),
             "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,
