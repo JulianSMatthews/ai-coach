@@ -38,16 +38,6 @@ function DockInsightIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-function DockGiaIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 18l-3 3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6Z" />
-      <path d="M8 9h8" />
-      <path d="M8 13h5" />
-    </svg>
-  );
-}
-
 type ChatMessage = {
   id?: number;
   direction?: string;
@@ -127,7 +117,7 @@ type AssessmentCompletionSummaryMedia = {
   realtimeMaxReplays: number | null;
 };
 
-type HomeSurface = "tracking" | "habits" | "insight" | "ask";
+type HomeSurface = "blank" | "tracking" | "habits" | "insight" | "ask";
 type HomeSurfaceEntryMode = "guided" | "summary";
 type EducationExplorerConcept = {
   concept_key: string;
@@ -150,7 +140,6 @@ type GiaMessageRealtimeSessionResponse = {
   error?: string;
 };
 
-const TRACKING_STEP_PILLARS = ["Reflection", "Purpose", "Resilience", "Recovery"];
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 const DAY_PLAN_MOMENT_ORDER = ["morning", "midday", "afternoon", "evening"] as const;
@@ -167,6 +156,11 @@ const HOME_SURFACE_COPY: Record<
     eyebrow: "Check-in",
     title: "Daily check-in",
     description: "Answer the questions for each pillar.",
+  },
+  blank: {
+    eyebrow: "",
+    title: "",
+    description: "",
   },
   habits: {
     eyebrow: "Plan",
@@ -1284,18 +1278,20 @@ export default function AssessmentChatBox({
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
   const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
-  const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
-  const homeSurfaceDescription = viewingHomeSurfaceFromSummary
+  const homeSurfaceEyebrow = homeSurface === "blank" ? "" : viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
+  const homeSurfaceDescription = homeSurface === "blank"
+    ? ""
+    : viewingHomeSurfaceFromSummary
     ? "Review this and close when you are ready."
     : homeSurfaceMeta.description;
   const homePanelHeightClass =
-    homeSurface === "tracking"
+    homeSurface === "blank"
+      ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
+      : homeSurface === "tracking"
       ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
       : homeSurface === "ask"
         ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
         : "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
-  const pillarTileClassName = "min-h-[10.5rem] rounded-[22px] px-3 py-3 text-left transition sm:min-h-[12rem]";
-  const pillarTileStyle = { backgroundColor: "#fcf8f0" };
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
@@ -1764,6 +1760,11 @@ export default function AssessmentChatBox({
       if (surface === "tracking") {
         setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("tracking");
+        return;
+      }
+      if (surface === "blank") {
+        setHomeSurfaceEntryMode(entryMode);
+        setHomeSurface("blank");
         return;
       }
       if (surface === "insight") {
@@ -2609,60 +2610,36 @@ export default function AssessmentChatBox({
   const homeChatPanel = showGuidedHomeChatPanel ? (
     <section className="-mx-3 overflow-hidden bg-transparent sm:mx-0">
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
-        <div className="shrink-0 px-4 py-4 sm:px-5">
-          {homeSurface === "insight" ? (
-            <div className="min-w-0" />
-          ) : (
-            <>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
-                {homeSurfaceEyebrow}
-              </p>
-              <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
-              {homeSurfaceDescription ? (
-                <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
-              ) : null}
-            </>
-          )}
-        </div>
-        <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-44 sm:px-5 sm:pb-52">
-          {homeSurface === "tracking" ? (
+        {homeSurface === "blank" ? (
+          <div className="min-h-0 flex-1 bg-transparent" />
+        ) : (
+          <>
+            <div className="shrink-0 px-4 py-4 sm:px-5">
+              {homeSurface === "insight" ? (
+                <div className="min-w-0" />
+              ) : (
+                <>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+                    {homeSurfaceEyebrow}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
+                  {homeSurfaceDescription ? (
+                    <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
+                  ) : null}
+                </>
+              )}
+            </div>
+            <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-44 sm:px-5 sm:pb-52">
+              {homeSurface === "tracking" ? (
             <div className="flex min-h-full flex-col gap-4">
               <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
                 <p className="text-sm text-[#6b6257]">
-                  Tap a pillar to open just that daily check-in, or start the guided flow below to move through each pillar in order.
+                  Return to the home score cards and tap a pillar when you want to complete that check-in.
                 </p>
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {TRACKING_STEP_PILLARS.map((pillar, index) => (
-                    <button
-                      key={pillar}
-                      type="button"
-                      onClick={() => {
-                        if (typeof window !== "undefined") {
-                          window.dispatchEvent(
-                            new CustomEvent("healthsense-open-tracker", {
-                              detail: {
-                                pillarKey: pillar.toLowerCase(),
-                                guided: false,
-                                returnSurface: "tracking",
-                              },
-                            }),
-                          );
-                        }
-                      }}
-                      className={pillarTileClassName}
-                      style={pillarTileStyle}
-                    >
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        Pillar {index + 1}
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar}</p>
-                    </button>
-                  ))}
-                </div>
               </div>
               <div className="mt-auto rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5">
                 <p className="text-sm text-[#6b6257]">
-                  Use the footer button to start the guided tracker, or select a pillar above.
+                  The footer Checkin button now returns to the home page.
                 </p>
               </div>
             </div>
@@ -3080,19 +3057,20 @@ export default function AssessmentChatBox({
         </div>
         <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
           <div className="mx-auto w-full max-w-[23rem] rounded-[28px] border border-[var(--chrome-border)] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-2 gap-1">
               <button
                 type="button"
                 onClick={() => {
+                  setHomeSurface("blank");
                   if (typeof window !== "undefined") {
                     window.dispatchEvent(
                       new CustomEvent("healthsense-open-tracker", {
                         detail: {
-                          guided: true,
                           returnSurface: "tracking",
                         },
                       }),
                     );
+                    window.scrollTo({ top: 0, behavior: "smooth" });
                   }
                 }}
                 className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
@@ -3110,18 +3088,11 @@ export default function AssessmentChatBox({
                 <DockInsightIcon className="h-5 w-5" />
                 <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setHomeSurface("ask")}
-                className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
-                style={homeSurface === "ask" ? homeDockActiveButtonStyle : homePlainButtonStyle}
-              >
-                <DockGiaIcon className="h-5 w-5" />
-                <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Coach</span>
-              </button>
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
     </section>
   ) : null;

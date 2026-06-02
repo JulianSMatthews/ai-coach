@@ -355,6 +355,13 @@ export type PillarTrackerPillar = {
   yesterday_catchup_available?: boolean;
   is_editable?: boolean;
   is_current_week?: boolean;
+  checkin_options?: Array<{
+    date?: string | null;
+    label?: string | null;
+    complete?: boolean | null;
+    is_today?: boolean | null;
+    is_yesterday?: boolean | null;
+  }> | null;
 };
 
 export type PillarTrackerSummaryResponse = {

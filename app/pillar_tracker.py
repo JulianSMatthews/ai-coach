@@ -1820,6 +1820,7 @@ def _summary_pillar_payload(
 ) -> dict[str, Any]:
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
+    editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
     resolved_score = tracker_score if tracker_score is not None else baseline_score
     if resolved_score is None:
         resolved_score = 0
@@ -1836,6 +1837,16 @@ def _summary_pillar_payload(
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
         "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),
+        "checkin_options": [
+            {
+                "date": item.isoformat(),
+                "label": _format_tracker_day_label(item, current_day),
+                "complete": _day_complete(entries_by_day.get(item, {}), required_concepts),
+                "is_today": item == current_day,
+                "is_yesterday": item == current_day - timedelta(days=1),
+            }
+            for item in editable_dates
+        ],
     }
 
 

@@ -1095,25 +1095,6 @@ function InsightIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className
   );
 }
 
-function GiaMessageIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M6 18l-3 3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6Z" />
-      <path d="M8 9h8" />
-      <path d="M8 13h5" />
-    </svg>
-  );
-}
-
 function BiometricsIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
@@ -1206,7 +1187,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
-  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn" | "coach">("learn");
+  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("learn");
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -1256,17 +1237,6 @@ export default function LatestAssessmentPanel({
           backgroundColor: "#d8ad82",
           color: "#181512",
         };
-  const orderedPillarKeys = visiblePillars
-    .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
-    .filter((pillarKey) => Boolean(pillarKey));
-  const resolveNextPillarKey = useCallback((pillarKey: string): string | null => {
-    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
-    const currentIndex = orderedPillarKeys.indexOf(normalizedPillarKey);
-    if (currentIndex < 0) {
-      return orderedPillarKeys[0] || null;
-    }
-    return orderedPillarKeys[currentIndex + 1] || null;
-  }, [orderedPillarKeys]);
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -2678,7 +2648,7 @@ export default function LatestAssessmentPanel({
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
           detail: {
-            surface: "tracking",
+            surface: "blank",
           },
         }),
       );
@@ -2699,18 +2669,12 @@ export default function LatestAssessmentPanel({
   };
 
   const handleTrackerDismiss = useCallback(async () => {
-    const currentPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
     if (guidedTrackingActive) {
-      const nextPillarKey = currentPillarKey ? resolveNextPillarKey(currentPillarKey) : null;
-      if (nextPillarKey) {
-        await openTracker(nextPillarKey, undefined, { guided: true });
-        return;
-      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: "tracking",
+              surface: "blank",
               complete: true,
             },
           }),
@@ -2732,8 +2696,6 @@ export default function LatestAssessmentPanel({
   }, [
     detail?.pillar?.pillar_key,
     guidedTrackingActive,
-    openTracker,
-    resolveNextPillarKey,
     selectedPillarKey,
     trackerReturnSurface,
   ]);
@@ -2772,17 +2734,11 @@ export default function LatestAssessmentPanel({
         );
       }
       await refreshSummary().catch(() => undefined);
-      const currentPillarKey = String(detail.pillar.pillar_key || "").trim().toLowerCase();
-      const nextPillarKey = guidedTrackingActive ? resolveNextPillarKey(currentPillarKey) : null;
-      if (nextPillarKey) {
-        await openTracker(nextPillarKey, undefined, { guided: true });
-        return;
-      }
       if (guidedTrackingActive && typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: "tracking",
+              surface: "blank",
               complete: true,
             },
           }),
@@ -2831,9 +2787,13 @@ export default function LatestAssessmentPanel({
         returnSurface?: TrackerReturnSurface | null;
       }>).detail;
       const requestedPillarKey = String(detail?.pillarKey || "").trim().toLowerCase();
-      const nextPillarKey = requestedPillarKey || orderedPillarKeys[0] || "";
-      if (!nextPillarKey) return;
-      void openTracker(nextPillarKey, undefined, {
+      if (!requestedPillarKey) {
+        setSummaryPanelVisible(true);
+        setActiveDockKey("checkin");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      void openTracker(requestedPillarKey, undefined, {
         guided: detail?.guided !== false,
         returnSurface: detail?.returnSurface ?? null,
       });
@@ -2842,7 +2802,7 @@ export default function LatestAssessmentPanel({
     return () => {
       window.removeEventListener("healthsense-open-tracker", onOpenTracker as EventListener);
     };
-  }, [orderedPillarKeys, openTracker]);
+  }, [openTracker]);
 
   return (
     <>
@@ -2859,15 +2819,15 @@ export default function LatestAssessmentPanel({
                   const palette = getPillarPalette(pillarKey);
                   const score = resolvePillarDisplayScore(pillar);
                   const quote = resolveHomePillarQuote(pillar, pillarKey);
+                  const checkinOptions = Array.isArray(pillar.checkin_options)
+                    ? pillar.checkin_options.filter((option) => String(option?.date || "").trim())
+                    : [];
+                  const resolvedCheckinOptions = checkinOptions.length
+                    ? checkinOptions
+                    : [{ date: summary.today || "", label: "Today", complete: pillar.today_complete, is_today: true }];
                   return (
-                    <button
+                    <article
                       key={pillarKey}
-                      type="button"
-                      onClick={() =>
-                        void openTracker(pillarKey, undefined, {
-                          guided: false,
-                        })
-                      }
                       className="relative flex min-h-[28rem] w-[min(82vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
@@ -2883,8 +2843,34 @@ export default function LatestAssessmentPanel({
                         <p className="text-[1.45rem] font-medium leading-[1.18] text-current opacity-80 sm:text-[1.65rem]">
                           {quote}
                         </p>
+                        <p className="mt-5 text-sm font-semibold uppercase tracking-[0.14em] text-current opacity-70">
+                          {`${Number(pillar.streak_days || 0)} day streak`}
+                        </p>
+                        <div className="mt-4 grid gap-2">
+                          {resolvedCheckinOptions.map((option) => {
+                            const optionDate = String(option?.date || "").trim();
+                            const optionLabel = String(option?.label || (option?.is_yesterday ? "Yesterday" : "Today")).trim();
+                            const complete = option?.complete === true;
+                            return (
+                              <button
+                                key={`${pillarKey}-${optionDate || optionLabel}`}
+                                type="button"
+                                onClick={() =>
+                                  void openTracker(pillarKey, optionDate || undefined, {
+                                    guided: false,
+                                  })
+                                }
+                                className={`rounded-full px-4 py-3 text-left text-sm font-semibold transition ${
+                                  complete ? "bg-white/75 text-[#1e1b16]" : "bg-[#111111] text-white"
+                                }`}
+                              >
+                                {complete ? `Edit ${optionLabel}` : optionLabel}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </button>
+                    </article>
                   );
                 })}
               </div>
@@ -2897,15 +2883,23 @@ export default function LatestAssessmentPanel({
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-              <div className="grid grid-cols-3 p-1">
+              <div className="grid grid-cols-2 p-1">
                 <button
                   type="button"
                   onClick={() => {
                     setActiveDockKey("checkin");
-                    void openTracker(orderedPillarKeys[0] || "", undefined, {
-                      guided: true,
-                      returnSurface: "tracking",
-                    });
+                    setSummaryPanelVisible(true);
+                    if (typeof window !== "undefined") {
+                      window.dispatchEvent(
+                        new CustomEvent("healthsense-home-surface", {
+                          detail: {
+                            surface: "blank",
+                            source: "summary",
+                          },
+                        }),
+                      );
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }
                   }}
                   aria-pressed={activeDockKey === "checkin"}
                   className={homeDockButtonClassName}
@@ -2929,21 +2923,6 @@ export default function LatestAssessmentPanel({
                   <InsightIcon className="h-4 w-4 text-[var(--chrome-text)]" />
                   <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
                     Learn
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveDockKey("coach");
-                    openDailyMenuSurface("ask");
-                  }}
-                  aria-pressed={activeDockKey === "coach"}
-                  className={homeDockButtonClassName}
-                  style={activeDockKey === "coach" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
-                >
-                  <GiaMessageIcon className="h-4 w-4 text-[var(--chrome-text)]" />
-                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
-                    Coach
                   </span>
                 </button>
               </div>
@@ -4108,11 +4087,24 @@ export default function LatestAssessmentPanel({
             <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
               <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
                 <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-                  <div className="grid grid-cols-3 p-1">
+                  <div className="grid grid-cols-2 p-1">
                     <button
                       type="button"
                       onClick={() => {
+                        closeTracker();
                         setActiveDockKey("checkin");
+                        setSummaryPanelVisible(true);
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(
+                            new CustomEvent("healthsense-home-surface", {
+                              detail: {
+                                surface: "blank",
+                                source: "summary",
+                              },
+                            }),
+                          );
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }
                       }}
                       aria-pressed
                       className={homeDockButtonClassName}
@@ -4134,20 +4126,6 @@ export default function LatestAssessmentPanel({
                     >
                       <InsightIcon className="h-4 w-4 text-[var(--chrome-text)]" />
                       <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        closeTracker();
-                        setActiveDockKey("coach");
-                        openDailyMenuSurface("ask");
-                      }}
-                      aria-pressed={false}
-                      className={homeDockButtonClassName}
-                      style={homeDockButtonStyleInactive}
-                    >
-                      <GiaMessageIcon className="h-4 w-4 text-[var(--chrome-text)]" />
-                      <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Coach</span>
                     </button>
                   </div>
                 </div>
