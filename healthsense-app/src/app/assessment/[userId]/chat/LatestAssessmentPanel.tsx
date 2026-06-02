@@ -2832,6 +2832,15 @@ export default function LatestAssessmentPanel({
                   const resolvedCheckinOptions = checkinOptions.length
                     ? checkinOptions
                     : [{ date: summary.today || "", label: "Today", complete: pillar.today_complete, is_today: true }];
+                  const orderedCheckinOptions = [...resolvedCheckinOptions].sort((a, b) => {
+                    const rank = (option: (typeof resolvedCheckinOptions)[number]) => {
+                      if (option?.is_last_week) return 0;
+                      if (option?.is_yesterday) return 1;
+                      if (option?.is_today) return 2;
+                      return 3;
+                    };
+                    return rank(a) - rank(b);
+                  });
                   return (
                     <article
                       key={pillarKey}
@@ -2853,8 +2862,8 @@ export default function LatestAssessmentPanel({
                         <p className="mt-5 text-sm font-semibold uppercase tracking-[0.14em] text-current opacity-70">
                           {`${Number(pillar.streak_days || 0)} day streak`}
                         </p>
-                        <div className="mt-4 grid gap-2">
-                          {resolvedCheckinOptions.map((option) => {
+                        <div className="mt-4 grid max-w-[16rem] grid-cols-2 gap-2">
+                          {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
                               option?.label || (option?.is_last_week ? "Last week" : option?.is_yesterday ? "Yesterday" : "Today"),
@@ -2869,7 +2878,7 @@ export default function LatestAssessmentPanel({
                                     guided: false,
                                   })
                                 }
-                                className={`min-h-[3.6rem] rounded-full px-5 py-4 text-left text-[1.05rem] font-semibold transition ${
+                                className={`min-h-[2.7rem] rounded-full px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition ${
                                   complete ? "bg-white/75 text-[#1e1b16]" : "bg-[#111111] text-white"
                                 }`}
                               >
@@ -3907,8 +3916,8 @@ export default function LatestAssessmentPanel({
               {detailError ? <p className="px-4 text-sm text-[#8a3e1a]">{detailError}</p> : null}
 
               {detail && !loadingDetail ? (
-                <div className="h-full overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
-                  <div className="flex h-full gap-4 pr-4 sm:gap-5">
+                <div className="h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth px-4 touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
+                  <div className="flex h-full items-stretch gap-4 pr-4 sm:gap-5">
                     {(detail.concepts || []).map((concept, conceptIndex) => {
                       const conceptKey = String(concept.concept_key || "").trim();
                       const selectedValue = draft[conceptKey];
@@ -3925,7 +3934,7 @@ export default function LatestAssessmentPanel({
                       return (
                         <section
                           key={conceptKey}
-                          className="flex h-full min-h-[30rem] w-[min(84vw,25rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem]"
+                          className="flex h-full min-h-[30rem] w-[calc(100vw-2rem)] max-w-[25rem] shrink-0 snap-start snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem] sm:max-w-[26rem]"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
@@ -3996,7 +4005,7 @@ export default function LatestAssessmentPanel({
                       );
                     })}
 
-                    <section className="flex h-full min-h-[30rem] w-[min(84vw,25rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem]">
+                    <section className="flex h-full min-h-[30rem] w-[calc(100vw-2rem)] max-w-[25rem] shrink-0 snap-start snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem] sm:max-w-[26rem]">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">Complete</p>
                       <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal text-[#181512]">
                         Finish check-in
