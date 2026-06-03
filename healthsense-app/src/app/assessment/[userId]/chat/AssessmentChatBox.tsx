@@ -19,25 +19,6 @@ import AssessmentPromptCard, {
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import RealtimeSummaryAvatar from "./RealtimeSummaryAvatar";
 
-function DockBiometricsIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 14.5h3l1.8-5 3.1 9 2.1-6h6" />
-      <path d="M7.5 5.5a3.5 3.5 0 0 1 5 0L12 6l-.5-.5a3.5 3.5 0 0 1 5 0c1.4 1.4 1.4 3.6 0 5L12 15l-4.5-4.5a3.5 3.5 0 0 1 0-5Z" />
-    </svg>
-  );
-}
-
-function DockInsightIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3a7 7 0 0 0-4 12.7c.6.4 1 1 1.2 1.7h5.6c.2-.7.6-1.3 1.2-1.7A7 7 0 0 0 12 3Z" />
-      <path d="M9.5 21h5" />
-      <path d="M10 18.5h4" />
-    </svg>
-  );
-}
-
 type ChatMessage = {
   id?: number;
   direction?: string;
@@ -1310,7 +1291,6 @@ export default function AssessmentChatBox({
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
-  const homeDockActiveButtonStyle = { backgroundColor: "#ece7dc", color: "#000000", borderColor: "#d9cdbb" };
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
       return;
@@ -3097,36 +3077,6 @@ export default function AssessmentChatBox({
               </div>
             </div>
           )}
-        </div>
-        <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
-          <div className="mx-auto w-full max-w-[23rem] rounded-[28px] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setHomeSurface("blank");
-                  if (typeof window !== "undefined") {
-                    window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }
-                }}
-                className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
-                style={homeSurface === "tracking" ? homeDockActiveButtonStyle : homePlainButtonStyle}
-              >
-                <DockBiometricsIcon className="h-5 w-5" />
-                <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Checkin</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHomeSurface("insight")}
-                className="flex flex-col items-center justify-center rounded-[22px] px-2 py-3 text-center transition"
-                style={homeSurface === "insight" ? homeDockActiveButtonStyle : homePlainButtonStyle}
-              >
-                <DockInsightIcon className="h-5 w-5" />
-                <span className="mt-1 text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
-              </button>
-            </div>
-          </div>
         </div>
           </>
         )}

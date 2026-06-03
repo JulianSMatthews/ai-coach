@@ -2539,6 +2539,22 @@ export default function LatestAssessmentPanel({
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onHomeSurfaceChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ surface?: string }>).detail;
+      const surface = String(detail?.surface || "").trim();
+      if (surface === "insight") {
+        setActiveDockKey("learn");
+        setSummaryPanelVisible(false);
+      } else if (surface === "blank" || surface === "tracking") {
+        setActiveDockKey("checkin");
+      }
+    };
+    window.addEventListener("healthsense-home-surface", onHomeSurfaceChange as EventListener);
+    return () => window.removeEventListener("healthsense-home-surface", onHomeSurfaceChange as EventListener);
+  }, []);
+
+  useEffect(() => {
     if (!summaryPanelVisible) return;
     const panel = summaryPanelRef.current;
     if (!panel || typeof panel.scrollIntoView !== "function") return;
@@ -2880,14 +2896,17 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
-      {summaryPanelVisible && !selectedPillarKey ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
+      {!biometricsModalOpen && !objectivesModalOpen ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
               <div className="grid grid-cols-2 p-1">
                 <button
                   type="button"
                   onClick={() => {
+                    if (selectedPillarKey) {
+                      closeTracker();
+                    }
                     setActiveDockKey("checkin");
                     setSummaryPanelVisible(true);
                     if (typeof window !== "undefined") {
@@ -2915,6 +2934,9 @@ export default function LatestAssessmentPanel({
                 <button
                   type="button"
                   onClick={() => {
+                    if (selectedPillarKey) {
+                      closeTracker();
+                    }
                     setActiveDockKey("learn");
                     setSummaryPanelVisible(false);
                     openDailyMenuSurface("insight");
@@ -3985,54 +4007,6 @@ export default function LatestAssessmentPanel({
               ) : null}
             </div>
 
-            <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
-              <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-                <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-                  <div className="grid grid-cols-2 p-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        closeTracker();
-                        setActiveDockKey("checkin");
-                        setSummaryPanelVisible(true);
-                        if (typeof window !== "undefined") {
-                          window.dispatchEvent(
-                            new CustomEvent("healthsense-home-surface", {
-                              detail: {
-                                surface: "blank",
-                                source: "summary",
-                              },
-                            }),
-                          );
-                          window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }
-                      }}
-                      aria-pressed
-                      className={homeDockButtonClassName}
-                      style={homeDockButtonStyleActive}
-                    >
-                      <BiometricsIcon className="h-4 w-4 text-[var(--chrome-text)]" />
-                      <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Checkin</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        closeTracker();
-                        setActiveDockKey("learn");
-                        openDailyMenuSurface("insight");
-                      }}
-                      aria-pressed={false}
-                      className={homeDockButtonClassName}
-                      style={homeDockButtonStyleInactive}
-                    >
-                      <InsightIcon className="h-4 w-4 text-[var(--chrome-text)]" />
-                      <span className="text-[10px] font-semibold leading-none sm:text-[11px]">Learn</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
       ) : null}
