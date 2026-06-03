@@ -1280,11 +1280,7 @@ export default function AssessmentChatBox({
   const homePanelHeightClass =
     homeSurface === "blank"
       ? "h-auto"
-      : homeSurface === "tracking"
-      ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
-      : homeSurface === "ask"
-        ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
-        : "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
+      : "min-h-[calc(100dvh-6rem)]";
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };

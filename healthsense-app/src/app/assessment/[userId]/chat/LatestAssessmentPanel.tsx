@@ -2826,7 +2826,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="flex min-h-[calc(100dvh-8rem)] items-center pb-28 pt-6 sm:min-h-[calc(100dvh-10rem)] sm:pb-32 sm:pt-8"
+          className="flex min-h-[calc(100dvh-6rem)] items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
           <div className="relative overflow-hidden">
             <div className="overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
