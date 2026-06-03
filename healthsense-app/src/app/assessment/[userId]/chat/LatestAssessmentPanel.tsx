@@ -69,7 +69,7 @@ const BIOMETRIC_CONNECT_OPTIONS = [
 ];
 const HOME_PILLAR_QUOTE_FALLBACKS: Record<string, string> = {
   reflection: "Notice one honest signal today and let it guide your next choice.",
-  purpose: "Choose one action that makes today feel aligned with what matters.",
+  purpose: "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
   resilience: "Pause early, respond deliberately, and protect your calm under pressure.",
   recovery: "Give your body enough space to reset before asking for more.",
   nutrition: "Make the next meal simple, steady, and supportive of your energy.",

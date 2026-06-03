@@ -33,7 +33,7 @@ _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
 _HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
-    "purpose": "Choose one action that makes today feel aligned with what matters.",
+    "purpose": "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
     "resilience": "Pause early, respond deliberately, and protect your calm under pressure.",
     "recovery": "Give your body enough space to reset before asking for more.",
     "nutrition": "Make the next meal simple, steady, and supportive of your energy.",
@@ -1776,12 +1776,20 @@ def _daily_pillar_quote(user_id: int, pillar_key: str, label: str, score: int, a
             )
             cached = _normalise_daily_pillar_quote(getattr(pref, "value", None))
             if cached:
-                return cached
+                if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
+                    return cached
+
+            purpose_guidance = (
+                "For Purpose, make it reflective and insight-led rather than about choosing an action.\n"
+                if key == "purpose"
+                else ""
+            )
 
             prompt = (
                 "Write one short daily coaching quote for a mobile wellbeing score card.\n"
                 f"Pillar: {resolved_label}\n"
                 f"Score: {int(round(float(score or 0)))} out of 100\n"
+                f"{purpose_guidance}"
                 "Requirements: one sentence, 10 to 18 words, direct and practical, British English, no quotation marks, no emoji."
             )
             generated = _normalise_daily_pillar_quote(
