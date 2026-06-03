@@ -266,6 +266,13 @@ function normalizeLessonHeading(value: string | null | undefined): string {
     .replace(/\bdays\b/g, "lessons");
 }
 
+function lessonTitleWithIndex(lesson: any, fallback: string): string {
+  const title = normalizeLessonHeading(fallback);
+  const lessonIndex = Number(lesson?.day_index || 0);
+  if (!lessonIndex || /\blesson\b/i.test(title)) return title;
+  return `Lesson ${lessonIndex}: ${title}`;
+}
+
 function normalizeLessonText(value: string | null | undefined): string {
   const token = normalizeLessonHeading(value);
   if (!token) return "";
@@ -1090,7 +1097,8 @@ export default function AssessmentChatBox({
   }, [activeEducationExplorerConceptKey, activeEducationExplorerPillarKey, educationExplorerConcepts, educationLessonRail]);
   const openEducationLesson = useCallback((lesson: any, options?: { closeExplorer?: boolean }) => {
     const lessonDayIndex = Number(lesson?.day_index || 0);
-    const lessonTitle = normalizeLessonHeading(
+    const lessonTitle = lessonTitleWithIndex(
+      lesson,
       String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim(),
     );
     setSelectedEducationLessonDayIndex(lessonDayIndex || null);
@@ -1137,7 +1145,8 @@ export default function AssessmentChatBox({
   const activeEducationLessonMediaUrl = activeEducationLessonVideoUrl || (
     isLikelyVideoUrl(activeEducationLessonPodcastUrl) ? activeEducationLessonPodcastUrl : ""
   );
-  const activeEducationLessonTitle = normalizeLessonHeading(
+  const activeEducationLessonTitle = lessonTitleWithIndex(
+    activeEducationLesson,
     String(activeEducationLesson?.title || activeEducationLesson?.concept_label || activeEducationLesson?.pillar_label || "").trim(),
   );
   const activeEducationLessonDescription = normalizeLessonText(String(activeEducationLesson?.goal || activeEducationLesson?.summary || "").trim());
@@ -1221,7 +1230,8 @@ export default function AssessmentChatBox({
       },
     ) => {
       const lessonDayIndex = Number(lesson?.day_index || 0);
-      const lessonTitle = normalizeLessonHeading(
+      const lessonTitle = lessonTitleWithIndex(
+        lesson,
         String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim(),
       );
       const lessonDescription = normalizeLessonText(String(lesson?.goal || lesson?.summary || "").trim());
@@ -2795,7 +2805,7 @@ export default function AssessmentChatBox({
                                   return educationQuizAnswers[questionId] === undefined;
                                 })
                               }
-                              className="mt-1 rounded-full border border-[#111111] bg-white px-5 py-3 text-sm font-semibold text-[#111111] transition disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-1 w-full rounded-full bg-[#111111] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               {educationQuizSubmitting ? "Submitting..." : activeEducationQuizCompletedAt ? "Update quiz" : "Submit quiz"}
                             </button>

@@ -3918,7 +3918,7 @@ export default function LatestAssessmentPanel({
                           {concept.helper}
                         </p>
                         {targetLabel || okrStatusLabel ? (
-                          <p className="mt-4 text-sm leading-6 text-[#6b6257]">
+                          <p className="mb-7 mt-4 text-sm leading-6 text-[#6b6257]">
                             {targetLabel}
                             {targetLabel && showInlineOkrProgress ? " · " : null}
                             {showInlineOkrProgress ? okrStatusDetail : null}
@@ -3976,7 +3976,7 @@ export default function LatestAssessmentPanel({
                       type="button"
                       onClick={() => void saveTracker()}
                       disabled={!canSave}
-                      className="w-full rounded-full border border-[#111111] bg-white px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-[#111111] transition disabled:cursor-not-allowed disabled:opacity-45"
+                      className="w-full rounded-full bg-[#111111] px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-white transition disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {saving ? "Saving check-in..." : "Complete check-in"}
                     </button>
