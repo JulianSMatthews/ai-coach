@@ -2869,10 +2869,7 @@ export default function LatestAssessmentPanel({
                         <p className="text-[1.45rem] font-medium leading-[1.18] text-current opacity-80 sm:text-[1.65rem]">
                           {quote}
                         </p>
-                        <p className="mt-5 text-sm font-semibold uppercase tracking-[0.14em] text-current opacity-70">
-                          {`${Number(pillar.streak_days || 0)} day streak`}
-                        </p>
-                        <div className="mt-4 grid max-w-[16rem] grid-cols-2 gap-2">
+                        <div className="mt-5 grid max-w-[16rem] grid-cols-2 gap-2">
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
@@ -3931,9 +3928,6 @@ export default function LatestAssessmentPanel({
                                 {concept.label}
                               </h2>
                             </div>
-                            <p className="shrink-0 rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#6b6257]">
-                              {`${concept.streak_days || 0}d`}
-                            </p>
                           </div>
                           <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[#3c332b]">
                             {concept.helper}
