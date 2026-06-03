@@ -3899,7 +3899,7 @@ export default function LatestAssessmentPanel({
               {detailError ? <p className="px-4 text-sm text-[#8a3e1a]">{detailError}</p> : null}
 
               {detail && !loadingDetail ? (
-                <div className="h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth px-4 touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
+                <div className="h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth px-[max(1rem,calc((100vw-24rem)/2))] touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] sm:px-[calc((100vw-25rem)/2)] [&::-webkit-scrollbar]:hidden">
                   <div className="flex h-full items-center gap-4 pr-4 sm:gap-5">
                     {(detail.concepts || []).map((concept, conceptIndex) => {
                       const conceptKey = String(concept.concept_key || "").trim();
