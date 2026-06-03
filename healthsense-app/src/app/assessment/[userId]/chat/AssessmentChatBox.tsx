@@ -2645,7 +2645,12 @@ export default function AssessmentChatBox({
                 </>
               )}
             </div>
-            <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-44 sm:px-5 sm:pb-52">
+            <div
+              ref={homePanelScrollerRef}
+              className={`hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain py-4 pb-44 sm:pb-52 ${
+                homeSurface === "insight" && activeEducationLesson ? "px-0" : "px-4 sm:px-5"
+              }`}
+            >
               {homeSurface === "tracking" ? (
             <div className="flex min-h-full flex-col gap-4">
               <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
@@ -2682,8 +2687,8 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-44 sm:px-5 sm:pb-52">
-                    <article className="rounded-[30px] bg-[#fffdf9] px-5 py-5 text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] sm:px-6 sm:py-6">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-44 sm:px-6 sm:pb-52">
+                    <article className="w-full bg-transparent px-0 py-0 text-left">
                       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8a7f72]">
                         {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
                       </p>
