@@ -2930,7 +2930,7 @@ export default function AssessmentChatBox({
                       </div>
                     ) : (
                       <div className="overflow-x-auto pb-1">
-                        <div className="flex gap-3 pr-4">
+                        <div className="flex gap-3">
                           {educationExplorerLessons.map((lesson) => {
                             const startableToken = firstIncompleteEducationLessonToken(educationExplorerLessons);
                             const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
@@ -2949,7 +2949,7 @@ export default function AssessmentChatBox({
                 <div className="flex min-h-full flex-col">
                   <div className="flex-1 py-4">
                     <div className="overflow-x-auto pb-2">
-                      <div className="flex gap-3 pr-4">
+                      <div className="flex gap-3">
                         {educationLessonRail.map((lesson, index) => {
                           const startableToken = firstIncompleteEducationLessonToken(educationLessonRail);
                           const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();

@@ -2830,7 +2830,7 @@ export default function LatestAssessmentPanel({
         >
           <div className="relative overflow-hidden">
             <div className="overflow-x-auto snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="flex gap-4 pr-4 sm:gap-5">
+              <div className="flex gap-4 sm:gap-5">
                 {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                   const palette = getPillarPalette(pillarKey);
@@ -3900,7 +3900,7 @@ export default function LatestAssessmentPanel({
 
               {detail && !loadingDetail ? (
                 <div className="snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  <div className="flex items-center gap-4 pr-4 sm:gap-5">
+                  <div className="flex items-center gap-4 sm:gap-5">
                     {(detail.concepts || []).map((concept, conceptIndex) => {
                       const conceptKey = String(concept.concept_key || "").trim();
                       const selectedValue = draft[conceptKey];
