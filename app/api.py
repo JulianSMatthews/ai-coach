@@ -7939,6 +7939,7 @@ def api_user_education_plan_today(
     request: Request,
     anchor_date: str | None = None,
     include_explore: bool = False,
+    prefetch: bool = False,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -8019,17 +8020,18 @@ def api_user_education_plan_today(
                     avatar["poster_url"] = _normalize_reports_url(poster_url)
                 if summary_url:
                     avatar["summary_url"] = _normalize_reports_url(summary_url)
-    _log_app_engagement_event(
-        user_id=user_id,
-        unit_type="education_plan_view",
-        meta={
-            "page": "coach_home",
-            "pillar_key": result.get("pillar_key"),
-            "concept_key": result.get("concept_key"),
-            "day_index": result.get("day_index"),
-            "lesson_date": result.get("lesson_date"),
-        },
-    )
+    if not prefetch:
+        _log_app_engagement_event(
+            user_id=user_id,
+            unit_type="education_plan_view",
+            meta={
+                "page": "coach_home",
+                "pillar_key": result.get("pillar_key"),
+                "concept_key": result.get("concept_key"),
+                "day_index": result.get("day_index"),
+                "lesson_date": result.get("lesson_date"),
+            },
+        )
     return result
 
 

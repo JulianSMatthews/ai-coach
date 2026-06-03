@@ -63,6 +63,7 @@ export async function GET(request: Request) {
     const userId = String(url.searchParams.get("userId") || getCookieValue(cookieHeader, "hs_user_id") || "").trim();
     const anchorDate = String(url.searchParams.get("anchorDate") || "").trim();
     const includeExplore = String(url.searchParams.get("includeExplore") || url.searchParams.get("include_explore") || "").trim();
+    const prefetch = String(url.searchParams.get("prefetch") || "").trim();
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
@@ -72,6 +73,9 @@ export async function GET(request: Request) {
     }
     if (includeExplore === "1" || includeExplore.toLowerCase() === "true") {
       params.set("include_explore", "true");
+    }
+    if (prefetch === "1" || prefetch.toLowerCase() === "true") {
+      params.set("prefetch", "true");
     }
     const base = getBaseUrl();
     const upstream = `${base}/api/v1/users/${encodeURIComponent(userId)}/education-plan/today${params.toString() ? `?${params.toString()}` : ""}`;

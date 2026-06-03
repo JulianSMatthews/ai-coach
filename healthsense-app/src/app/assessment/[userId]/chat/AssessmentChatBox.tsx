@@ -1361,15 +1361,20 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean }) => {
+  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; prefetch?: boolean }) => {
     const requestId = educationPlanRequestIdRef.current + 1;
     educationPlanRequestIdRef.current = requestId;
-    setEducationPlanLoading(true);
-    setEducationPlanError(null);
+    if (!options?.prefetch) {
+      setEducationPlanLoading(true);
+      setEducationPlanError(null);
+    }
     try {
       const params = new URLSearchParams({ userId });
       if (options?.includeExplore) {
         params.set("includeExplore", "1");
+      }
+      if (options?.prefetch) {
+        params.set("prefetch", "1");
       }
       const res = await fetch(`/api/education-plan/today?${params.toString()}`, {
         method: "GET",
@@ -1392,9 +1397,11 @@ export default function AssessmentChatBox({
       if (requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      setEducationPlanError(error instanceof Error ? error.message : String(error));
+      if (!options?.prefetch) {
+        setEducationPlanError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      if (requestId === educationPlanRequestIdRef.current) {
+      if (requestId === educationPlanRequestIdRef.current && !options?.prefetch) {
         setEducationPlanLoading(false);
       }
     }
@@ -1822,6 +1829,11 @@ export default function AssessmentChatBox({
     if (educationPlan) return;
     void loadEducationPlan();
   }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
+
+  useEffect(() => {
+    if (!showGuidedHomeChatPanel || educationPlan || educationPlanLoading) return;
+    void loadEducationPlan({ prefetch: true });
+  }, [showGuidedHomeChatPanel, loadEducationPlan, educationPlan, educationPlanLoading]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || homeSurface !== "insight" || !educationAvatarPending) return;
@@ -2653,7 +2665,7 @@ export default function AssessmentChatBox({
             </div>
           ) : homeSurface === "insight" ? (
             (educationPlanLoading || (!educationPlan && !educationPlanError)) ? (
-              <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
+              <div className="flex min-h-full items-center px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Loading today&apos;s education programme…
                 </p>
@@ -2947,7 +2959,7 @@ export default function AssessmentChatBox({
                 </div>
               )
             ) : (
-              <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
+              <div className="flex min-h-full items-center px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   {educationPlanError || educationPlan?.reason || "Today's lesson is not available right now."}
                 </p>
@@ -3060,7 +3072,7 @@ export default function AssessmentChatBox({
           )}
         </div>
         <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
-          <div className="mx-auto w-full max-w-[23rem] rounded-[28px] border border-[var(--chrome-border)] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
+          <div className="mx-auto w-full max-w-[23rem] rounded-[28px] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
             <div className="grid grid-cols-2 gap-1">
               <button
                 type="button"
