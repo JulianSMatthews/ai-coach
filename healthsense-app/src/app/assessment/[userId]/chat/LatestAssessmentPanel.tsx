@@ -2854,7 +2854,7 @@ export default function LatestAssessmentPanel({
                   return (
                     <article
                       key={pillarKey}
-                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
                       <div className="absolute right-5 top-5">
@@ -2865,7 +2865,7 @@ export default function LatestAssessmentPanel({
                           {pillar.label}
                         </p>
                       </div>
-                      <div className="mt-auto max-w-[18rem]">
+                      <div className="mt-12 max-w-[18rem] sm:mt-14">
                         <p className="text-[1.45rem] font-medium leading-[1.18] text-current opacity-80 sm:text-[1.65rem]">
                           {quote}
                         </p>
