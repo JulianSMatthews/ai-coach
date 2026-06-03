@@ -308,10 +308,9 @@ export default async function AssessmentChatPage(props: PageProps) {
   if (statusLoadError && !leadFlow) {
     const shouldRelogin = statusLoadError.status === 401 || statusLoadError.status === 403;
     return (
-      <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
-        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
-          <h2 className="text-xl">My Coach Gia is unavailable</h2>
-          <p className="mt-2 text-sm text-[#6b6257]">
+      <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName="flex min-h-[70dvh] items-center justify-center">
+        <Card className="w-full max-w-[24rem] text-center shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
+          <p className="text-[1.75rem] font-semibold leading-tight text-[var(--text-primary)]">
             {shouldRelogin
               ? "Your session may have expired. Sign in again to continue."
               : "CoachSense is being worked on. Please try again shortly."}
