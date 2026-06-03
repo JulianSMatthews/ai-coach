@@ -1280,7 +1280,7 @@ export default function AssessmentChatBox({
   const homePanelHeightClass =
     homeSurface === "blank"
       ? "h-auto"
-      : "min-h-[calc(100dvh-6rem)]";
+      : "h-[calc(100dvh-6rem)]";
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
@@ -2687,7 +2687,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-44 sm:px-6 sm:pb-52">
+                  <div className="px-4 py-4 sm:px-6">
                     <article className="w-full bg-transparent px-0 py-0 text-left">
                       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8a7f72]">
                         {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
