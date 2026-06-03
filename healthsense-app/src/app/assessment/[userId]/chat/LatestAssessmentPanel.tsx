@@ -989,7 +989,7 @@ function resolveSummaryPanelVisible(
   sequenceState: MorningSequenceState,
 ): boolean {
   if (sequenceState === "completed") return true;
-  if (sequenceState === "in_progress") return false;
+  if (sequenceState === "in_progress") return true;
   return isDailyCheckInComplete(summary);
 }
 
@@ -2439,9 +2439,10 @@ export default function LatestAssessmentPanel({
 
   useEffect(() => {
     setSummaryPanelVisible(
-      resolveSummaryPanelVisible(summary, readMorningSequenceState(userId, summary.today)),
+      activeDockKey === "checkin" &&
+        resolveSummaryPanelVisible(summary, readMorningSequenceState(userId, summary.today)),
     );
-  }, [summary, userId]);
+  }, [activeDockKey, summary, userId]);
 
   useEffect(() => {
     setDisplayTheme(resolveCurrentDisplayTheme());
@@ -2948,6 +2949,7 @@ export default function LatestAssessmentPanel({
                   type="button"
                   onClick={() => {
                     setActiveDockKey("learn");
+                    setSummaryPanelVisible(false);
                     openDailyMenuSurface("insight");
                   }}
                   aria-pressed={activeDockKey === "learn"}
