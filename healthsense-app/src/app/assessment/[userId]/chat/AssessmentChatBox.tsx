@@ -1280,7 +1280,7 @@ export default function AssessmentChatBox({
   const homePanelHeightClass =
     homeSurface === "blank"
       ? "h-auto"
-      : "h-[calc(100dvh-6rem)]";
+      : "h-full";
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
@@ -2626,7 +2626,7 @@ export default function AssessmentChatBox({
   ) : null;
 
   const homeChatPanel = showGuidedHomeChatPanel ? (
-    <section className="overflow-hidden bg-transparent">
+    <section className={`${homeSurface === "blank" ? "overflow-hidden" : "h-full min-h-0 overflow-hidden"} bg-transparent`}>
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         {homeSurface === "blank" ? null : (
           <>
@@ -3109,7 +3109,7 @@ export default function AssessmentChatBox({
   ) : null;
 
   return (
-    <div className="space-y-4">
+    <div className={showGuidedHomeChatPanel && homeSurface !== "blank" ? "h-full min-h-0" : "space-y-4"}>
       {showAssessmentControls ? (
         <div className="flex flex-wrap gap-2">
           <button
