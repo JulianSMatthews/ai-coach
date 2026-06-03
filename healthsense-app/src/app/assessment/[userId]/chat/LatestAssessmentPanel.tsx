@@ -3991,7 +3991,7 @@ export default function LatestAssessmentPanel({
                         Finish check-in
                       </h2>
                       <p className="mt-6 text-[1.35rem] font-medium leading-8 text-[#6b6257]">
-                        Save your answers for {trackerPillarLabel}. If this is a guided check-in, the next pillar will open automatically.
+                        Save your answers for {trackerPillarLabel}.
                       </p>
                       <div className="mt-6 grid grid-cols-7 gap-2">
                         {(detail.days || []).map((day) => (
