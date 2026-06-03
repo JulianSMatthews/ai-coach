@@ -280,8 +280,6 @@ export default async function AssessmentChatPage(props: PageProps) {
   const onboarding = status.onboarding || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "light";
-  const nutritionPillarEnabled = isTruthyToken(prefs.home_pillar_nutrition);
-  const trainingPillarEnabled = isTruthyToken(prefs.home_pillar_training);
   const promptState = (status.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -368,8 +366,6 @@ export default async function AssessmentChatPage(props: PageProps) {
             userId={userId}
             initialSummary={pillarTrackerSummary}
             initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
-            showNutritionPillar={nutritionPillarEnabled}
-            showTrainingPillar={trainingPillarEnabled}
           />
         ) : null}
       </section>

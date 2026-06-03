@@ -30,8 +30,6 @@ type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
   initialAssessmentReviewed?: boolean;
-  showNutritionPillar?: boolean;
-  showTrainingPillar?: boolean;
 };
 
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
@@ -1135,8 +1133,6 @@ export default function LatestAssessmentPanel({
   userId,
   initialSummary,
   initialAssessmentReviewed = false,
-  showNutritionPillar = true,
-  showTrainingPillar = true,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
@@ -1218,14 +1214,8 @@ export default function LatestAssessmentPanel({
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const visiblePillars = useMemo(
-    () =>
-      pillars.filter((pillar) => {
-        const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
-        if (pillarKey === "nutrition") return showNutritionPillar;
-        if (pillarKey === "training") return showTrainingPillar;
-        return true;
-      }),
-    [pillars, showNutritionPillar, showTrainingPillar],
+    () => pillars,
+    [pillars],
   );
   const pillarCueCardStyle =
     displayTheme === "dark"
@@ -1982,6 +1972,10 @@ export default function LatestAssessmentPanel({
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
     setSummary(payload);
   }, [userId]);
+
+  useEffect(() => {
+    void refreshSummary().catch(() => undefined);
+  }, [refreshSummary]);
 
   const loadRestingHeartRate = useCallback(async () => {
     const res = await fetch(`/api/apple-health/resting-heart-rate?userId=${encodeURIComponent(userId)}`, {
