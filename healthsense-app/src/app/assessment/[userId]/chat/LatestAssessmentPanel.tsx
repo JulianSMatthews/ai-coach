@@ -2877,8 +2877,10 @@ export default function LatestAssessmentPanel({
                                     guided: false,
                                   })
                                 }
-                                className={`min-h-[2.7rem] rounded-full border px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition ${
-                                  complete ? "border-[var(--border)] bg-[#f8f4ee] text-[var(--text-primary)]" : "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                className={`min-h-[2.7rem] rounded-full border px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition active:scale-[0.98] ${
+                                  complete
+                                    ? "border-[var(--border-strong)] bg-[var(--surface-muted)] text-[var(--text-primary)] shadow-[inset_0_0_0_1px_rgba(30,27,22,0.03)]"
+                                    : "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
                                 }`}
                               >
                                 {optionLabel}

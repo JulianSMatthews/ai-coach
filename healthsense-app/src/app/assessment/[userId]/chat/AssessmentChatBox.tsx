@@ -1114,6 +1114,12 @@ export default function AssessmentChatBox({
       );
     }
   }, []);
+  const closeActiveEducationLesson = useCallback(() => {
+    setActiveEducationLesson(null);
+    setEducationQuizAnswers({});
+    setEducationQuizMessage(null);
+    setEducationQuizError(null);
+  }, []);
   const activeEducationLessonContent = activeEducationLesson?.content || null;
   const activeEducationLessonAvatar = activeEducationLessonContent?.avatar || null;
   const activeEducationLessonVideoUrl = firstNonEmptyString(
@@ -1224,10 +1230,10 @@ export default function AssessmentChatBox({
         <button
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
           type="button"
-          onClick={() => openEducationLesson(lesson, { closeExplorer: Boolean(options?.pill) })}
+          onClick={() => openEducationLesson(lesson, { closeExplorer: false })}
           className="relative flex w-[min(92vw,24rem)] shrink-0 overflow-hidden rounded-[30px] text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem] sm:max-w-[25rem]"
           style={{
-            backgroundColor: lessonCompleted ? "#fffdf9" : "#d6ab81",
+            backgroundColor: lessonCompleted ? "var(--chrome)" : "#d6ab81",
             minHeight: "30rem",
           }}
         >
@@ -1251,10 +1257,8 @@ export default function AssessmentChatBox({
                   Start lesson
                 </span>
               ) : lessonCompleted ? (
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#18110d] text-white">
-                  <svg viewBox="0 0 24 24" className="h-8 w-8" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12.5 10 17l9-10" />
-                  </svg>
+                <span className="rounded-full bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
+                  Review lesson
                 </span>
               ) : (
                 <span />
@@ -2684,7 +2688,7 @@ export default function AssessmentChatBox({
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
-                        onClick={() => setActiveEducationLesson(null)}
+                        onClick={closeActiveEducationLesson}
                         className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e7e1d6] bg-[#ffffff] text-[#1e1b16] transition"
                         aria-label="Back"
                       >
