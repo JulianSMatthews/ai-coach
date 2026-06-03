@@ -2795,7 +2795,7 @@ export default function AssessmentChatBox({
                                   return educationQuizAnswers[questionId] === undefined;
                                 })
                               }
-                              className="mt-1 rounded-full bg-[#111111] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-1 rounded-full border border-[#111111] bg-white px-5 py-3 text-sm font-semibold text-[#111111] transition disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               {educationQuizSubmitting ? "Submitting..." : activeEducationQuizCompletedAt ? "Update quiz" : "Submit quiz"}
                             </button>

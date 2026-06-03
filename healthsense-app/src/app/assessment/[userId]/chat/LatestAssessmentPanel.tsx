@@ -1038,17 +1038,6 @@ function circleDayTone(status?: string | null, isActive?: boolean): string {
   return `border-[#ece5d9] bg-white text-[#8c7f70]${activeRing}`;
 }
 
-function completeDayTone(complete?: boolean, score?: number | null, isToday?: boolean): string {
-  if (complete && Number.isFinite(Number(score))) {
-    const resolved = Number(score);
-    if (resolved >= 80) return "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
-    if (resolved >= 40) return "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
-    return "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
-  }
-  if (isToday) return "border-[#f3d8c9] bg-[#fff5ef] text-[#8a3e1a]";
-  return "border-[#ece5d9] bg-white text-[#8c7f70]";
-}
-
 function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | null; tone: string; compact?: boolean }) {
   const resolved = resolveScore(value);
   if (resolved !== null) {
@@ -1249,12 +1238,6 @@ export default function LatestAssessmentPanel({
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
-  const closeTrackerLabel = guidedTrackingActive
-    ? "Skip"
-    : trackerReturnSurface === "tracking"
-      ? "Cancel"
-      : "Close";
-  const trackerPillarLabel = detail?.pillar?.label || selectedPillarKey?.replace(/_/g, " ") || "";
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
   const objectivesSections = useMemo(
     () => (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : []),
@@ -2670,24 +2653,7 @@ export default function LatestAssessmentPanel({
     setSaving(false);
   };
 
-  const handleTrackerDismiss = useCallback(async () => {
-    if (guidedTrackingActive) {
-      setActiveDockKey("checkin");
-      setSummaryPanelVisible(true);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("healthsense-home-surface", {
-            detail: {
-              surface: "blank",
-              complete: true,
-            },
-          }),
-        );
-        window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
-      }
-      closeTracker();
-      return;
-    }
+  const handleTrackerBack = () => {
     if (trackerReturnSurface && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
@@ -2696,14 +2662,24 @@ export default function LatestAssessmentPanel({
           },
         }),
       );
+    } else {
+      setActiveDockKey("checkin");
+      setSummaryPanelVisible(true);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("healthsense-home-surface", {
+            detail: {
+              surface: "blank",
+              source: "summary",
+            },
+          }),
+        );
+        window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     }
     closeTracker();
-  }, [
-    detail?.pillar?.pillar_key,
-    guidedTrackingActive,
-    selectedPillarKey,
-    trackerReturnSurface,
-  ]);
+  };
 
   const saveTracker = async () => {
     if (!detail?.pillar?.pillar_key || !canSave) return;
@@ -3892,143 +3868,122 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {selectedPillarKey ? (
-        <section className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8">
-          <div className="relative w-full overflow-hidden">
-            <div className="min-h-0 overflow-hidden">
-              {loadingDetail ? <p className="px-4 text-sm text-[var(--text-muted)]">Loading tracker...</p> : null}
-              {detailError ? <p className="px-4 text-sm text-[#8a3e1a]">{detailError}</p> : null}
+        <section className="flex h-full min-h-0 flex-col pb-28 pt-4 sm:pb-32 sm:pt-6">
+          <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 px-4 pb-3 sm:px-5">
+              <button
+                type="button"
+                onClick={handleTrackerBack}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-[#ece3d8] bg-white text-[#1e1b16] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+                aria-label="Back"
+              >
+                <span className="text-3xl leading-none">‹</span>
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
+              {loadingDetail ? <p className="text-sm text-[var(--text-muted)]">Loading tracker...</p> : null}
+              {detailError ? <p className="text-sm text-[#8a3e1a]">{detailError}</p> : null}
 
               {detail && !loadingDetail ? (
-                <div className="snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  <div className="flex items-center gap-4 sm:gap-5">
-                    {(detail.concepts || []).map((concept, conceptIndex) => {
-                      const conceptKey = String(concept.concept_key || "").trim();
-                      const selectedValue = draft[conceptKey];
-                      const targetLabel = String(concept.target_label || "").trim();
-                      const okrStatusLabel = String(concept.okr_status_label || "").trim();
-                      const okrStatusDetail = String(concept.okr_status_detail || "").trim();
-                      const showInlineOkrProgress = Boolean(okrStatusDetail);
-                      const okrStatusTone =
-                        concept.okr_on_track === true
-                          ? "text-[#4e7a1f]"
-                          : concept.okr_on_track === false
-                            ? "text-[#b55b1d]"
-                            : "text-[#6b6257]";
-                      return (
-                        <section
-                          key={conceptKey}
-                          className="flex h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">
-                                {`${conceptIndex + 1} of ${detail.concepts?.length || 0}`}
-                              </p>
-                              <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-normal text-[#181512]">
-                                {concept.label}
-                              </h2>
-                            </div>
-                          </div>
-                          <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[#3c332b]">
-                            {concept.helper}
-                          </p>
-                          {targetLabel || okrStatusLabel ? (
-                            <p className="mt-4 text-sm leading-6 text-[#6b6257]">
-                              {targetLabel}
-                              {targetLabel && showInlineOkrProgress ? " · " : null}
-                              {showInlineOkrProgress ? okrStatusDetail : null}
-                              {(targetLabel || showInlineOkrProgress) && okrStatusLabel ? " · " : null}
-                              {okrStatusLabel ? (
-                                <span className={`font-medium ${okrStatusTone}`}>{okrStatusLabel}</span>
-                              ) : null}
+                <div className="space-y-4">
+                  {(detail.concepts || []).map((concept, conceptIndex) => {
+                    const conceptKey = String(concept.concept_key || "").trim();
+                    const selectedValue = draft[conceptKey];
+                    const targetLabel = String(concept.target_label || "").trim();
+                    const okrStatusLabel = String(concept.okr_status_label || "").trim();
+                    const okrStatusDetail = String(concept.okr_status_detail || "").trim();
+                    const showInlineOkrProgress = Boolean(okrStatusDetail);
+                    const okrStatusTone =
+                      concept.okr_on_track === true
+                        ? "text-[#4e7a1f]"
+                        : concept.okr_on_track === false
+                          ? "text-[#b55b1d]"
+                          : "text-[#6b6257]";
+                    return (
+                      <section
+                        key={conceptKey}
+                        className="flex min-h-[28rem] w-full flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:px-8 sm:py-8"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">
+                              {`${conceptIndex + 1} of ${detail.concepts?.length || 0}`}
                             </p>
-                          ) : null}
-                          <div className="mt-auto space-y-5">
-                            <div className="grid grid-cols-7 gap-1.5">
-                              {(concept.week || []).map((day) => (
-                                <div
-                                  key={`${conceptKey}-${day.date}`}
-                                  className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(day.daily_status, day.is_active)}`}
-                                >
-                                  <p className="font-semibold">{day.label}</p>
-                                  <p className="mt-1 truncate">{day.value_label || "-"}</p>
-                                </div>
-                              ))}
-                            </div>
-                            {canEditActiveWeek ? (
-                              <div className="grid grid-cols-2 gap-2">
-                                {(concept.options || []).map((option) => {
-                                  const value = Number(option.value);
-                                  const active = Number.isFinite(value) && value === selectedValue;
-                                  return (
-                                    <button
-                                      key={`${conceptKey}-${option.label}-${option.value}`}
-                                      type="button"
-                                      onClick={() =>
-                                        setDraft((current) => ({
-                                          ...current,
-                                          [conceptKey]: value,
-                                        }))
-                                      }
-                                      className={`min-h-[2.75rem] rounded-full px-3 py-2 text-center text-xs font-semibold leading-tight transition ${
-                                        active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
-                                      }`}
-                                    >
-                                      {option.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                            <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-normal text-[#181512]">
+                              {concept.label}
+                            </h2>
+                          </div>
+                        </div>
+                        <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[#3c332b]">
+                          {concept.helper}
+                        </p>
+                        {targetLabel || okrStatusLabel ? (
+                          <p className="mt-4 text-sm leading-6 text-[#6b6257]">
+                            {targetLabel}
+                            {targetLabel && showInlineOkrProgress ? " · " : null}
+                            {showInlineOkrProgress ? okrStatusDetail : null}
+                            {(targetLabel || showInlineOkrProgress) && okrStatusLabel ? " · " : null}
+                            {okrStatusLabel ? (
+                              <span className={`font-medium ${okrStatusTone}`}>{okrStatusLabel}</span>
                             ) : null}
-                          </div>
-                        </section>
-                      );
-                    })}
-
-                    <section className="flex h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">Complete</p>
-                      <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal text-[#181512]">
-                        Finish check-in
-                      </h2>
-                      <p className="mt-6 text-[1.35rem] font-medium leading-8 text-[#6b6257]">
-                        Save your answers for {trackerPillarLabel}.
-                      </p>
-                      <div className="mt-6 grid grid-cols-7 gap-2">
-                        {(detail.days || []).map((day) => (
-                          <div
-                            key={day.date}
-                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${completeDayTone(day.complete, day.score, day.is_today)}`}
-                          >
-                            <p className="font-semibold">{day.label}</p>
-                            <p className="mt-1">{day.complete ? day.score ?? "Done" : day.is_today ? "Today" : "-"}</p>
-                          </div>
-                        ))}
-                      </div>
-                      {saveError ? <p className="mt-auto text-sm font-semibold text-[#8a3e1a]">{saveError}</p> : null}
-                      <div className="mt-auto grid gap-2">
-                        {canEditActiveWeek ? (
-                          <button
-                            type="button"
-                            onClick={() => void saveTracker()}
-                            disabled={!canSave}
-                            className="rounded-full bg-[#111111] px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-45"
-                          >
-                            {saving ? "Saving..." : "Complete check-in"}
-                          </button>
+                          </p>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void handleTrackerDismiss()}
-                          className="rounded-full bg-white px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-[#1e1b16]"
-                        >
-                          {closeTrackerLabel}
-                        </button>
-                      </div>
-                    </section>
-                  </div>
+                        <div className="mt-auto space-y-5">
+                          <div className="grid grid-cols-7 gap-1.5">
+                            {(concept.week || []).map((day) => (
+                              <div
+                                key={`${conceptKey}-${day.date}`}
+                                className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(day.daily_status, day.is_active)}`}
+                              >
+                                <p className="font-semibold">{day.label}</p>
+                                <p className="mt-1 truncate">{day.value_label || "-"}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {canEditActiveWeek ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              {(concept.options || []).map((option) => {
+                                const value = Number(option.value);
+                                const active = Number.isFinite(value) && value === selectedValue;
+                                return (
+                                  <button
+                                    key={`${conceptKey}-${option.label}-${option.value}`}
+                                    type="button"
+                                    onClick={() =>
+                                      setDraft((current) => ({
+                                        ...current,
+                                        [conceptKey]: value,
+                                      }))
+                                    }
+                                    className={`min-h-[2.75rem] rounded-full px-3 py-2 text-center text-xs font-semibold leading-tight transition ${
+                                      active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
+                                    }`}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      </section>
+                    );
+                  })}
+
+                  {saveError ? <p className="text-sm font-semibold text-[#8a3e1a]">{saveError}</p> : null}
+                  {canEditActiveWeek ? (
+                    <button
+                      type="button"
+                      onClick={() => void saveTracker()}
+                      disabled={!canSave}
+                      className="w-full rounded-full border border-[#111111] bg-white px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-[#111111] transition disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {saving ? "Saving check-in..." : "Complete check-in"}
+                    </button>
+                  ) : null}
                 </div>
-                ) : null}
-              </div>
+              ) : null}
+            </div>
 
             <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
               <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
