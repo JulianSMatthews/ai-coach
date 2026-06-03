@@ -1234,7 +1234,7 @@ export default function LatestAssessmentPanel({
           color: "var(--text-primary)",
         }
       : {
-          backgroundColor: "#d8ad82",
+          backgroundColor: "#ffffff",
           color: "#181512",
         };
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
@@ -2677,6 +2677,8 @@ export default function LatestAssessmentPanel({
 
   const handleTrackerDismiss = useCallback(async () => {
     if (guidedTrackingActive) {
+      setActiveDockKey("checkin");
+      setSummaryPanelVisible(true);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
@@ -2686,6 +2688,7 @@ export default function LatestAssessmentPanel({
             },
           }),
         );
+        window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
       }
       closeTracker();
       return;
@@ -2741,6 +2744,8 @@ export default function LatestAssessmentPanel({
         );
       }
       await refreshSummary().catch(() => undefined);
+      setActiveDockKey("checkin");
+      setSummaryPanelVisible(true);
       if (guidedTrackingActive && typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
@@ -2750,11 +2755,21 @@ export default function LatestAssessmentPanel({
             },
           }),
         );
+        window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
       } else if (trackerReturnSurface && typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
               surface: trackerReturnSurface,
+            },
+          }),
+        );
+      } else if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("healthsense-home-surface", {
+            detail: {
+              surface: "blank",
+              source: "summary",
             },
           }),
         );
@@ -2816,7 +2831,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="py-5 pb-28 sm:py-6 sm:pb-32"
+          className="pb-28 pt-2 sm:pb-32 sm:pt-3"
         >
           <div className="relative overflow-hidden">
             <div className="overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
@@ -2844,7 +2859,7 @@ export default function LatestAssessmentPanel({
                   return (
                     <article
                       key={pillarKey}
-                      className="relative flex min-h-[28rem] w-[min(82vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                      className="relative flex min-h-[28rem] w-[min(82vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] border border-[#efe7db] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
                       <div className="absolute right-5 top-5">
@@ -3976,7 +3991,7 @@ export default function LatestAssessmentPanel({
                               ))}
                             </div>
                             {canEditActiveWeek ? (
-                              <div className="grid gap-2">
+                              <div className="grid grid-cols-2 gap-2">
                                 {(concept.options || []).map((option) => {
                                   const value = Number(option.value);
                                   const active = Number.isFinite(value) && value === selectedValue;
@@ -3990,7 +4005,7 @@ export default function LatestAssessmentPanel({
                                           [conceptKey]: value,
                                         }))
                                       }
-                                      className={`rounded-full px-4 py-3 text-left text-sm font-semibold transition ${
+                                      className={`min-h-[2.75rem] rounded-full px-3 py-2 text-center text-xs font-semibold leading-tight transition ${
                                         active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
                                       }`}
                                     >

@@ -158,9 +158,9 @@ const HOME_SURFACE_COPY: Record<
     description: "Answer the questions for each pillar.",
   },
   blank: {
-    eyebrow: "",
-    title: "",
-    description: "",
+    eyebrow: "Check-in",
+    title: "Daily check-in",
+    description: "Choose a pillar and complete today's cue cards.",
   },
   habits: {
     eyebrow: "Plan",
@@ -1278,15 +1278,13 @@ export default function AssessmentChatBox({
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
   const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
-  const homeSurfaceEyebrow = homeSurface === "blank" ? "" : viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
-  const homeSurfaceDescription = homeSurface === "blank"
-    ? ""
-    : viewingHomeSurfaceFromSummary
+  const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
+  const homeSurfaceDescription = viewingHomeSurfaceFromSummary && homeSurface !== "blank"
     ? "Review this and close when you are ready."
     : homeSurfaceMeta.description;
   const homePanelHeightClass =
     homeSurface === "blank"
-      ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
+      ? "h-auto"
       : homeSurface === "tracking"
       ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
       : homeSurface === "ask"
@@ -2611,7 +2609,15 @@ export default function AssessmentChatBox({
     <section className="-mx-3 overflow-hidden bg-transparent sm:mx-0">
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         {homeSurface === "blank" ? (
-          <div className="min-h-0 flex-1 bg-transparent" />
+          <div className="shrink-0 px-4 pb-1 pt-2 sm:px-5 sm:pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+              {homeSurfaceEyebrow}
+            </p>
+            <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
+            {homeSurfaceDescription ? (
+              <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
+            ) : null}
+          </div>
         ) : (
           <>
             <div className="shrink-0 px-4 py-4 sm:px-5">
