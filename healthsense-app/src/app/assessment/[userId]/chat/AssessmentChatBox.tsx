@@ -1366,13 +1366,16 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-  const loadEducationPlan = useCallback(async () => {
+  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean }) => {
     const requestId = educationPlanRequestIdRef.current + 1;
     educationPlanRequestIdRef.current = requestId;
     setEducationPlanLoading(true);
     setEducationPlanError(null);
     try {
       const params = new URLSearchParams({ userId });
+      if (options?.includeExplore) {
+        params.set("includeExplore", "1");
+      }
       const res = await fetch(`/api/education-plan/today?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
@@ -1385,7 +1388,11 @@ export default function AssessmentChatBox({
       if (requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      setEducationPlan(data);
+      setEducationPlan((current) => ({
+        ...(current || {}),
+        ...data,
+        explore_catalog: data.explore_catalog || current?.explore_catalog,
+      }));
     } catch (error) {
       if (requestId !== educationPlanRequestIdRef.current) {
         return;
@@ -1397,6 +1404,16 @@ export default function AssessmentChatBox({
       }
     }
   }, [userId]);
+
+  const openEducationExplorer = useCallback(async () => {
+    if (!educationPlan?.explore_catalog) {
+      await loadEducationPlan({ includeExplore: true });
+    }
+    setEducationExplorerOpen(true);
+    setEducationExplorerMode("pillars");
+    setEducationExplorerPillarKey(null);
+    setEducationExplorerConceptKey(null);
+  }, [educationPlan?.explore_catalog, loadEducationPlan]);
 
   useEffect(() => {
     if (!educationLessonQueue.length) {
@@ -2924,16 +2941,12 @@ export default function AssessmentChatBox({
                   <div className="mt-16 pb-2 sm:mt-20">
                     <button
                       type="button"
-                      onClick={() => {
-                        setEducationExplorerOpen(true);
-                        setEducationExplorerMode("pillars");
-                        setEducationExplorerPillarKey(null);
-                        setEducationExplorerConceptKey(null);
-                      }}
+                      onClick={() => void openEducationExplorer()}
+                      disabled={educationPlanLoading}
                       className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
                       style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
                     >
-                      Explore topics
+                      {educationPlanLoading && !educationPlan?.explore_catalog ? "Loading topics..." : "Explore topics"}
                     </button>
                   </div>
                 </div>
@@ -3051,7 +3064,6 @@ export default function AssessmentChatBox({
             </div>
           )}
         </div>
-        {homeSurface !== "blank" ? (
         <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
           <div className="mx-auto w-full max-w-[23rem] rounded-[28px] border border-[var(--chrome-border)] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
             <div className="grid grid-cols-2 gap-1">
@@ -3082,7 +3094,6 @@ export default function AssessmentChatBox({
             </div>
           </div>
         </div>
-        ) : null}
           </>
         )}
       </div>

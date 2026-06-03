@@ -2892,6 +2892,7 @@ def _lesson_state(
     user_id: int,
     anchor: date,
     refresh_avatar_media: bool = True,
+    include_explore: bool = False,
 ) -> dict[str, Any]:
     snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
     context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
@@ -3044,19 +3045,10 @@ def _lesson_state(
         )
         for day in programme_days
     ]
-    explore_catalog = _education_explore_catalog_payload(
-        session,
-        plan=plan,
-        anchor=anchor,
-        context=context,
-        assessment=assessment,
-        progress_by_day_id=progress_by_day_id,
-        concept_level_by_key=concept_level_by_key,
-    )
     _sync_plan_streaks(session, plan)
     session.flush()
     takeaway = str(getattr(progress, "takeaway_text_shown", "") or "").strip() or None
-    return {
+    payload = {
         "available": True,
         "user_id": int(user_id),
         "lesson_date": anchor.isoformat(),
@@ -3087,7 +3079,6 @@ def _lesson_state(
         "tracker_day_label": str(tracker_pillar.get("active_label") or "").strip() or None,
         "previous_lesson": previous_lesson,
         "lessons": lessons,
-        "explore_catalog": explore_catalog,
         "lesson": {
             "programme_day_id": int(programme_day.id),
             "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,
@@ -3132,13 +3123,24 @@ def _lesson_state(
         },
         "takeaway": takeaway,
     }
+    if include_explore:
+        payload["explore_catalog"] = _education_explore_catalog_payload(
+            session,
+            plan=plan,
+            anchor=anchor,
+            context=context,
+            assessment=assessment,
+            progress_by_day_id=progress_by_day_id,
+            concept_level_by_key=concept_level_by_key,
+        )
+    return payload
 
 
-def get_today_education_plan(user_id: int, *, anchor: date | None = None) -> dict[str, Any]:
+def get_today_education_plan(user_id: int, *, anchor: date | None = None, include_explore: bool = False) -> dict[str, Any]:
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
-        payload = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor)
+        payload = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor, include_explore=include_explore)
         session.commit()
         return payload
 

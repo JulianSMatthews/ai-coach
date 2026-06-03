@@ -7938,6 +7938,7 @@ def api_user_education_plan_today(
     user_id: int,
     request: Request,
     anchor_date: str | None = None,
+    include_explore: bool = False,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -7949,7 +7950,7 @@ def api_user_education_plan_today(
             raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
     else:
         anchor = None
-    result = get_today_education_plan(int(user_id), anchor=anchor)
+    result = get_today_education_plan(int(user_id), anchor=anchor, include_explore=bool(include_explore))
     lesson = result.get("lesson")
     if isinstance(lesson, dict):
         content = lesson.get("content")
