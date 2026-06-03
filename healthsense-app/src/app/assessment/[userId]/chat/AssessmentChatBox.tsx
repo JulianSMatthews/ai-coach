@@ -796,7 +796,7 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
-  const [homeSurface, setHomeSurface] = useState<HomeSurface>("insight");
+  const [homeSurface, setHomeSurface] = useState<HomeSurface>("blank");
   const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
   const [morningSequenceDay, setMorningSequenceDay] = useState(() =>
     resolveMorningSequenceDay(initialTrackerSummary),
@@ -1215,15 +1215,10 @@ export default function AssessmentChatBox({
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
           type="button"
           onClick={() => openEducationLesson(lesson, { closeExplorer: Boolean(options?.pill) })}
-          className="relative flex w-[calc(100vw-2rem)] max-w-[21rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[23rem] sm:max-w-[23rem]"
+          className="relative flex w-[min(92vw,24rem)] shrink-0 overflow-hidden rounded-[30px] text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem] sm:max-w-[25rem]"
           style={{
             backgroundColor: lessonCompleted ? "#fffdf9" : "#d6ab81",
             minHeight: "30rem",
-            boxShadow: lessonCompleted
-              ? "0 0 0 1px rgba(231,225,214,0.9) inset"
-              : options?.selected
-                ? "0 0 0 1px rgba(0,0,0,0.08) inset"
-                : undefined,
           }}
         >
           <span className="relative z-10 flex min-h-full w-full flex-col justify-between p-5 sm:p-6">
@@ -2923,7 +2918,7 @@ export default function AssessmentChatBox({
                 </div>
               ) : (
                 <div className="flex min-h-full flex-col">
-                  <div className="flex-1 px-4 py-4 sm:px-5">
+                  <div className="flex-1 py-4">
                     <div className="-mx-1 overflow-x-auto px-1 pb-2">
                       <div className="flex gap-3 pr-4">
                         {educationLessonRail.map((lesson, index) => {

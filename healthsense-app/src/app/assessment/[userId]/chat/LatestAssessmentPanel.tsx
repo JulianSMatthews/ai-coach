@@ -1187,7 +1187,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
-  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("learn");
+  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("checkin");
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -2831,7 +2831,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="pb-28 pt-2 sm:pb-32 sm:pt-3"
+          className="flex min-h-[calc(100dvh-8rem)] items-center pb-28 pt-6 sm:min-h-[calc(100dvh-10rem)] sm:pb-32 sm:pt-8"
         >
           <div className="relative overflow-hidden">
             <div className="overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
@@ -2859,7 +2859,7 @@ export default function LatestAssessmentPanel({
                   return (
                     <article
                       key={pillarKey}
-                      className="relative flex min-h-[28rem] w-[min(82vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] border border-[#efe7db] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col justify-between overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
                       <div className="absolute right-5 top-5">
