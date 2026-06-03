@@ -1254,7 +1254,7 @@ export default function AssessmentChatBox({
                 </span>
               ) : null}
             </span>
-            <span className="relative z-10 flex items-end justify-between gap-3">
+            <span className="relative z-10 flex items-end gap-3">
               {lessonIsNext ? (
                 <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
                   Start lesson
@@ -1268,9 +1268,6 @@ export default function AssessmentChatBox({
               ) : (
                 <span />
               )}
-              <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
-                {lessonDayIndex ? `Lesson ${lessonDayIndex}` : "Lesson"}
-              </span>
             </span>
           </span>
           {posterUrl ? (
