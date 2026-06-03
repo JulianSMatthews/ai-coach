@@ -1234,19 +1234,20 @@ export default function AssessmentChatBox({
           className="relative flex w-[min(92vw,24rem)] shrink-0 overflow-hidden rounded-[30px] text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem] sm:max-w-[25rem]"
           style={{
             backgroundColor: lessonCompleted ? "var(--chrome)" : "#d6ab81",
+            color: lessonCompleted ? "var(--text-primary)" : "#18110d",
             minHeight: "30rem",
           }}
         >
           <span className="relative z-10 flex min-h-full w-full flex-col justify-between p-5 sm:p-6">
             <span>
-              <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
+              <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-current opacity-75">
                 {lessonConcept || String(lesson?.pillar_label || "").trim() || "Lesson"}
               </span>
-              <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:max-w-[11ch] sm:text-[3rem]">
+              <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-current sm:max-w-[11ch] sm:text-[3rem]">
                 {lessonTitle || "Untitled lesson"}
               </span>
               {lessonDescription ? (
-                <span className="mt-5 block max-w-[18.5rem] text-[1.18rem] leading-8 text-[#3c332b]">
+                <span className="mt-5 block max-w-[18.5rem] text-[1.18rem] leading-8 text-current opacity-80">
                   {lessonDescription}
                 </span>
               ) : null}
@@ -2689,7 +2690,7 @@ export default function AssessmentChatBox({
                       <button
                         type="button"
                         onClick={closeActiveEducationLesson}
-                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e7e1d6] bg-[#ffffff] text-[#1e1b16] transition"
+                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
                         aria-label="Back"
                       >
                         <span className="text-3xl leading-none">‹</span>
@@ -2699,14 +2700,14 @@ export default function AssessmentChatBox({
                   </div>
                   <div className="px-4 py-4 sm:px-6">
                     <article className="w-full bg-transparent px-0 py-0 text-left">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8a7f72]">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-secondary)]">
                         {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
                       </p>
-                      <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-[-0.02em] text-[#18110d] sm:text-[2.8rem]">
+                      <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-[-0.02em] text-[var(--text-primary)] sm:text-[2.8rem]">
                         {activeEducationLessonTitle || "Lesson"}
                       </h2>
                       {activeEducationLessonDescription ? (
-                        <p className="mt-4 text-[1.2rem] leading-8 text-[#3c332b]">
+                        <p className="mt-4 text-[1.2rem] leading-8 text-[var(--text-secondary)]">
                           {activeEducationLessonDescription}
                         </p>
                       ) : null}
@@ -2719,11 +2720,11 @@ export default function AssessmentChatBox({
                           poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
                         />
                       ) : null}
-                      <div className="mt-5 rounded-[24px] bg-[#f6f1e7] px-4 py-4">
+                      <div className="mt-5 rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">Quiz</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">Quiz</p>
                           {activeEducationQuizCompletedAt && Number.isFinite(activeEducationQuizScore) ? (
-                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#1e1b16]">
+                            <span className="rounded-full bg-[var(--surface)] px-3 py-1 text-xs font-semibold text-[var(--text-primary)]">
                               {Math.round(activeEducationQuizScore)}%
                             </span>
                           ) : null}
@@ -2738,7 +2739,7 @@ export default function AssessmentChatBox({
                                 : [];
                               return (
                                 <fieldset key={questionId} className="space-y-3">
-                                  <legend className="text-[1.05rem] font-semibold leading-6 text-[#1e1b16]">
+                                  <legend className="text-[1.05rem] font-semibold leading-6 text-[var(--text-primary)]">
                                     {questionIndex + 1}. {String(question?.question_text || "").trim()}
                                   </legend>
                                   <div className="space-y-2">
@@ -2758,12 +2759,12 @@ export default function AssessmentChatBox({
                                             setEducationQuizMessage(null);
                                             setEducationQuizError(null);
                                           }}
-                                          className="flex w-full items-center justify-between rounded-[18px] bg-white px-4 py-3 text-left text-sm font-semibold text-[#1e1b16] transition"
+                                          className="flex w-full items-center justify-between rounded-[18px] bg-[var(--surface)] px-4 py-3 text-left text-sm font-semibold text-[var(--text-primary)] transition"
                                         >
                                           <span>{option.label}</span>
                                           <span
                                             className={`ml-3 h-5 w-5 rounded-full border ${
-                                              selected ? "border-[#1e1b16] bg-[#1e1b16]" : "border-[#d9d0c3] bg-white"
+                                              selected ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)]" : "border-[var(--border)] bg-[var(--surface)]"
                                             }`}
                                             aria-hidden="true"
                                           />
@@ -2795,11 +2796,11 @@ export default function AssessmentChatBox({
                             </button>
                           </div>
                         ) : activeEducationQuizQuestionCount > 0 ? (
-                          <p className="mt-3 text-[1.05rem] leading-7 text-[#3c332b]">
+                          <p className="mt-3 text-[1.05rem] leading-7 text-[var(--text-secondary)]">
                             This lesson has {activeEducationQuizQuestionCount} quiz questions. Open the current lesson to answer them.
                           </p>
                         ) : (
-                          <p className="mt-3 text-[1.05rem] leading-7 text-[#3c332b]">
+                          <p className="mt-3 text-[1.05rem] leading-7 text-[var(--text-secondary)]">
                             No quiz is available for this lesson yet.
                           </p>
                         )}
@@ -2825,12 +2826,12 @@ export default function AssessmentChatBox({
                           }
                           setEducationExplorerOpen(false);
                         }}
-                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e7e1d6] bg-[#ffffff] text-[#1e1b16] transition"
+                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
                         aria-label="Back"
                       >
                         <span className="text-3xl leading-none">‹</span>
                       </button>
-                      <p className="text-[2rem] font-semibold tracking-[-0.02em] text-[#1e1b16]">
+                      <p className="text-[2rem] font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
                         {educationExplorerMode === "pillars"
                           ? ""
                           : educationExplorerMode === "concepts"
