@@ -2829,7 +2829,7 @@ export default function LatestAssessmentPanel({
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
           <div className="relative overflow-hidden">
-            <div className="overflow-x-auto snap-x snap-mandatory px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
+            <div className="overflow-x-auto snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="flex gap-4 pr-4 sm:gap-5">
                 {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();

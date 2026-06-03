@@ -2664,7 +2664,7 @@ export default function AssessmentChatBox({
             <div
               ref={homePanelScrollerRef}
               className={`hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain py-4 pb-44 sm:pb-52 ${
-                homeSurface === "insight" && activeEducationLesson ? "px-0" : "px-4 sm:px-5"
+                homeSurface === "insight" ? "px-0" : "px-4 sm:px-5"
               }`}
             >
               {homeSurface === "tracking" ? (
@@ -2929,7 +2929,7 @@ export default function AssessmentChatBox({
                         })}
                       </div>
                     ) : (
-                      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+                      <div className="overflow-x-auto pb-1">
                         <div className="flex gap-3 pr-4">
                           {educationExplorerLessons.map((lesson) => {
                             const startableToken = firstIncompleteEducationLessonToken(educationExplorerLessons);
@@ -2948,7 +2948,7 @@ export default function AssessmentChatBox({
               ) : (
                 <div className="flex min-h-full flex-col">
                   <div className="flex-1 py-4">
-                    <div className="-mx-1 overflow-x-auto px-1 pb-2">
+                    <div className="overflow-x-auto pb-2">
                       <div className="flex gap-3 pr-4">
                         {educationLessonRail.map((lesson, index) => {
                           const startableToken = firstIncompleteEducationLessonToken(educationLessonRail);
