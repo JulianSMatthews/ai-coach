@@ -3900,7 +3900,7 @@ export default function LatestAssessmentPanel({
 
               {detail && !loadingDetail ? (
                 <div className="h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth px-4 touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
-                  <div className="flex h-full items-stretch gap-4 pr-4 sm:gap-5">
+                  <div className="flex h-full items-center gap-4 pr-4 sm:gap-5">
                     {(detail.concepts || []).map((concept, conceptIndex) => {
                       const conceptKey = String(concept.concept_key || "").trim();
                       const selectedValue = draft[conceptKey];
@@ -3917,7 +3917,7 @@ export default function LatestAssessmentPanel({
                       return (
                         <section
                           key={conceptKey}
-                          className="flex h-full min-h-[30rem] w-[calc(100vw-2rem)] max-w-[25rem] shrink-0 snap-start snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem] sm:max-w-[26rem]"
+                          className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
@@ -3985,7 +3985,7 @@ export default function LatestAssessmentPanel({
                       );
                     })}
 
-                    <section className="flex h-full min-h-[30rem] w-[calc(100vw-2rem)] max-w-[25rem] shrink-0 snap-start snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:w-[26rem] sm:max-w-[26rem]">
+                    <section className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">Complete</p>
                       <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal text-[#181512]">
                         Finish check-in
