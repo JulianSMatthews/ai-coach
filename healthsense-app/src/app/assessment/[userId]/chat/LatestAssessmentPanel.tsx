@@ -3917,7 +3917,7 @@ export default function LatestAssessmentPanel({
                       return (
                         <section
                           key={conceptKey}
-                          className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                          className="flex h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
@@ -3985,7 +3985,7 @@ export default function LatestAssessmentPanel({
                       );
                     })}
 
-                    <section className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
+                    <section className="flex h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">Complete</p>
                       <h2 className="mt-3 text-[2.7rem] font-semibold leading-[0.95] tracking-normal text-[#181512]">
                         Finish check-in
