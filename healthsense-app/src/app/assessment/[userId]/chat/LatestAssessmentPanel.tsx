@@ -2823,7 +2823,7 @@ export default function LatestAssessmentPanel({
 
   return (
     <>
-      {summaryPanelVisible ? (
+      {summaryPanelVisible && !selectedPillarKey ? (
         <section
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
@@ -2904,7 +2904,7 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
-      {summaryPanelVisible ? (
+      {summaryPanelVisible && !selectedPillarKey ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
@@ -3892,15 +3892,15 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {selectedPillarKey ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-transparent">
-          <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-transparent pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-            <div className="min-h-0 flex-1 overflow-hidden pb-28 pt-2 sm:pt-3">
+        <section className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8">
+          <div className="relative w-full overflow-hidden">
+            <div className="min-h-0 overflow-hidden">
               {loadingDetail ? <p className="px-4 text-sm text-[var(--text-muted)]">Loading tracker...</p> : null}
               {detailError ? <p className="px-4 text-sm text-[#8a3e1a]">{detailError}</p> : null}
 
               {detail && !loadingDetail ? (
-                <div className="h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth px-[max(1rem,calc((100vw-24rem)/2))] touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] sm:px-[calc((100vw-25rem)/2)] [&::-webkit-scrollbar]:hidden">
-                  <div className="flex h-full items-center gap-4 pr-4 sm:gap-5">
+                <div className="snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex items-center gap-4 pr-4 sm:gap-5">
                     {(detail.concepts || []).map((concept, conceptIndex) => {
                       const conceptKey = String(concept.concept_key || "").trim();
                       const selectedValue = draft[conceptKey];
@@ -4079,7 +4079,7 @@ export default function LatestAssessmentPanel({
               </div>
             </div>
           </div>
-        </div>
+        </section>
       ) : null}
     </>
   );
