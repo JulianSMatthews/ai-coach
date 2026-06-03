@@ -314,14 +314,14 @@ export default async function AssessmentChatPage(props: PageProps) {
           <p className="mt-2 text-sm text-[#6b6257]">
             {shouldRelogin
               ? "Your session may have expired. Sign in again to continue."
-              : "We couldn’t load this chat right now. Please try again shortly."}
+              : "CoachSense is being worked on. Please try again shortly."}
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5">
             <a
               href={shouldRelogin ? reloginHref : chatPath}
-              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] sm:w-auto"
             >
-              {shouldRelogin ? "sign in again" : "try again"}
+              {shouldRelogin ? "Sign in again" : "Try again"}
             </a>
           </div>
         </Card>

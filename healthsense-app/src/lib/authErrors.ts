@@ -31,12 +31,12 @@ export function friendlyAuthError(raw: unknown): string {
   const message = normalizeErrorMessage(raw);
   const lower = message.toLowerCase();
   if (!message) return "Something went wrong. Please try again.";
-  if (lower.includes("api_base_url")) return "We’re having trouble connecting. Please try again.";
+  if (lower.includes("api_base_url")) return "CoachSense is being worked on. Please try again shortly.";
   if (lower.includes("fetch failed") || lower.includes("timeout") || lower.includes("proxy request failed")) {
-    return "We couldn’t reach the server. Please try again.";
+    return "CoachSense is being worked on. Please try again shortly.";
   }
   if (lower.includes("upstream returned invalid response")) {
-    return "We’re having trouble connecting. Please try again.";
+    return "CoachSense is being worked on. Please try again shortly.";
   }
   if (lower.includes("email or phone required")) return "Enter your phone number to continue.";
   if (lower.includes("phone required")) return "Enter your phone number to continue.";
