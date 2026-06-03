@@ -84,13 +84,13 @@ export default function PreferencesForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-6" autoComplete="off">
-      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-base font-semibold text-[#1e1b16]">Preferences</h3>
+      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+        <h3 className="text-base font-semibold text-[var(--text-primary)]">Preferences</h3>
         <div className="mt-4 grid gap-4">
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Theme</label>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <label className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">Theme</label>
             <select
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px]"
               value={theme}
               onChange={(e) => setTheme(e.target.value === "light" ? "light" : "dark")}
             >
@@ -101,30 +101,30 @@ export default function PreferencesForm({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-base font-semibold text-[#1e1b16]">Home pillars</h3>
-        <p className="mt-1 text-[11px] text-[#6b6257]">Choose which optional pillars appear on the home screen.</p>
+      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+        <h3 className="text-base font-semibold text-[var(--text-primary)]">Home pillars</h3>
+        <p className="mt-1 text-[11px] text-[var(--text-secondary)]">Choose which optional pillars appear on the home screen.</p>
         <div className="mt-4 grid gap-4">
-          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[#efe7db] bg-white p-4">
+          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <span className="min-w-0">
-              <span className="block text-sm font-semibold text-[#1e1b16]">Nutrition</span>
-              <span className="block text-[11px] text-[#6b6257]">Show nutrition as a home pillar.</span>
+              <span className="block text-sm font-semibold text-[var(--text-primary)]">Nutrition</span>
+              <span className="block text-[11px] text-[var(--text-secondary)]">Show nutrition as a home pillar.</span>
             </span>
             <input
               type="checkbox"
-              className="h-5 w-5 rounded border-[#efe7db]"
+              className="h-5 w-5 rounded border-[var(--border)]"
               checked={nutritionPillarEnabled}
               onChange={(e) => setNutritionPillarEnabled(e.target.checked)}
             />
           </label>
-          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[#efe7db] bg-white p-4">
+          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <span className="min-w-0">
-              <span className="block text-sm font-semibold text-[#1e1b16]">Training</span>
-              <span className="block text-[11px] text-[#6b6257]">Show training as a home pillar.</span>
+              <span className="block text-sm font-semibold text-[var(--text-primary)]">Training</span>
+              <span className="block text-[11px] text-[var(--text-secondary)]">Show training as a home pillar.</span>
             </span>
             <input
               type="checkbox"
-              className="h-5 w-5 rounded border-[#efe7db]"
+              className="h-5 w-5 rounded border-[var(--border)]"
               checked={trainingPillarEnabled}
               onChange={(e) => setTrainingPillarEnabled(e.target.checked)}
             />
@@ -132,13 +132,13 @@ export default function PreferencesForm({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-base font-semibold text-[#1e1b16]">Account</h3>
+      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+        <h3 className="text-base font-semibold text-[var(--text-primary)]">Account</h3>
         <div className="mt-4 grid gap-4">
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Email</label>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <label className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">Email</label>
             <input
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px]"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px]"
               type="email"
               name="contact_email"
               autoComplete="section-profile email"
@@ -150,15 +150,15 @@ export default function PreferencesForm({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
-            <p className="mt-2 text-[11px] text-[#6b6257]">Optional, used for account recovery and important updates.</p>
+            <p className="mt-2 text-[11px] text-[var(--text-secondary)]">Optional, used for account recovery and important updates.</p>
           </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Password</label>
-              <label className="flex items-center gap-2 text-[11px] text-[#6b6257]">
+              <label className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">Password</label>
+              <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-[#efe7db]"
+                  className="h-4 w-4 rounded border-[var(--border)]"
                   checked={changePassword}
                   onChange={(e) => {
                     const next = e.target.checked;
@@ -173,7 +173,7 @@ export default function PreferencesForm({
               </label>
             </div>
             <input
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px] disabled:opacity-60"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] disabled:opacity-60"
               type="password"
               name="new_password"
               autoComplete="new-password"
@@ -183,7 +183,7 @@ export default function PreferencesForm({
               disabled={!changePassword}
             />
             <input
-              className="mt-3 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px] disabled:opacity-60"
+              className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] disabled:opacity-60"
               type="password"
               name="confirm_new_password"
               autoComplete="new-password"
@@ -192,7 +192,7 @@ export default function PreferencesForm({
               placeholder="Confirm password"
               disabled={!changePassword}
             />
-            <p className="mt-2 text-[11px] text-[#6b6257]">Minimum 8 characters.</p>
+            <p className="mt-2 text-[11px] text-[var(--text-secondary)]">Minimum 8 characters.</p>
           </div>
         </div>
       </section>
@@ -200,12 +200,12 @@ export default function PreferencesForm({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          className="rounded-full border border-[#111111] bg-[#111111] px-5 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-2 text-[13px] font-semibold text-[var(--action-primary-text)] disabled:cursor-not-allowed disabled:opacity-60"
           disabled={saving}
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
-        {status ? <p className="text-[13px] text-[#6b6257]">{status}</p> : null}
+        {status ? <p className="text-[13px] text-[var(--text-secondary)]">{status}</p> : null}
       </div>
     </form>
   );

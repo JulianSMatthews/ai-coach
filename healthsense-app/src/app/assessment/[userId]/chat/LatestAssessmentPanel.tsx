@@ -87,7 +87,7 @@ const URINE_SCREENING_MARKERS = [
 function resolveRestingHeartRateBoxTone(theme: DisplayTheme): string {
   return theme === "dark"
     ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
-    : "border-[#e7e1d6] bg-white text-[#5d5348]";
+    : "border-[#e7e1d6] bg-[var(--surface)] text-[var(--text-secondary)]";
 }
 
 function resolveRestingHeartRateMetricTone(
@@ -173,7 +173,7 @@ function resolveStepsMetricTone(theme: DisplayTheme, status: StepsStatus): strin
   if (status === "base") {
     return theme === "dark" ? "text-[#ffd3ad]" : "text-[#b55d1c]";
   }
-  return theme === "dark" ? "text-[var(--text-primary)]" : "text-[#5d5348]";
+  return theme === "dark" ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]";
 }
 
 function resolveCompactStepsStatusLabel(status: StepsStatus): string {
@@ -242,8 +242,8 @@ function normalizeBiometricSourceRows(
 function resolveBiometricSourceTone(theme: DisplayTheme, source?: BiometricSourceSummary | null): string {
   if (source?.enabled === false) {
     return theme === "dark"
-      ? "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]"
-      : "border-[#e7e1d6] bg-[#f7f1e8] text-[#6b6257]";
+      ? "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]"
+      : "border-[#e7e1d6] bg-[#f7f1e8] text-[var(--text-secondary)]";
   }
   const confidence = String(source?.confidence || "").trim().toLowerCase();
   if (confidence === "high") {
@@ -263,7 +263,7 @@ function resolveBiometricSourceTone(theme: DisplayTheme, source?: BiometricSourc
   }
   return theme === "dark"
     ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
-    : "border-[#e7e1d6] bg-white text-[#5d5348]";
+    : "border-[#e7e1d6] bg-[var(--surface)] text-[var(--text-secondary)]";
 }
 
 function shouldShowBiometricConnectionOptions(source?: BiometricSourceSummary | null): boolean {
@@ -404,7 +404,7 @@ function resolveTrainingReadinessCircleTone(theme: DisplayTheme, status?: string
   if (resolved === "moderate") {
     return theme === "dark" ? "border-[#6b5133] bg-[#2e241a] text-[#ffd3ad]" : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
   }
-  return theme === "dark" ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]" : "border-[#ece5d9] bg-white text-[#8c7f70]";
+  return theme === "dark" ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]" : "border-[#ece5d9] bg-[var(--surface)] text-[var(--text-tertiary)]";
 }
 
 function resolveActivityCircleTone(theme: DisplayTheme, status?: string | null): string {
@@ -418,7 +418,7 @@ function resolveActivityCircleTone(theme: DisplayTheme, status?: string | null):
   if (resolved === "low") {
     return theme === "dark" ? "border-[#6b5133] bg-[#2e241a] text-[#ffd3ad]" : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
   }
-  return theme === "dark" ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]" : "border-[#ece5d9] bg-white text-[#8c7f70]";
+  return theme === "dark" ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]" : "border-[#ece5d9] bg-[var(--surface)] text-[var(--text-tertiary)]";
 }
 
 function resolveStatusShortLabel(value?: string | null): string {
@@ -448,7 +448,7 @@ function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState):
   }
   return theme === "dark"
     ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
-    : "border-[#e7e1d6] bg-white text-[#8c7f70]";
+    : "border-[#e7e1d6] bg-[var(--surface)] text-[var(--text-tertiary)]";
 }
 
 function formatCapturedAt(value: Date): string {
@@ -651,7 +651,7 @@ function resolveUrineMarkerTone(
   }
   return theme === "dark"
     ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
-    : "border-[#e7e1d6] bg-white text-[#8c7f70]";
+    : "border-[#e7e1d6] bg-[var(--surface)] text-[var(--text-tertiary)]";
 }
 
 function formatUrineStatusLabel(marker: UrineTestMarker): string {
@@ -744,7 +744,7 @@ function resolveUrineStatusDotTone(
   if (status === "watch" || status === "trace" || status === "low" || status === "review") {
     return theme === "dark" ? "border-[#ffd3ad] bg-[#e8a867]" : "border-[#d9a25f] bg-[#f0b35f]";
   }
-  return theme === "dark" ? "border-[var(--border)] bg-[#6b6257]" : "border-[#d9cdbb] bg-[#d8d0c5]";
+  return theme === "dark" ? "border-[var(--border)] bg-[#6b6257]" : "border-[var(--border)] bg-[#d8d0c5]";
 }
 
 function resolveUrineResultMessage(urineTest?: UrineTestResponse | null): string | null {
@@ -780,7 +780,7 @@ function resolveBiomarkerExplanationTone(theme: DisplayTheme, tone: BiomarkerExp
   }
   return theme === "dark"
     ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
-    : "border-[#e7e1d6] bg-white text-[#8c7f70]";
+    : "border-[#e7e1d6] bg-[var(--surface)] text-[var(--text-tertiary)]";
 }
 
 function urineStatusDot(
@@ -816,17 +816,17 @@ function BiomarkerExplanationCard({
   const cardToneClassName =
     theme === "dark"
       ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
-      : "border-[#efe7db] bg-[#fffaf3] text-[#5d5348]";
-  const titleToneClassName = theme === "dark" ? "text-[var(--text-primary)]" : "text-[#1e1b16]";
+      : "border-[var(--border)] bg-[#fffaf3] text-[var(--text-secondary)]";
+  const titleToneClassName = theme === "dark" ? "text-[var(--text-primary)]" : "text-[var(--text-primary)]";
   const tableToneClassName =
-    theme === "dark" ? "border-[var(--border)] bg-[#151a24]" : "border-[#efe7db] bg-white";
+    theme === "dark" ? "border-[var(--border)] bg-[#151a24]" : "border-[var(--border)] bg-[var(--surface)]";
   const headerToneClassName =
     theme === "dark"
       ? "border-[var(--border)] bg-[#1c2230] text-[var(--text-secondary)]"
-      : "border-[#efe7db] bg-[#fff7ec] text-[#8c7f70]";
+      : "border-[var(--border)] bg-[#fff7ec] text-[var(--text-tertiary)]";
   const rowBorderClassName = theme === "dark" ? "border-[var(--border)]" : "border-[#f3eadf]";
-  const markerTextClassName = theme === "dark" ? "text-[var(--text-primary)]" : "text-[#1e1b16]";
-  const meaningTextClassName = theme === "dark" ? "text-[var(--text-secondary)]" : "text-[#6b6257]";
+  const markerTextClassName = theme === "dark" ? "text-[var(--text-primary)]" : "text-[var(--text-primary)]";
+  const meaningTextClassName = theme === "dark" ? "text-[var(--text-secondary)]" : "text-[var(--text-secondary)]";
   return (
     <div className={`${className} rounded-2xl border px-4 py-3 text-sm ${cardToneClassName}`}>
       <p className={`font-semibold ${titleToneClassName}`}>{title}</p>
@@ -886,14 +886,14 @@ function BiometricStatusCircle({
   const hasStatus = Boolean(String(status || "").trim()) && String(status || "").trim().toLowerCase() !== "unknown";
   return (
     <div className="flex min-w-0 flex-col items-center text-center">
-      <p className="text-[10px] font-semibold leading-none text-[#8c7f70]">{formatBiometricDayLabel(metricDate)}</p>
-      <p className="mt-1 text-[10px] leading-none text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
+      <p className="text-[10px] font-semibold leading-none text-[var(--text-tertiary)]">{formatBiometricDayLabel(metricDate)}</p>
+      <p className="mt-1 text-[10px] leading-none text-[var(--text-tertiary)]">{formatBiometricDayNumber(metricDate)}</p>
       <div
         className={`mt-2 flex h-10 w-10 items-center justify-center rounded-full border text-[8px] font-semibold uppercase leading-none sm:h-11 sm:w-11 ${toneClassName}`}
       >
         {hasStatus ? resolvedLabel : "—"}
       </div>
-      {detail ? <p className="mt-2 min-h-[1.75rem] text-[9px] leading-tight text-[#6b6257]">{detail}</p> : null}
+      {detail ? <p className="mt-2 min-h-[1.75rem] text-[9px] leading-tight text-[var(--text-secondary)]">{detail}</p> : null}
     </div>
   );
 }
@@ -1035,7 +1035,7 @@ function circleDayTone(status?: string | null, isActive?: boolean): string {
   if (status === "success") return `border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]${activeRing}`;
   if (status === "warning") return `border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]${activeRing}`;
   if (status === "danger") return `border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]${activeRing}`;
-  return `border-[#ece5d9] bg-white text-[#8c7f70]${activeRing}`;
+  return `border-[#ece5d9] bg-[var(--surface)] text-[var(--text-tertiary)]${activeRing}`;
 }
 
 function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | null; tone: string; compact?: boolean }) {
@@ -1050,8 +1050,8 @@ function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | nu
   return (
     <div className={compact ? "origin-center scale-[0.78] sm:scale-100" : ""}>
       <div className="relative flex h-[84px] w-[84px] items-center justify-center">
-        <div className="h-[84px] w-[84px] rounded-full border-[8px] border-[#efe7db]" />
-        <span className="absolute text-lg font-semibold text-[#8c7f70]">—</span>
+        <div className="h-[84px] w-[84px] rounded-full border-[8px] border-[var(--border)]" />
+        <span className="absolute text-lg font-semibold text-[var(--text-tertiary)]">—</span>
       </div>
     </div>
   );
@@ -1106,7 +1106,7 @@ function WeeklyObjectiveSectionIcon({ sectionKey }: { sectionKey: string }) {
   const iconSrc = normalizedKey === "wellbeing" ? "/healthsense-mark.svg" : getPillarPalette(normalizedKey).icon;
   if (!iconSrc) return null;
   return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#efe7db] bg-[#fffaf3]">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[#fffaf3]">
       <img src={iconSrc} alt="" aria-hidden="true" className="h-6 w-6 object-contain" />
     </span>
   );
@@ -1564,17 +1564,17 @@ export default function LatestAssessmentPanel({
   }
   const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
   const biomarkerExplanationButtonClassName =
-    "rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5d5348]";
+    "rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-secondary)]";
   const biometricSourceCheckButtonClassName =
     "shrink-0 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-[0_10px_24px_-18px_var(--shadow-strong)]";
   const biometricAboutButtonClassName =
     displayTheme === "dark"
       ? "border-[#2f3542] bg-[#1c2230] text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)]"
-      : "border-[#d9cdbb] bg-white text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)]";
+      : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)]";
   const biometricAboutPanelClassName =
     displayTheme === "dark"
       ? "border-[var(--border)] bg-[#151a24] text-[var(--text-secondary)]"
-      : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]";
+      : "border-[var(--border)] bg-[#fffaf3] text-[var(--text-secondary)]";
   const latestHrvValue = resolveHeartRateVariabilityValue(latestHrvItem?.hrv_ms);
   const latestActiveMinutesValue = formatFullActiveMinutes(latestActiveMinutesItem?.active_minutes);
   const latestActiveMinutesStatus = resolveActiveMinutesStatus(latestActiveMinutesItem?.active_minutes);
@@ -2878,7 +2878,7 @@ export default function LatestAssessmentPanel({
                                   })
                                 }
                                 className={`min-h-[2.7rem] rounded-full border px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition ${
-                                  complete ? "border-[#efe7db] bg-[#f8f4ee] text-[#1e1b16]" : "border-[#111111] bg-[#111111] text-white"
+                                  complete ? "border-[var(--border)] bg-[#f8f4ee] text-[var(--text-primary)]" : "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
                                 }`}
                               >
                                 {optionLabel}
@@ -2958,11 +2958,11 @@ export default function LatestAssessmentPanel({
 
       {biometricsModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
-            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--surface)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+            <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-secondary)]">
                     {activeBiomarkerExplanationDetail
                       ? activeBiomarkerExplanationDetail.title
                       : urineTestFlowOpen
@@ -2971,7 +2971,7 @@ export default function LatestAssessmentPanel({
                           ? "Config"
                         : "Biometrics"}
                   </p>
-                  <p className="text-sm text-[#6b6257]">
+                  <p className="text-sm text-[var(--text-secondary)]">
                     {activeBiomarkerExplanationDetail
                       ? "Understand what this biomarker means, your latest result, and the scale."
                       : urineTestFlowOpen
@@ -2995,7 +2995,7 @@ export default function LatestAssessmentPanel({
                       }
                       setUrineTestFlowOpen(false);
                     }}
-                    className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                    className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]"
                   >
                     {activeBiomarkerExplanationDetail ? "Close" : "Back"}
                   </button>
@@ -3031,7 +3031,7 @@ export default function LatestAssessmentPanel({
                   </p>
                 </details>
                 {!urineTestFlowOpen && activeBiomarkerExplanationDetail ? (
-                  <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
                     <BiomarkerExplanationCard
                       className=""
                       description={activeBiomarkerExplanationDetail.description}
@@ -3043,11 +3043,11 @@ export default function LatestAssessmentPanel({
                     />
                   </div>
                 ) : urineTestFlowOpen ? (
-                  <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
-                        <p className="text-sm font-semibold text-[#1e1b16]">Take urine test</p>
-                        <p className="text-sm text-[#6b6257]">
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">Take urine test</p>
+                        <p className="text-sm text-[var(--text-secondary)]">
                           Photograph the strip on a plain white background at 60 seconds.
                         </p>
                       </div>
@@ -3071,19 +3071,19 @@ export default function LatestAssessmentPanel({
                       className="hidden"
                     />
                     <div className="mt-4 space-y-3">
-                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 1</p>
-                        <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Prepare the strip</p>
-                        <p className="mt-1 text-sm text-[#6b6257]">
+                      <div className="rounded-2xl border border-[var(--border)] bg-[#fffaf3] px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">Step 1</p>
+                        <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">Prepare the strip</p>
+                        <p className="mt-1 text-sm text-[var(--text-secondary)]">
                           Dip the Siemens Multistix strip, remove excess urine, and place it flat on a plain white background in good light.
                         </p>
                       </div>
-                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+                      <div className="rounded-2xl border border-[var(--border)] bg-[#fffaf3] px-4 py-3">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 2</p>
-                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Start the read window</p>
-                            <p className="mt-1 text-sm text-[#6b6257]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">Step 2</p>
+                            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">Start the read window</p>
+                            <p className="mt-1 text-sm text-[var(--text-secondary)]">
                               {urineCaptureStartedAt
                                 ? `${urineTimerSecondsLeft}s remaining. Take the photo when the timer reaches zero.`
                                 : "Start after dipping. HealthSense captures at 60 seconds for the selected marker set."}
@@ -3093,18 +3093,18 @@ export default function LatestAssessmentPanel({
                             type="button"
                             onClick={startUrineCaptureTimer}
                             disabled={urineTestSaving}
-                            className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Start timer
                           </button>
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+                      <div className="rounded-2xl border border-[var(--border)] bg-[#fffaf3] px-4 py-3">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 3</p>
-                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Take the photo</p>
-                            <p className="mt-1 text-sm text-[#6b6257]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">Step 3</p>
+                            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">Take the photo</p>
+                            <p className="mt-1 text-sm text-[var(--text-secondary)]">
                               Keep the strip flat in the frame. Retake if the image is blurred, shadowed, or strongly tinted.
                             </p>
                           </div>
@@ -3121,7 +3121,7 @@ export default function LatestAssessmentPanel({
                               type="button"
                               onClick={() => void openUrinePhotoLibrary()}
                               disabled={urineTestSaving}
-                              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Use existing photo
                             </button>
@@ -3148,7 +3148,7 @@ export default function LatestAssessmentPanel({
                         );
                       })}
                     </div>
-                    <p className="mt-4 text-sm text-[#6b6257]">
+                    <p className="mt-4 text-sm text-[var(--text-secondary)]">
                       {urineTestLoading
                         ? "Loading latest urine test..."
                         : urineTestError
@@ -3166,11 +3166,11 @@ export default function LatestAssessmentPanel({
                     ) : null}
                   </div>
                 ) : biometricSourceCheckOpen ? (
-                  <div className="rounded-[24px] border border-[#e7e1d6] bg-white px-4 py-4">
+                  <div className="rounded-[24px] border border-[#e7e1d6] bg-[var(--surface)] px-4 py-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
-                            <p className="text-sm font-semibold text-[#1e1b16]">Biometric sources</p>
-                            <p className="text-sm text-[#6b6257]">
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">Biometric sources</p>
+                            <p className="text-sm text-[var(--text-secondary)]">
                               Apple Health source data is used where available. Excluded metrics are not used by Gia.
                             </p>
                           </div>
@@ -3203,7 +3203,7 @@ export default function LatestAssessmentPanel({
                                   <div className="min-w-0 space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <p className="text-sm font-semibold">{label}</p>
-                                      <span className="rounded-full border border-current/20 bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                                      <span className="rounded-full border border-current/20 bg-[var(--surface)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
                                         {confidenceLabel}
                                       </span>
                                     </div>
@@ -3221,7 +3221,7 @@ export default function LatestAssessmentPanel({
                                     className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${
                                       enabled
                                         ? "border-[#c54817] bg-[#c54817] text-white"
-                                        : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                        : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
                                     }`}
                                   >
                                     {biometricPreferenceSaving === key ? "Saving" : enabled ? "Included" : "Excluded"}
@@ -3242,7 +3242,7 @@ export default function LatestAssessmentPanel({
                                           className={`rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-55 ${
                                             canConnect
                                               ? "border-[#c54817] bg-[#c54817] text-white"
-                                              : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                              : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
                                           }`}
                                         >
                                           {pending
@@ -3265,7 +3265,7 @@ export default function LatestAssessmentPanel({
                     {showTrainingReadinessCard ? (
                       <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-[#1e1b16]">Training readiness</p>
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">Training readiness</p>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -3278,7 +3278,7 @@ export default function LatestAssessmentPanel({
                             >
                               Explain
                             </button>
-                            <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                            <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                               Last 7 days
                             </p>
                           </div>
@@ -3305,9 +3305,9 @@ export default function LatestAssessmentPanel({
                         </div>
 
                         {showRestingHeartRateMetric ? (
-                          <div className="mt-5 border-t border-[#efe7db] pt-4">
+                          <div className="mt-5 border-t border-[var(--border)] pt-4">
                           <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-[#1e1b16]">Resting HR</p>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">Resting HR</p>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
@@ -3318,7 +3318,7 @@ export default function LatestAssessmentPanel({
                               >
                                 Explain
                               </button>
-                              <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                                 Last 7 days
                               </p>
                             </div>
@@ -3349,7 +3349,7 @@ export default function LatestAssessmentPanel({
                               })}
                             </div>
                           ) : (
-                            <p className="mt-3 text-sm text-[#6b6257]">
+                            <p className="mt-3 text-sm text-[var(--text-secondary)]">
                               Daily history will appear here once recent biometrics have been synced.
                             </p>
                           )}
@@ -3357,9 +3357,9 @@ export default function LatestAssessmentPanel({
                         ) : null}
 
                         {showHrvMetric ? (
-                          <div className="mt-5 border-t border-[#efe7db] pt-4">
+                          <div className="mt-5 border-t border-[var(--border)] pt-4">
                           <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-[#1e1b16]">HRV</p>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">HRV</p>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
@@ -3370,7 +3370,7 @@ export default function LatestAssessmentPanel({
                               >
                                 Explain
                               </button>
-                              <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                                 Last 7 days
                               </p>
                             </div>
@@ -3401,7 +3401,7 @@ export default function LatestAssessmentPanel({
                               })}
                             </div>
                           ) : (
-                            <p className="mt-3 text-sm text-[#6b6257]">
+                            <p className="mt-3 text-sm text-[var(--text-secondary)]">
                               Daily HRV history will appear here once recent biometrics have been synced.
                             </p>
                           )}
@@ -3411,9 +3411,9 @@ export default function LatestAssessmentPanel({
                     ) : null}
 
                     {showActivityStatusCard ? (
-                      <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                      <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-[#1e1b16]">Activity status</p>
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">Activity status</p>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -3426,7 +3426,7 @@ export default function LatestAssessmentPanel({
                             >
                               Explain
                             </button>
-                            <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                            <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                               Last 7 days
                             </p>
                           </div>
@@ -3450,9 +3450,9 @@ export default function LatestAssessmentPanel({
                         </div>
 
                         {showActiveMinutesMetric ? (
-                          <div className="mt-5 border-t border-[#efe7db] pt-4">
+                          <div className="mt-5 border-t border-[var(--border)] pt-4">
                           <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-[#1e1b16]">Exercise minutes</p>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">Exercise minutes</p>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
@@ -3465,7 +3465,7 @@ export default function LatestAssessmentPanel({
                               >
                                 Explain
                               </button>
-                              <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                                 Last 7 days
                               </p>
                             </div>
@@ -3495,7 +3495,7 @@ export default function LatestAssessmentPanel({
                               })}
                             </div>
                           ) : (
-                            <p className="mt-3 text-sm text-[#6b6257]">
+                            <p className="mt-3 text-sm text-[var(--text-secondary)]">
                               Daily exercise minutes will appear here once recent biometrics have been synced.
                             </p>
                           )}
@@ -3503,9 +3503,9 @@ export default function LatestAssessmentPanel({
                         ) : null}
 
                         {showStepsMetric ? (
-                          <div className="mt-5 border-t border-[#efe7db] pt-4">
+                          <div className="mt-5 border-t border-[var(--border)] pt-4">
                           <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-[#1e1b16]">Steps (000s)</p>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">Steps (000s)</p>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
@@ -3516,7 +3516,7 @@ export default function LatestAssessmentPanel({
                               >
                                 Explain
                               </button>
-                              <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                                 Last 7 days
                               </p>
                             </div>
@@ -3546,7 +3546,7 @@ export default function LatestAssessmentPanel({
                               })}
                             </div>
                           ) : (
-                            <p className="mt-3 text-sm text-[#6b6257]">
+                            <p className="mt-3 text-sm text-[var(--text-secondary)]">
                               Daily step history will appear here once recent biometrics have been synced.
                             </p>
                           )}
@@ -3557,7 +3557,7 @@ export default function LatestAssessmentPanel({
 
                     <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-[#1e1b16]">
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">
                           Urine{urineTestHeadingDate !== "—" ? ` (${urineTestHeadingDate})` : ""}
                         </p>
                         <div className="ml-auto flex items-center gap-2">
@@ -3611,7 +3611,7 @@ export default function LatestAssessmentPanel({
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
+            <div className="shrink-0 border-t border-[var(--border)] px-4 py-4 sm:px-5">
               <button
                 type="button"
                 onClick={() => {
@@ -3624,7 +3624,7 @@ export default function LatestAssessmentPanel({
                   setUrineTestFlowOpen(false);
                   setBiometricsModalOpen(false);
                 }}
-                className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                className="w-full rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]"
               >
                 Close
               </button>
@@ -3635,8 +3635,8 @@ export default function LatestAssessmentPanel({
 
       {objectivesModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
-            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--surface)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+            <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-4 sm:px-5">
               <div className="flex items-start gap-3">
                 <button
                   type="button"
@@ -3648,20 +3648,20 @@ export default function LatestAssessmentPanel({
                       closeObjectivesModal();
                     }
                   }}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#ece3d8] bg-white text-[#1e1b16] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
                   aria-label={selectedObjectivesSection ? "Back to objectives" : "Close objectives"}
                 >
                   <span className="text-3xl leading-none">‹</span>
                 </button>
                 <div className="min-w-0 space-y-1">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-secondary)]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
                         ? "General options"
                         : selectedObjectivesPillar?.label || "Weekly objectives"
                       : "Weekly objectives"}
                   </p>
-                  <p className="text-sm text-[#6b6257]">
+                  <p className="text-sm text-[var(--text-secondary)]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
                         ? "Set optional general tracking preferences."
@@ -3673,7 +3673,7 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
-              {weeklyObjectivesLoading ? <p className="text-sm text-[#6b6257]">Loading weekly objectives…</p> : null}
+              {weeklyObjectivesLoading ? <p className="text-sm text-[var(--text-secondary)]">Loading weekly objectives…</p> : null}
               {weeklyObjectivesError ? <p className="text-sm text-[#8a3e1a]">{weeklyObjectivesError}</p> : null}
 
               {!weeklyObjectivesLoading && !selectedObjectivesSection ? (
@@ -3691,17 +3691,17 @@ export default function LatestAssessmentPanel({
                         key={sectionKey}
                         type="button"
                         onClick={() => setSelectedObjectivesSection(sectionKey as ObjectivesSectionKey)}
-                        className="flex min-h-[5.75rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+                        className="flex min-h-[5.75rem] w-full flex-col items-start justify-center rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
                       >
                         <span className="flex w-full items-center justify-between gap-3">
                           <span className="flex min-w-0 items-center gap-3">
                             <WeeklyObjectiveSectionIcon sectionKey={sectionKey} />
-                            <span className="truncate text-base font-semibold text-[#1e1b16]">
+                            <span className="truncate text-base font-semibold text-[var(--text-primary)]">
                               {formatWeeklyObjectiveSectionLabel(sectionKey, section?.label)}
                             </span>
                           </span>
                           {countLabel ? (
-                            <span className="shrink-0 text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                            <span className="shrink-0 text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                               {countLabel}
                             </span>
                           ) : null}
@@ -3720,13 +3720,13 @@ export default function LatestAssessmentPanel({
                     const unitLabel = String(concept?.unit_label || "").trim();
                     const currentTargetLabel = String(concept?.target_label || "").trim();
                     return (
-                      <div key={conceptKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                      <div key={conceptKey} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
                         <div className="space-y-1">
-                          <p className="text-sm font-semibold text-[#1e1b16]">{concept?.label}</p>
-                          <p className="text-xs uppercase tracking-[0.18em] text-[#8c7f70]">
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">{concept?.label}</p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
                             {concept?.metric_label || concept?.helper || conceptKey}
                           </p>
-                          <p className="text-xs text-[#6b6257]">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             {unitLabel ? `Target ${unitLabel}` : String(concept?.helper || "").trim()}
                             {currentTargetLabel ? ` · ${currentTargetLabel}` : ""}
                           </p>
@@ -3753,8 +3753,8 @@ export default function LatestAssessmentPanel({
                                 }
                                 className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                                   isActive
-                                    ? "border-[#111111] bg-[#111111] text-white"
-                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                    ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                    : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
                                 }`}
                               >
                                 {option?.label}
@@ -3775,10 +3775,10 @@ export default function LatestAssessmentPanel({
                     const selectedValue = String(wellbeingObjectiveDraft[itemKey] || item?.value || "off").trim() || "off";
                     const itemFields = Array.isArray(item?.fields) ? item.fields : [];
                     return (
-                      <div key={itemKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                      <div key={itemKey} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
                         <div className="space-y-1">
-                          <p className="text-sm font-semibold text-[#1e1b16]">{item?.label}</p>
-                          <p className="text-xs text-[#6b6257]">{item?.helper}</p>
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">{item?.label}</p>
+                          <p className="text-xs text-[var(--text-secondary)]">{item?.helper}</p>
                         </div>
                         {itemFields.length ? (
                           <div className="mt-4 space-y-4">
@@ -3790,7 +3790,7 @@ export default function LatestAssessmentPanel({
                               ).trim();
                               return (
                                 <div key={`${itemKey}-${fieldKey}`} className="space-y-2">
-                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
                                     {field?.label}
                                   </p>
                                   <div className="flex flex-wrap gap-2">
@@ -3809,8 +3809,8 @@ export default function LatestAssessmentPanel({
                                           }
                                           className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                                             isActive
-                                              ? "border-[#111111] bg-[#111111] text-white"
-                                              : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                              ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                              : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
                                           }`}
                                         >
                                           {option?.label}
@@ -3839,8 +3839,8 @@ export default function LatestAssessmentPanel({
                                   }
                                   className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                                     isActive
-                                      ? "border-[#111111] bg-[#111111] text-white"
-                                      : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                      ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
                                   }`}
                                 >
                                   {option?.label}
@@ -3857,12 +3857,12 @@ export default function LatestAssessmentPanel({
             </div>
 
             {selectedObjectivesSection ? (
-              <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
+              <div className="shrink-0 border-t border-[var(--border)] px-4 py-4 sm:px-5">
                 <button
                   type="button"
                   onClick={() => void saveObjectivesSection()}
                   disabled={weeklyObjectivesSaving}
-                  className="w-full rounded-full border border-[#111111] bg-[#111111] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[var(--action-primary-text)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {weeklyObjectivesSaving ? "Saving…" : "Save objectives"}
                 </button>
@@ -3879,14 +3879,14 @@ export default function LatestAssessmentPanel({
               <button
                 type="button"
                 onClick={handleTrackerBack}
-                className="flex h-12 w-12 items-center justify-center rounded-full border border-[#ece3d8] bg-white text-[#1e1b16] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
                 aria-label="Back"
               >
                 <span className="text-3xl leading-none">‹</span>
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
-              {loadingDetail ? <p className="text-sm text-[var(--text-muted)]">Loading tracker...</p> : null}
+              {loadingDetail ? <p className="text-sm text-[var(--text-secondary)]">Loading tracker...</p> : null}
               {detailError ? <p className="text-sm text-[#8a3e1a]">{detailError}</p> : null}
 
               {detail && !loadingDetail ? (
@@ -3903,27 +3903,27 @@ export default function LatestAssessmentPanel({
                         ? "text-[#4e7a1f]"
                         : concept.okr_on_track === false
                           ? "text-[#b55b1d]"
-                          : "text-[#6b6257]";
+                          : "text-[var(--text-secondary)]";
                     return (
                       <section
                         key={conceptKey}
-                        className="flex min-h-[28rem] w-full flex-col overflow-hidden rounded-[34px] bg-[#fcf8f0] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:px-8 sm:py-8"
+                        className="flex min-h-[28rem] w-full flex-col overflow-hidden rounded-[34px] bg-[var(--surface-muted)] px-7 py-7 text-left shadow-[0_20px_44px_-38px_rgba(30,27,22,0.4)] sm:min-h-[30rem] sm:px-8 sm:py-8"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c54817]">
                               {`${conceptIndex + 1} of ${detail.concepts?.length || 0}`}
                             </p>
-                            <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-normal text-[#181512]">
+                            <h2 className="mt-3 text-[2.25rem] font-semibold leading-[0.98] tracking-normal text-[var(--text-primary)]">
                               {concept.label}
                             </h2>
                           </div>
                         </div>
-                        <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[#3c332b]">
+                        <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[var(--text-primary)]">
                           {concept.helper}
                         </p>
                         {targetLabel || okrStatusLabel ? (
-                          <p className="mb-7 mt-4 text-sm leading-6 text-[#6b6257]">
+                          <p className="mb-7 mt-4 text-sm leading-6 text-[var(--text-secondary)]">
                             {targetLabel}
                             {targetLabel && showInlineOkrProgress ? " · " : null}
                             {showInlineOkrProgress ? okrStatusDetail : null}
@@ -3961,7 +3961,7 @@ export default function LatestAssessmentPanel({
                                       }))
                                     }
                                     className={`min-h-[2.75rem] rounded-full px-3 py-2 text-center text-xs font-semibold leading-tight transition ${
-                                      active ? "bg-[#111111] text-white" : "bg-white text-[#1e1b16]"
+                                      active ? "bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]" : "bg-[var(--surface)] text-[var(--text-primary)]"
                                     }`}
                                   >
                                     {option.label}
@@ -3981,7 +3981,7 @@ export default function LatestAssessmentPanel({
                       type="button"
                       onClick={() => void saveTracker()}
                       disabled={!canSave}
-                      className="w-full rounded-full bg-[#111111] px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-white transition disabled:cursor-not-allowed disabled:opacity-45"
+                      className="w-full rounded-full bg-[var(--action-primary-bg)] px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.16em] text-[var(--action-primary-text)] transition disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {saving ? "Saving check-in..." : "Complete check-in"}
                     </button>

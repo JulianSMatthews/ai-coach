@@ -43,7 +43,7 @@ export default async function PreferencesPage(props: PageProps) {
       <section className="grid gap-4">
         <Link
           href={`/assessment/${encodeURIComponent(userId)}/chat`}
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-[#ece3d8] bg-white text-[#1e1b16] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
           aria-label="Back to home"
         >
           <span className="text-3xl leading-none">‹</span>

@@ -19,6 +19,9 @@
   --text-tertiary: #8c7f70;
   --accent: #d3541b;
   --accent-soft: #ffe6d1;
+  --action-primary-bg: #111111;
+  --action-primary-border: #111111;
+  --action-primary-text: #ffffff;
   --badge-bg: #fff4e8;
   --badge-border: #f5d0a0;
   --badge-text: #a14514;
@@ -57,6 +60,9 @@
   --text-tertiary: #ab9c8d;
   --accent: #f08948;
   --accent-soft: #4a2c1a;
+  --action-primary-bg: #f4ecdf;
+  --action-primary-border: #f4ecdf;
+  --action-primary-text: #15110d;
   --badge-bg: #34251b;
   --badge-border: #76492d;
   --badge-text: #ffd8ba;
@@ -155,6 +161,7 @@ details > summary::-webkit-details-marker {
 :root[data-theme="dark"] .bg-\[\#fffaf3\],
 :root[data-theme="dark"] .bg-\[\#fffaf4\],
 :root[data-theme="dark"] .bg-\[\#fdfaf4\],
+:root[data-theme="dark"] .bg-\[\#fcf8f0\],
 :root[data-theme="dark"] .bg-\[\#fbf7f0\],
 :root[data-theme="dark"] .bg-\[\#f7f4ee\],
 :root[data-theme="dark"] .bg-\[\#f8f3ec\],
