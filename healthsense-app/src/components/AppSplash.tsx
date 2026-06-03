@@ -34,7 +34,7 @@ export default function AppSplash() {
         <span className="splash-word splash-word-find">Find</span>
         <span className="splash-word splash-word-your">your</span>
         <span className="splash-word splash-word-own">own</span>
-        <span className="splash-word splash-word-way">way</span>
+        <span className="splash-word splash-word-way">way.</span>
       </div>
       <span className="sr-only">Find your own way.</span>
       <style jsx>{`
