@@ -169,8 +169,8 @@ const HOME_SURFACE_COPY: Record<
   },
   insight: {
     eyebrow: "Learn",
-    title: "Today's lesson",
-    description: "Browse today's cue cards.",
+    title: "Current lesson",
+    description: "Browse lesson cue cards.",
   },
   ask: {
     eyebrow: "Coach",
@@ -249,13 +249,32 @@ function normalizeDayPlanMomentKey(value: string | null | undefined): string {
   return token;
 }
 
+const LESSON_NUMBER_WORD_PATTERN = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve";
+
+function titleCaseToken(value: string): string {
+  const token = String(value || "").trim().toLowerCase();
+  return token ? `${token.charAt(0).toUpperCase()}${token.slice(1)}` : "";
+}
+
 function normalizeLessonHeading(value: string | null | undefined): string {
   const token = String(value || "").trim();
   if (!token) return "";
   return token
-    .replace(/\bDAY\s+(\d+)\b/gi, "Lesson $1")
+    .replace(/\bday\s+(\d+)\b/gi, "Lesson $1")
+    .replace(new RegExp(`\\bday\\s+(${LESSON_NUMBER_WORD_PATTERN})\\b`, "gi"), (_match, word: string) => `Lesson ${titleCaseToken(word)}`)
     .replace(/\bDays\b/g, "Lessons")
-    .replace(/\bday\s+(\d+)\b/gi, "Lesson $1");
+    .replace(/\bdays\b/g, "lessons");
+}
+
+function normalizeLessonText(value: string | null | undefined): string {
+  const token = normalizeLessonHeading(value);
+  if (!token) return "";
+  return token
+    .replace(/\btoday's lesson\b/gi, "this lesson")
+    .replace(/\btoday you'?ll\b/gi, "In this lesson you'll")
+    .replace(/\btoday you will\b/gi, "In this lesson you will")
+    .replace(/\byesterday you learned\b/gi, "In the previous lesson you learned")
+    .replace(/\byesterday\b/gi, "the previous lesson");
 }
 
 function isEducationLessonCompleted(lesson: any): boolean {
@@ -1121,7 +1140,7 @@ export default function AssessmentChatBox({
   const activeEducationLessonTitle = normalizeLessonHeading(
     String(activeEducationLesson?.title || activeEducationLesson?.concept_label || activeEducationLesson?.pillar_label || "").trim(),
   );
-  const activeEducationLessonDescription = String(activeEducationLesson?.goal || activeEducationLesson?.summary || "").trim();
+  const activeEducationLessonDescription = normalizeLessonText(String(activeEducationLesson?.goal || activeEducationLesson?.summary || "").trim());
   const activeEducationLessonVariantId = Number(activeEducationLesson?.lesson_variant_id || activeEducationLessonContent?.lesson_variant_id || 0);
   const currentEducationLessonVariantId = Number(educationPlan?.lesson?.lesson_variant_id || 0);
   const activeEducationQuiz =
@@ -1205,7 +1224,7 @@ export default function AssessmentChatBox({
       const lessonTitle = normalizeLessonHeading(
         String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim(),
       );
-      const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+      const lessonDescription = normalizeLessonText(String(lesson?.goal || lesson?.summary || "").trim());
       const lessonConcept = String(lesson?.concept_label || lesson?.concept_key || "").trim();
       const posterUrl = String(lesson?.content?.poster_url || lesson?.content?.avatar?.poster_url || "").trim();
       const lessonCompleted = isEducationLessonCompleted(lesson);
@@ -1250,7 +1269,7 @@ export default function AssessmentChatBox({
                 <span />
               )}
               <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
-                {String(lesson?.day_index || 0).padStart(2, "0")}
+                {lessonDayIndex ? `Lesson ${lessonDayIndex}` : "Lesson"}
               </span>
             </span>
           </span>
@@ -1378,7 +1397,7 @@ export default function AssessmentChatBox({
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to load today's lesson."));
+        throw new Error(parseApiError(text, "Failed to load the current lesson."));
       }
       const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
       if (requestId !== educationPlanRequestIdRef.current) {
@@ -2668,7 +2687,7 @@ export default function AssessmentChatBox({
             (educationPlanLoading || (!educationPlan && !educationPlanError)) ? (
               <div className="flex min-h-full items-center px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
-                  Loading today&apos;s education programme…
+                  Loading your education programme…
                 </p>
               </div>
               ) : educationPlan?.available ? (
@@ -2962,7 +2981,7 @@ export default function AssessmentChatBox({
             ) : (
               <div className="flex min-h-full items-center px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
-                  {educationPlanError || educationPlan?.reason || "Today's lesson is not available right now."}
+                  {educationPlanError || educationPlan?.reason || "The current lesson is not available right now."}
                 </p>
               </div>
             )

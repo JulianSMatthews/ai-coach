@@ -50,6 +50,12 @@ _WATCH_COMPLETE_THRESHOLD_PCT = 80.0
 _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
 _LEVEL_PRIORITY = ("support", "foundation", "build", "perform")
+_LESSON_NUMBER_WORD_PATTERN = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+
+
+def _title_case_token(value: str) -> str:
+    token = str(value or "").strip().lower()
+    return token[:1].upper() + token[1:] if token else ""
 
 
 def _normalize_lesson_heading(text: str | None) -> str | None:
@@ -57,7 +63,29 @@ def _normalize_lesson_heading(text: str | None) -> str | None:
     if not token:
         return None
     token = re.sub(r"\bDAY\s+(\d+)\b", r"Lesson \1", token, flags=re.IGNORECASE)
+    token = re.sub(
+        rf"\bday\s+({_LESSON_NUMBER_WORD_PATTERN})\b",
+        lambda match: f"Lesson {_title_case_token(match.group(1))}",
+        token,
+        flags=re.IGNORECASE,
+    )
     token = token.replace("Days", "Lessons").replace("days", "lessons")
+    return token
+
+
+def _normalize_lesson_text(text: str | None) -> str | None:
+    token = _normalize_lesson_heading(text)
+    if not token:
+        return None
+    replacements = (
+        (r"\btoday's lesson\b", "this lesson"),
+        (r"\btoday you'?ll\b", "In this lesson you'll"),
+        (r"\btoday you will\b", "In this lesson you will"),
+        (r"\byesterday you learned\b", "In the previous lesson you learned"),
+        (r"\byesterday\b", "the previous lesson"),
+    )
+    for pattern, replacement in replacements:
+        token = re.sub(pattern, replacement, token, flags=re.IGNORECASE)
     return token
 
 _EDUCATION_SCHEMA_TABLES = (
@@ -2154,17 +2182,17 @@ def _education_plan_lesson_payload(
             or _normalize_lesson_heading((content_item.title if content_item is not None else None) or "")
             or _normalize_lesson_heading(getattr(programme_day, "default_title", "") or "")
             or _normalize_lesson_heading(getattr(programme_day, "concept_label", "") or getattr(programme_day, "concept_key", "") or "")
-            or "Today's lesson"
+            or "Current lesson"
         ),
         "summary": (
-            str(getattr(lesson_variant, "summary", "") or "").strip()
-            or str(getattr(programme_day, "default_summary", "") or "").strip()
-            or str(getattr(lesson_variant, "script", "") or "").strip()[:280]
-            or str((content_item.body if content_item is not None else "") or "").strip()[:280]
+            _normalize_lesson_text(getattr(lesson_variant, "summary", "") or "")
+            or _normalize_lesson_text(getattr(programme_day, "default_summary", "") or "")
+            or _normalize_lesson_text(str(getattr(lesson_variant, "script", "") or "").strip()[:280])
+            or _normalize_lesson_text(str((content_item.body if content_item is not None else "") or "").strip()[:280])
             or None
         ),
-        "goal": str(getattr(programme_day, "lesson_goal", "") or "").strip() or None,
-        "action_prompt": str(getattr(lesson_variant, "action_prompt", "") or "").strip() or None,
+        "goal": _normalize_lesson_text(getattr(programme_day, "lesson_goal", "") or ""),
+        "action_prompt": _normalize_lesson_text(getattr(lesson_variant, "action_prompt", "") or ""),
         "level": current_level,
         "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,
         "is_current": int(getattr(programme_day, "day_index", 0) or 0) == int(getattr(plan, "current_day_index", 0) or 0),
@@ -3083,21 +3111,21 @@ def _lesson_state(
             "programme_day_id": int(programme_day.id),
             "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,
             "title": (
-                str(getattr(lesson_variant, "title", "") or "").strip()
-                or str((content_item.title if content_item is not None else None) or "").strip()
-                or str(getattr(programme_day, "default_title", "") or "").strip()
-                or str(getattr(programme_day, "concept_label", "") or getattr(programme_day, "concept_key", "") or "").strip()
-                or "Today's lesson"
+                _normalize_lesson_heading(getattr(lesson_variant, "title", "") or "")
+                or _normalize_lesson_heading((content_item.title if content_item is not None else None) or "")
+                or _normalize_lesson_heading(getattr(programme_day, "default_title", "") or "")
+                or _normalize_lesson_heading(getattr(programme_day, "concept_label", "") or getattr(programme_day, "concept_key", "") or "")
+                or "Current lesson"
             ),
             "summary": (
-                str(getattr(lesson_variant, "summary", "") or "").strip()
-                or str(getattr(programme_day, "default_summary", "") or "").strip()
-                or str(getattr(lesson_variant, "script", "") or "").strip()[:280]
-                or str((content_item.body if content_item is not None else "") or "").strip()[:280]
+                _normalize_lesson_text(getattr(lesson_variant, "summary", "") or "")
+                or _normalize_lesson_text(getattr(programme_day, "default_summary", "") or "")
+                or _normalize_lesson_text(str(getattr(lesson_variant, "script", "") or "").strip()[:280])
+                or _normalize_lesson_text(str((content_item.body if content_item is not None else "") or "").strip()[:280])
                 or None
             ),
-            "goal": str(getattr(programme_day, "lesson_goal", "") or "").strip() or None,
-            "action_prompt": str(getattr(lesson_variant, "action_prompt", "") or "").strip() or None,
+            "goal": _normalize_lesson_text(getattr(programme_day, "lesson_goal", "") or ""),
+            "action_prompt": _normalize_lesson_text(getattr(lesson_variant, "action_prompt", "") or ""),
             "content": content_payload,
         },
         "quiz": {
