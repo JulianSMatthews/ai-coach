@@ -1,4 +1,5 @@
 import { getUserStatus } from "@/lib/api";
+import Link from "next/link";
 import { Card, PageShell } from "@/components/ui";
 import PreferencesForm from "./PreferencesForm";
 import TextScale from "@/components/TextScale";
@@ -39,7 +40,14 @@ export default async function PreferencesPage(props: PageProps) {
         userFirstName={user.first_name || null}
       />
 
-      <section className="grid gap-6">
+      <section className="grid gap-4">
+        <Link
+          href={`/assessment/${encodeURIComponent(userId)}/chat`}
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-[#ece3d8] bg-white text-[#1e1b16] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+          aria-label="Back to home"
+        >
+          <span className="text-3xl leading-none">‹</span>
+        </Link>
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-base font-semibold">Set your preferences</h2>
           <div className="mt-4">

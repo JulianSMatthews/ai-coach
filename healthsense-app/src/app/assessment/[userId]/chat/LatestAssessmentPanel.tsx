@@ -3637,7 +3637,22 @@ export default function LatestAssessmentPanel({
         <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedObjectivesSection) {
+                      setSelectedObjectivesSection(null);
+                      setWeeklyObjectivesError(null);
+                    } else {
+                      closeObjectivesModal();
+                    }
+                  }}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#ece3d8] bg-white text-[#1e1b16] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+                  aria-label={selectedObjectivesSection ? "Back to objectives" : "Close objectives"}
+                >
+                  <span className="text-3xl leading-none">‹</span>
+                </button>
                 <div className="min-w-0 space-y-1">
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
                     {selectedObjectivesSection
@@ -3654,18 +3669,6 @@ export default function LatestAssessmentPanel({
                       : "Select a pillar to set or adjust this week's targets."}
                   </p>
                 </div>
-                {selectedObjectivesSection ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedObjectivesSection(null);
-                      setWeeklyObjectivesError(null);
-                    }}
-                    className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-                  >
-                    Back
-                  </button>
-                ) : null}
               </div>
             </div>
 
@@ -3750,7 +3753,7 @@ export default function LatestAssessmentPanel({
                                 }
                                 className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                                   isActive
-                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                    ? "border-[#111111] bg-[#111111] text-white"
                                     : "border-[#d9cdbb] bg-white text-[#5d5348]"
                                 }`}
                               >
@@ -3806,7 +3809,7 @@ export default function LatestAssessmentPanel({
                                           }
                                           className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                                             isActive
-                                              ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                              ? "border-[#111111] bg-[#111111] text-white"
                                               : "border-[#d9cdbb] bg-white text-[#5d5348]"
                                           }`}
                                         >
@@ -3836,7 +3839,7 @@ export default function LatestAssessmentPanel({
                                   }
                                   className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                                     isActive
-                                      ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                      ? "border-[#111111] bg-[#111111] text-white"
                                       : "border-[#d9cdbb] bg-white text-[#5d5348]"
                                   }`}
                                 >
@@ -3853,38 +3856,18 @@ export default function LatestAssessmentPanel({
               ) : null}
             </div>
 
-            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
-              {selectedObjectivesSection ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedObjectivesSection(null);
-                      setWeeklyObjectivesError(null);
-                    }}
-                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void saveObjectivesSection()}
-                    disabled={weeklyObjectivesSaving}
-                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {weeklyObjectivesSaving ? "Saving…" : "Save objectives"}
-                  </button>
-                </div>
-              ) : (
+            {selectedObjectivesSection ? (
+              <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
                 <button
                   type="button"
-                  onClick={closeObjectivesModal}
-                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                  onClick={() => void saveObjectivesSection()}
+                  disabled={weeklyObjectivesSaving}
+                  className="w-full rounded-full border border-[#111111] bg-[#111111] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Close
+                  {weeklyObjectivesSaving ? "Saving…" : "Save objectives"}
                 </button>
-              )}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
