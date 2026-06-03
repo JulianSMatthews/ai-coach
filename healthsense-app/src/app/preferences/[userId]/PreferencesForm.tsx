@@ -2,21 +2,33 @@
 
 import { useState } from "react";
 import { applyThemePreference, normalizeThemePreference, readStoredThemePreference } from "@/lib/theme";
+import { PILLARS } from "@/lib/pillars";
 
 type PreferencesFormProps = {
   userId: string;
   initialEmail?: string;
   initialTheme?: string;
-  initialNutritionPillarEnabled?: boolean;
-  initialTrainingPillarEnabled?: boolean;
+  initialPillarSelections?: Record<string, boolean>;
+};
+
+const PREFERENCE_PILLARS = PILLARS.filter((pillar) =>
+  ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"].includes(pillar.key),
+);
+
+const PILLAR_PREF_KEYS: Record<string, string> = {
+  reflection: "home_pillar_reflection",
+  purpose: "home_pillar_purpose",
+  resilience: "home_pillar_resilience",
+  recovery: "home_pillar_recovery",
+  nutrition: "home_pillar_nutrition",
+  training: "home_pillar_training",
 };
 
 export default function PreferencesForm({
   userId,
   initialEmail = "",
   initialTheme = "dark",
-  initialNutritionPillarEnabled = false,
-  initialTrainingPillarEnabled = false,
+  initialPillarSelections = {},
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
   const [theme, setTheme] = useState(() => {
@@ -24,8 +36,9 @@ export default function PreferencesForm({
     const normalized = normalizeThemePreference(stored || initialTheme);
     return normalized === "light" ? "light" : "dark";
   });
-  const [nutritionPillarEnabled, setNutritionPillarEnabled] = useState(Boolean(initialNutritionPillarEnabled));
-  const [trainingPillarEnabled, setTrainingPillarEnabled] = useState(Boolean(initialTrainingPillarEnabled));
+  const [pillarSelections, setPillarSelections] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(PREFERENCE_PILLARS.map((pillar) => [pillar.key, Boolean(initialPillarSelections[pillar.key])])),
+  );
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -49,10 +62,12 @@ export default function PreferencesForm({
         userId,
         email: email.trim(),
         theme,
-        home_pillar_nutrition: nutritionPillarEnabled ? "1" : "0",
-        home_pillar_training: trainingPillarEnabled ? "1" : "0",
         preferred_channel: "app",
       };
+      for (const pillar of PREFERENCE_PILLARS) {
+        const prefKey = PILLAR_PREF_KEYS[pillar.key];
+        payload[prefKey] = pillarSelections[pillar.key] ? "1" : "0";
+      }
       if (changePassword) {
         payload.password = password;
       }
@@ -84,13 +99,13 @@ export default function PreferencesForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-6" autoComplete="off">
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        <h3 className="text-base font-semibold text-[var(--text-primary)]">Preferences</h3>
+      <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] p-5">
+        <h3 className="text-xl font-semibold text-[var(--text-primary)]">Preferences</h3>
         <div className="mt-4 grid gap-4">
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <label className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">Theme</label>
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
+            <label className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">Theme</label>
             <select
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px]"
+              className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
               value={theme}
               onChange={(e) => setTheme(e.target.value === "light" ? "light" : "dark")}
             >
@@ -101,44 +116,65 @@ export default function PreferencesForm({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        <h3 className="text-base font-semibold text-[var(--text-primary)]">Home pillars</h3>
-        <p className="mt-1 text-[11px] text-[var(--text-secondary)]">Choose which optional pillars appear on the home screen.</p>
-        <div className="mt-4 grid gap-4">
-          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-[var(--text-primary)]">Nutrition</span>
-              <span className="block text-[11px] text-[var(--text-secondary)]">Show nutrition as a home pillar.</span>
-            </span>
-            <input
-              type="checkbox"
-              className="h-5 w-5 rounded border-[var(--border)]"
-              checked={nutritionPillarEnabled}
-              onChange={(e) => setNutritionPillarEnabled(e.target.checked)}
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-[var(--text-primary)]">Training</span>
-              <span className="block text-[11px] text-[var(--text-secondary)]">Show training as a home pillar.</span>
-            </span>
-            <input
-              type="checkbox"
-              className="h-5 w-5 rounded border-[var(--border)]"
-              checked={trainingPillarEnabled}
-              onChange={(e) => setTrainingPillarEnabled(e.target.checked)}
-            />
-          </label>
+      <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] p-5">
+        <h3 className="text-xl font-semibold text-[var(--text-primary)]">Pillars</h3>
+        <p className="mt-2 text-base leading-7 text-[var(--text-secondary)]">
+          Choose the pillars you want to use for check-in, learn, and weekly objectives.
+        </p>
+        <div className="mt-5 grid gap-3">
+          {PREFERENCE_PILLARS.map((pillar) => {
+            const selected = Boolean(pillarSelections[pillar.key]);
+            return (
+              <button
+                key={pillar.key}
+                type="button"
+                onClick={() =>
+                  setPillarSelections((current) => ({
+                    ...current,
+                    [pillar.key]: !current[pillar.key],
+                  }))
+                }
+                aria-pressed={selected}
+                className={`flex min-h-[5.75rem] w-full items-center gap-4 rounded-[28px] border px-4 py-4 text-left transition ${
+                  selected
+                    ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                    : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
+                }`}
+              >
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-current/20 bg-[var(--surface)]">
+                  <img src={pillar.icon} alt="" className="h-7 w-7" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-lg font-semibold leading-6">{pillar.label}</span>
+                  <span className={`mt-1 block text-sm leading-6 ${selected ? "text-[var(--action-primary-text)] opacity-80" : "text-[var(--text-secondary)]"}`}>
+                    {pillar.note}
+                  </span>
+                </span>
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
+                    selected ? "border-current bg-transparent" : "border-[var(--border)]"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {selected ? (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12.5 10 17l9-10" />
+                    </svg>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        <h3 className="text-base font-semibold text-[var(--text-primary)]">Account</h3>
+      <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] p-5">
+        <h3 className="text-xl font-semibold text-[var(--text-primary)]">Account</h3>
         <div className="mt-4 grid gap-4">
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <label className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">Email</label>
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
+            <label className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">Email</label>
             <input
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px]"
+              className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
               type="email"
               name="contact_email"
               autoComplete="section-profile email"
@@ -150,12 +186,12 @@ export default function PreferencesForm({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
-            <p className="mt-2 text-[11px] text-[var(--text-secondary)]">Optional, used for account recovery and important updates.</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Optional, used for account recovery and important updates.</p>
           </div>
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">Password</label>
-              <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+              <label className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">Password</label>
+              <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-[var(--border)]"
@@ -173,7 +209,7 @@ export default function PreferencesForm({
               </label>
             </div>
             <input
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] disabled:opacity-60"
+              className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base disabled:opacity-60"
               type="password"
               name="new_password"
               autoComplete="new-password"
@@ -183,7 +219,7 @@ export default function PreferencesForm({
               disabled={!changePassword}
             />
             <input
-              className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] disabled:opacity-60"
+              className="mt-3 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base disabled:opacity-60"
               type="password"
               name="confirm_new_password"
               autoComplete="new-password"
@@ -192,7 +228,7 @@ export default function PreferencesForm({
               placeholder="Confirm password"
               disabled={!changePassword}
             />
-            <p className="mt-2 text-[11px] text-[var(--text-secondary)]">Minimum 8 characters.</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Minimum 8 characters.</p>
           </div>
         </div>
       </section>
@@ -200,7 +236,7 @@ export default function PreferencesForm({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          className="rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-2 text-[13px] font-semibold text-[var(--action-primary-text)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-4 text-base font-semibold text-[var(--action-primary-text)] disabled:cursor-not-allowed disabled:opacity-60"
           disabled={saving}
         >
           {saving ? "Saving…" : "Save changes"}

@@ -22,6 +22,10 @@ export type UserStatusResponse = {
     voice?: string;
     text_scale?: string;
     theme?: string;
+    home_pillar_reflection?: string;
+    home_pillar_purpose?: string;
+    home_pillar_resilience?: string;
+    home_pillar_recovery?: string;
     home_pillar_nutrition?: string;
     home_pillar_training?: string;
     training_objective?: string;

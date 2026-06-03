@@ -16,14 +16,12 @@ from .pillar_tracker import (
     tracker_concepts_for_pillar,
     tracker_today,
 )
-from .pillar_config import HOME_PILLAR_PREF_KEYS, active_pillar_keys
+from .pillar_config import active_pillar_keys
 WELLBEING_KEY = "wellbeing"
 FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
 FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"
 ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
 ALCOHOL_GOAL_UNITS_PREF_KEY = "weekly_objectives_alcohol_goal_units"
-HOME_PILLAR_NUTRITION_PREF_KEY = HOME_PILLAR_PREF_KEYS["nutrition"]
-HOME_PILLAR_TRAINING_PREF_KEY = HOME_PILLAR_PREF_KEYS["training"]
 KETOGENIC_DIET_PREF_KEY = "weekly_objectives_ketogenic_diet"
 HEAT_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_heat_exposure_minutes"
 HEAT_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_heat_exposure_sessions"
@@ -292,12 +290,6 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         alcohol_tracking = (_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY) or "off").lower()
         if alcohol_tracking not in {"on", "off"}:
             alcohol_tracking = "off"
-        home_pillar_nutrition = (_pref_value(s, int(user_id), HOME_PILLAR_NUTRITION_PREF_KEY) or "off").lower()
-        if home_pillar_nutrition not in {"on", "off"}:
-            home_pillar_nutrition = "off"
-        home_pillar_training = (_pref_value(s, int(user_id), HOME_PILLAR_TRAINING_PREF_KEY) or "off").lower()
-        if home_pillar_training not in {"on", "off"}:
-            home_pillar_training = "off"
         ketogenic_diet = (_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY) or "off").lower()
         if ketogenic_diet not in {"on", "off"}:
             ketogenic_diet = "off"
@@ -343,26 +335,6 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             "helper": "Turns alcohol into an optional nutrition concept",
             "value": alcohol_tracking,
             "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
-        },
-        {
-            "key": "home_pillars",
-            "label": "Home pillars",
-            "helper": "Choose which extra pillar cards appear on the home score ring.",
-            "value": "on" if home_pillar_nutrition == "on" or home_pillar_training == "on" else "off",
-            "fields": [
-                {
-                    "key": HOME_PILLAR_NUTRITION_PREF_KEY,
-                    "label": "Nutrition",
-                    "value": home_pillar_nutrition,
-                    "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
-                },
-                {
-                    "key": HOME_PILLAR_TRAINING_PREF_KEY,
-                    "label": "Training",
-                    "value": home_pillar_training,
-                    "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
-                },
-            ],
         },
         {
             "key": "ketogenic_diet",
@@ -436,7 +408,6 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         for item in items
         if (item["key"] == "fasting_mode" and item["value"] != "off")
         or (item["key"] == "alcohol_tracking" and item["value"] == "on")
-        or (item["key"] == "home_pillars" and any(str(field.get("value") or "").strip() == "on" for field in item.get("fields", [])))
         or (item["key"] == "ketogenic_diet" and item["value"] == "on")
         or (item["key"] == "heat_exposure" and item["value"] == "on")
         or (item["key"] == "cold_exposure" and item["value"] == "on")
@@ -513,12 +484,6 @@ def save_weekly_objectives_config(
         alcohol_tracking = str(values.get("alcohol_tracking") or "off").strip().lower()
         if alcohol_tracking not in {"on", "off"}:
             raise ValueError("Invalid alcohol tracking value")
-        home_pillar_nutrition = str(values.get(HOME_PILLAR_NUTRITION_PREF_KEY) or "off").strip().lower()
-        if home_pillar_nutrition not in {"on", "off"}:
-            raise ValueError("Invalid home nutrition pillar value")
-        home_pillar_training = str(values.get(HOME_PILLAR_TRAINING_PREF_KEY) or "off").strip().lower()
-        if home_pillar_training not in {"on", "off"}:
-            raise ValueError("Invalid home training pillar value")
         ketogenic_diet = str(values.get("ketogenic_diet") or "off").strip().lower()
         if ketogenic_diet not in {"on", "off"}:
             raise ValueError("Invalid ketogenic diet value")
@@ -553,8 +518,6 @@ def save_weekly_objectives_config(
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
-            _set_pref_value(s, int(user_id), HOME_PILLAR_NUTRITION_PREF_KEY, home_pillar_nutrition)
-            _set_pref_value(s, int(user_id), HOME_PILLAR_TRAINING_PREF_KEY, home_pillar_training)
             _set_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY, ketogenic_diet)
             _set_pref_value(s, int(user_id), HEAT_EXPOSURE_MINUTES_PREF_KEY, heat_minutes)
             _set_pref_value(s, int(user_id), HEAT_EXPOSURE_SESSIONS_PREF_KEY, heat_sessions)

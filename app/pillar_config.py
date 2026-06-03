@@ -20,6 +20,10 @@ DEFAULT_ACTIVE_PILLARS: tuple[str, ...] = (
 )
 
 HOME_PILLAR_PREF_KEYS: dict[str, str] = {
+    "reflection": "home_pillar_reflection",
+    "purpose": "home_pillar_purpose",
+    "resilience": "home_pillar_resilience",
+    "recovery": "home_pillar_recovery",
     "nutrition": "home_pillar_nutrition",
     "training": "home_pillar_training",
 }
@@ -55,14 +59,14 @@ def _dedupe_known(keys: Iterable[str]) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _resolve_home_pillar_keys(user_id: int | None) -> tuple[str, ...]:
+def _resolve_home_pillar_preferences(user_id: int | None) -> dict[str, str]:
     if user_id is None:
-        return ()
+        return {}
     try:
         from .db import SessionLocal
         from .models import UserPreference
     except Exception:
-        return ()
+        return {}
     with SessionLocal() as s:
         rows = (
             s.query(UserPreference)
@@ -79,15 +83,15 @@ def _resolve_home_pillar_keys(user_id: int | None) -> tuple[str, ...]:
         if key in pref_map:
             continue
         pref_map[key] = str(getattr(row, "value", "") or "").strip()
-    resolved: list[str] = []
+    resolved: dict[str, str] = {}
     for pillar_key, pref_key in HOME_PILLAR_PREF_KEYS.items():
         raw = pref_map.get(pref_key, "")
         token = str(raw or "").strip().lower()
         if token in {"1", "true", "yes", "on"}:
-            resolved.append(pillar_key)
+            resolved[pillar_key] = "on"
         elif token in {"0", "false", "no", "off"}:
-            continue
-    return tuple(resolved)
+            resolved[pillar_key] = "off"
+    return resolved
 
 
 def active_pillar_keys(user_id: int | None = None) -> tuple[str, ...]:
@@ -99,12 +103,11 @@ def active_pillar_keys(user_id: int | None = None) -> tuple[str, ...]:
     configured = _dedupe_known(raw.split(",")) if raw.strip() else ()
     base = list(configured or DEFAULT_ACTIVE_PILLARS)
     if user_id is not None:
-        resolved_home_keys = _resolve_home_pillar_keys(user_id)
-        for key in resolved_home_keys:
-            if key not in base:
+        resolved_home_prefs = _resolve_home_pillar_preferences(user_id)
+        for key, value in resolved_home_prefs.items():
+            if value == "on" and key not in base:
                 base.append(key)
-        for key in HOME_PILLAR_PREF_KEYS:
-            if key not in resolved_home_keys and key in base and key not in DEFAULT_ACTIVE_PILLARS:
+            elif value == "off" and key in base:
                 base.remove(key)
     return _dedupe_known(base) or DEFAULT_ACTIVE_PILLARS
 

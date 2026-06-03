@@ -22,13 +22,19 @@ export default async function PreferencesPage(props: PageProps) {
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "light";
-  const nutritionPillarEnabled = isTruthyToken(prefs.home_pillar_nutrition);
-  const trainingPillarEnabled = isTruthyToken(prefs.home_pillar_training);
   const promptState = (data.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
+  const defaultPillarKeys = new Set(["reflection", "purpose", "resilience", "recovery"]);
+  const initialPillarSelections = Object.fromEntries(
+    ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"].map((key) => {
+      const raw = String((prefs as Record<string, unknown>)[`home_pillar_${key}`] || "").trim().toLowerCase();
+      const selected = raw ? isTruthyToken(raw) : defaultPillarKeys.has(key);
+      return [key, selected];
+    }),
+  );
 
   return (
     <PageShell defaultTheme={themePreference}>
@@ -55,8 +61,7 @@ export default async function PreferencesPage(props: PageProps) {
               userId={String(userId)}
               initialEmail={user.email || ""}
               initialTheme={themePreference}
-              initialNutritionPillarEnabled={nutritionPillarEnabled}
-              initialTrainingPillarEnabled={trainingPillarEnabled}
+              initialPillarSelections={initialPillarSelections}
             />
           </div>
         </Card>
