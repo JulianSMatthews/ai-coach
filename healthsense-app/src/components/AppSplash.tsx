@@ -52,7 +52,7 @@ export default function AppSplash() {
           position: absolute;
           inset: 0;
           color: #c54817;
-          font-size: clamp(3.8rem, 15vw, 7.5rem);
+          font-size: clamp(4.75rem, 18.75vw, 9.4rem);
           font-weight: 700;
           line-height: 0.9;
         }
@@ -70,31 +70,31 @@ export default function AppSplash() {
         .splash-word-find {
           --from-x: -72vw;
           --from-y: -56dvh;
-          --to-x: -50%;
-          --to-y: calc(-50% - 4.2rem);
+          --to-x: calc(-100% - 0.18em);
+          --to-y: calc(-50% - 0.55em);
         }
 
         .splash-word-your {
           --from-x: 48vw;
           --from-y: 56dvh;
-          --to-x: calc(-50% + 0.3rem);
-          --to-y: calc(-50% - 0.1rem);
+          --to-x: 0.18em;
+          --to-y: calc(-50% - 0.55em);
           animation-delay: 1.58s;
         }
 
         .splash-word-own {
           --from-x: -68vw;
           --from-y: 54dvh;
-          --to-x: calc(-50% - 0.1rem);
-          --to-y: calc(-50% + 4rem);
+          --to-x: calc(-100% - 0.18em);
+          --to-y: calc(-50% + 0.55em);
           animation-delay: 1.71s;
         }
 
         .splash-word-way {
           --from-x: 52vw;
           --from-y: -54dvh;
-          --to-x: calc(-50% + 0.2rem);
-          --to-y: calc(-50% + 8.1rem);
+          --to-x: 0.18em;
+          --to-y: calc(-50% + 0.55em);
           animation-delay: 1.84s;
         }
 
