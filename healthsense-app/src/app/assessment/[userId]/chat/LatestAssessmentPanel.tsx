@@ -3899,34 +3899,9 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {selectedPillarKey ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-[var(--bg)]">
-          <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--bg)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-            <div className="shrink-0 px-4 py-4 sm:px-5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[2rem] font-semibold leading-none text-[var(--text-primary)]">
-                    {trackerPillarLabel}
-                  </p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                    {viewingCurrentWeek
-                      ? savingPastDay
-                        ? `Catching up ${activeLabel || "yesterday"}`
-                        : "Daily check-in"
-                      : "Last week results"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleTrackerDismiss()}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] text-xl font-semibold text-[var(--chrome-text)]"
-                  aria-label={closeTrackerLabel}
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-hidden pb-28">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-transparent">
+          <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-transparent pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+            <div className="min-h-0 flex-1 overflow-hidden pb-28 pt-2 sm:pt-3">
               {loadingDetail ? <p className="px-4 text-sm text-[var(--text-muted)]">Loading tracker...</p> : null}
               {detailError ? <p className="px-4 text-sm text-[#8a3e1a]">{detailError}</p> : null}
 

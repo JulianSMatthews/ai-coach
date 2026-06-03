@@ -331,20 +331,26 @@ export default async function AssessmentChatPage(props: PageProps) {
     );
   }
 
+  const useAppSurface = Boolean(pillarTrackerSummary) && !leadFlow && !leadGuest;
+  const resolvedPageShellClassName = useAppSurface ? "px-0 py-0" : pageShellClassName;
+  const resolvedPageContentClassName = useAppSurface ? "min-w-0 overflow-x-hidden" : pageContentClassName;
+
   return (
-    <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
+    <PageShell defaultTheme={themePreference} className={resolvedPageShellClassName} contentClassName={resolvedPageContentClassName}>
       <TextScale defaultScale={textScale} />
       {!leadFlow && !leadGuest ? (
-        <AppNav
-          userId={userId}
-          promptBadge={promptBadge}
-          overallScore={status.latest_run?.combined_overall ?? null}
-          interactionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
-          userFirstName={status.user?.first_name || null}
-        />
+        <div className={useAppSurface ? "mx-auto max-w-4xl px-3 pt-4 sm:px-5 sm:pt-6" : ""}>
+          <AppNav
+            userId={userId}
+            promptBadge={promptBadge}
+            overallScore={status.latest_run?.combined_overall ?? null}
+            interactionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+            userFirstName={status.user?.first_name || null}
+          />
+        </div>
       ) : null}
 
-      <section className="space-y-3 sm:space-y-4">
+      <section className={useAppSurface ? "min-w-0 overflow-x-hidden" : "space-y-3 sm:space-y-4"}>
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}

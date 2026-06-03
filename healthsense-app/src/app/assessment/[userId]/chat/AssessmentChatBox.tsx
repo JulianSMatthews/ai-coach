@@ -2623,7 +2623,7 @@ export default function AssessmentChatBox({
   ) : null;
 
   const homeChatPanel = showGuidedHomeChatPanel ? (
-    <section className="-mx-3 overflow-hidden bg-transparent sm:mx-0">
+    <section className="overflow-hidden bg-transparent">
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         {homeSurface === "blank" ? null : (
           <>
