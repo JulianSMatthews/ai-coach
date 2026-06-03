@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { themeBootstrapScript } from "@/lib/theme";
+import AppSplash from "@/components/AppSplash";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -51,6 +52,7 @@ export default function RootLayout({
         className={`${headingFont.variable} ${bodyFont.variable} antialiased`}
         style={{ backgroundColor: "var(--background)" }}
       >
+        <AppSplash />
         {children}
       </body>
     </html>
