@@ -158,9 +158,9 @@ const HOME_SURFACE_COPY: Record<
     description: "Answer the questions for each pillar.",
   },
   blank: {
-    eyebrow: "Check-in",
-    title: "Daily check-in",
-    description: "Choose a pillar and complete today's cue cards.",
+    eyebrow: "",
+    title: "",
+    description: "",
   },
   habits: {
     eyebrow: "Plan",
@@ -1215,7 +1215,7 @@ export default function AssessmentChatBox({
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
           type="button"
           onClick={() => openEducationLesson(lesson, { closeExplorer: Boolean(options?.pill) })}
-          className="relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
+          className="relative flex w-[calc(100vw-2rem)] max-w-[21rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[23rem] sm:max-w-[23rem]"
           style={{
             backgroundColor: lessonCompleted ? "#fffdf9" : "#d6ab81",
             minHeight: "30rem",
@@ -2608,17 +2608,7 @@ export default function AssessmentChatBox({
   const homeChatPanel = showGuidedHomeChatPanel ? (
     <section className="-mx-3 overflow-hidden bg-transparent sm:mx-0">
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
-        {homeSurface === "blank" ? (
-          <div className="shrink-0 px-4 pb-1 pt-2 sm:px-5 sm:pt-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
-              {homeSurfaceEyebrow}
-            </p>
-            <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
-            {homeSurfaceDescription ? (
-              <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
-            ) : null}
-          </div>
-        ) : (
+        {homeSurface === "blank" ? null : (
           <>
             <div className="shrink-0 px-4 py-4 sm:px-5">
               {homeSurface === "insight" ? (
@@ -3061,6 +3051,7 @@ export default function AssessmentChatBox({
             </div>
           )}
         </div>
+        {homeSurface !== "blank" ? (
         <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
           <div className="mx-auto w-full max-w-[23rem] rounded-[28px] border border-[var(--chrome-border)] bg-[var(--chrome)] p-1 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
             <div className="grid grid-cols-2 gap-1">
@@ -3091,6 +3082,7 @@ export default function AssessmentChatBox({
             </div>
           </div>
         </div>
+        ) : null}
           </>
         )}
       </div>

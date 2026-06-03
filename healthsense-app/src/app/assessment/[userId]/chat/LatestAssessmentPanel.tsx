@@ -2893,11 +2893,11 @@ export default function LatestAssessmentPanel({
                                     guided: false,
                                   })
                                 }
-                                className={`min-h-[2.7rem] rounded-full px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition ${
-                                  complete ? "bg-white/75 text-[#1e1b16]" : "bg-[#111111] text-white"
+                                className={`min-h-[2.7rem] rounded-full border px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition ${
+                                  complete ? "border-[#efe7db] bg-[#f8f4ee] text-[#1e1b16]" : "border-[#111111] bg-[#111111] text-white"
                                 }`}
                               >
-                                {option?.is_last_week ? optionLabel : complete ? `Edit ${optionLabel}` : optionLabel}
+                                {optionLabel}
                               </button>
                             );
                           })}
