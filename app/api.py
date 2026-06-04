@@ -7945,6 +7945,7 @@ def api_user_education_plan_today(
     background_tasks: BackgroundTasks,
     anchor_date: str | None = None,
     include_explore: bool = False,
+    explore_cache_only: bool = False,
     prefetch: bool = False,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
@@ -7958,14 +7959,30 @@ def api_user_education_plan_today(
     else:
         anchor = None
     if prefetch:
-        result = get_today_education_plan(int(user_id), anchor=anchor, include_explore=False)
+        result = get_today_education_plan(
+            int(user_id),
+            anchor=anchor,
+            include_explore=bool(include_explore),
+            explore_cache_only=True,
+        )
         result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
             int(user_id),
             anchor=anchor,
             background_tasks=background_tasks,
         )
     else:
-        result = get_today_education_plan(int(user_id), anchor=anchor, include_explore=bool(include_explore))
+        result = get_today_education_plan(
+            int(user_id),
+            anchor=anchor,
+            include_explore=bool(include_explore),
+            explore_cache_only=bool(explore_cache_only),
+        )
+        if not include_explore or bool(explore_cache_only) or result.get("explore_catalog_pending"):
+            result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
+                int(user_id),
+                anchor=anchor,
+                background_tasks=background_tasks,
+            )
     lesson = result.get("lesson")
     if isinstance(lesson, dict):
         content = lesson.get("content")

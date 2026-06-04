@@ -836,6 +836,7 @@ export default function AssessmentChatBox({
   const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "concepts" | "lessons">("pillars");
   const [educationExplorerConceptKey, setEducationExplorerConceptKey] = useState<string | null>(null);
   const educationPlanRequestIdRef = useRef(0);
+  const educationExplorePrefetchStartedRef = useRef(false);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
@@ -1364,10 +1365,11 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; prefetch?: boolean }) => {
-    const requestId = educationPlanRequestIdRef.current + 1;
-    educationPlanRequestIdRef.current = requestId;
-    if (!options?.prefetch) {
+  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; prefetch?: boolean }) => {
+    const isPrefetch = Boolean(options?.prefetch);
+    const requestId = isPrefetch ? educationPlanRequestIdRef.current : educationPlanRequestIdRef.current + 1;
+    if (!isPrefetch) {
+      educationPlanRequestIdRef.current = requestId;
       setEducationPlanLoading(true);
       setEducationPlanError(null);
     }
@@ -1375,6 +1377,9 @@ export default function AssessmentChatBox({
       const params = new URLSearchParams({ userId });
       if (options?.includeExplore) {
         params.set("includeExplore", "1");
+      }
+      if (options?.exploreCacheOnly) {
+        params.set("exploreCacheOnly", "1");
       }
       if (options?.prefetch) {
         params.set("prefetch", "1");
@@ -1388,7 +1393,7 @@ export default function AssessmentChatBox({
         throw new Error(parseApiError(text, "Failed to load the current lesson."));
       }
       const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
-      if (requestId !== educationPlanRequestIdRef.current) {
+      if (!isPrefetch && requestId !== educationPlanRequestIdRef.current) {
         return;
       }
       setEducationPlan((current) => ({
@@ -1397,14 +1402,14 @@ export default function AssessmentChatBox({
         explore_catalog: data.explore_catalog || current?.explore_catalog,
       }));
     } catch (error) {
-      if (requestId !== educationPlanRequestIdRef.current) {
+      if (!isPrefetch && requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      if (!options?.prefetch) {
+      if (!isPrefetch) {
         setEducationPlanError(error instanceof Error ? error.message : String(error));
       }
     } finally {
-      if (requestId === educationPlanRequestIdRef.current && !options?.prefetch) {
+      if (!isPrefetch && requestId === educationPlanRequestIdRef.current) {
         setEducationPlanLoading(false);
       }
     }
@@ -1416,7 +1421,7 @@ export default function AssessmentChatBox({
     setEducationExplorerPillarKey(null);
     setEducationExplorerConceptKey(null);
     if (!educationPlan?.explore_catalog) {
-      void loadEducationPlan({ includeExplore: true });
+      void loadEducationPlan({ includeExplore: true, exploreCacheOnly: true });
     }
   }, [educationPlan?.explore_catalog, loadEducationPlan]);
 
@@ -1835,8 +1840,33 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || educationPlan || educationPlanLoading) return;
-    void loadEducationPlan({ prefetch: true });
+    void loadEducationPlan({ prefetch: true, includeExplore: true, exploreCacheOnly: true });
   }, [showGuidedHomeChatPanel, loadEducationPlan, educationPlan, educationPlanLoading]);
+
+  useEffect(() => {
+    if (!showGuidedHomeChatPanel || educationExplorePrefetchStartedRef.current) return;
+    educationExplorePrefetchStartedRef.current = true;
+    void loadEducationPlan({ prefetch: true, includeExplore: true, exploreCacheOnly: true });
+  }, [showGuidedHomeChatPanel, loadEducationPlan]);
+
+  useEffect(() => {
+    if (!educationExplorerOpen || educationPlan?.explore_catalog || educationPlanLoading) return;
+    let attempts = 0;
+    let cancelled = false;
+    const pollExploreCatalog = () => {
+      if (cancelled || attempts >= 8) return;
+      attempts += 1;
+      void loadEducationPlan({ includeExplore: true, exploreCacheOnly: true }).finally(() => {
+        if (cancelled || attempts >= 8) return;
+        window.setTimeout(pollExploreCatalog, 1500);
+      });
+    };
+    const timeout = window.setTimeout(pollExploreCatalog, 900);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [educationExplorerOpen, educationPlan?.explore_catalog, educationPlanLoading, loadEducationPlan]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || homeSurface !== "insight" || !educationAvatarPending) return;

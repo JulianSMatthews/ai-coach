@@ -76,6 +76,9 @@ const HOME_PILLAR_QUOTE_FALLBACKS: Record<string, string> = {
   nutrition: "Make the next meal simple, steady, and supportive of your energy.",
   training: "Move with intent today; consistency is the part that compounds.",
 };
+const HOME_PILLAR_FALLBACK_QUOTES = new Set(
+  Object.values(HOME_PILLAR_QUOTE_FALLBACKS).map((item) => item.trim().toLowerCase()),
+);
 const URINE_SCREENING_MARKERS = [
   { key: "concentration", label: "Hydration" },
   { key: "uti", label: "UTI Signs" },
@@ -2034,7 +2037,7 @@ export default function LatestAssessmentPanel({
             }
           : null;
 
-  const refreshSummary = useCallback(async ({ skipQuoteGeneration = false }: { skipQuoteGeneration?: boolean } = {}) => {
+  const refreshSummary = useCallback(async ({ skipQuoteGeneration = true }: { skipQuoteGeneration?: boolean } = {}) => {
     const params = new URLSearchParams({ userId });
     if (skipQuoteGeneration) {
       params.set("skipQuoteGeneration", "true");
@@ -2049,7 +2052,32 @@ export default function LatestAssessmentPanel({
     }
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
     setSummary(payload);
+    return payload;
   }, [userId]);
+
+  const summaryHasFallbackCueMessages = useCallback((payload: PillarTrackerSummaryResponse | null | undefined) => {
+    const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
+    return pillars.some((pillar) => {
+      const quote = String(pillar.daily_quote || "").trim().toLowerCase();
+      return quote.length > 0 && HOME_PILLAR_FALLBACK_QUOTES.has(quote);
+    });
+  }, []);
+
+  const refreshSummaryFromWorkerCache = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const delays = [1400, 2400, 3600, 5200, 7600, 10400];
+    delays.forEach((delay) => {
+      window.setTimeout(() => {
+        void refreshSummary({ skipQuoteGeneration: true })
+          .then((payload) => {
+            if (!summaryHasFallbackCueMessages(payload)) {
+              return;
+            }
+          })
+          .catch(() => undefined);
+      }, delay);
+    });
+  }, [refreshSummary, summaryHasFallbackCueMessages]);
 
   useEffect(() => {
     void refreshSummary().catch(() => undefined);
@@ -2493,7 +2521,8 @@ export default function LatestAssessmentPanel({
       }
       applyWeeklyObjectivesPayload(payload);
       logUserAppEvent("weekly_objectives_save", { section: selectedObjectivesSection });
-      await refreshSummary().catch(() => undefined);
+      void refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
+      refreshSummaryFromWorkerCache();
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-tracker-updated", {
@@ -2870,7 +2899,8 @@ export default function LatestAssessmentPanel({
       }
       closeTracker();
       setSaving(false);
-      void refreshSummary().catch(() => undefined);
+      void refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
+      refreshSummaryFromWorkerCache();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
       setSaving(false);

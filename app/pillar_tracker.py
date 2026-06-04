@@ -39,6 +39,11 @@ _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "nutrition": "Make the next meal simple, steady, and supportive of your energy.",
     "training": "Move with intent today; consistency is the part that compounds.",
 }
+_HOME_PILLAR_QUOTE_FALLBACK_VALUES = {
+    " ".join(value.strip().split())
+    for value in _HOME_PILLAR_QUOTE_FALLBACKS.values()
+    if str(value or "").strip()
+}
 _HOME_PILLAR_QUOTE_GUIDANCE: dict[str, str] = {
     "reflection": "For Reflection, make it about self-understanding, emotional signals, and what the pattern may reveal.",
     "purpose": "For Purpose, make it reflective and insight-led rather than about choosing an action.",
@@ -1771,6 +1776,11 @@ def _normalise_daily_pillar_quote(value: str | None) -> str:
     return quote
 
 
+def _is_fallback_daily_pillar_quote(value: str | None) -> bool:
+    quote = _normalise_daily_pillar_quote(value)
+    return bool(quote and quote in _HOME_PILLAR_QUOTE_FALLBACK_VALUES)
+
+
 def _concept_score_context(
     required_concepts: tuple[PillarTrackerConceptDefinition, ...],
     evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
@@ -1826,7 +1836,7 @@ def _daily_pillar_quote(
                 .first()
             )
             cached = _normalise_daily_pillar_quote(getattr(pref, "value", None))
-            if cached:
+            if cached and not _is_fallback_daily_pillar_quote(cached):
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
                     return cached
             if skip_generation:
@@ -1879,13 +1889,14 @@ def _daily_pillar_quote(
                     log=True,
                 )
             )
-            quote = generated or _fallback_daily_pillar_quote(key, resolved_label)
-            if pref:
-                pref.value = quote
-            else:
-                session.add(UserPreference(user_id=int(user_id), key=cache_key, value=quote))
-            session.commit()
-            return quote
+            if generated:
+                if pref:
+                    pref.value = generated
+                else:
+                    session.add(UserPreference(user_id=int(user_id), key=cache_key, value=generated))
+                session.commit()
+                return generated
+            return _fallback_daily_pillar_quote(key, resolved_label)
     except Exception as exc:
         print(f"[pillar_tracker] daily quote failed user_id={user_id} pillar={key}: {exc}")
         return _fallback_daily_pillar_quote(key, resolved_label)

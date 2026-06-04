@@ -2986,6 +2986,7 @@ def _lesson_state(
     anchor: date,
     refresh_avatar_media: bool = True,
     include_explore: bool = False,
+    explore_cache_only: bool = False,
 ) -> dict[str, Any]:
     snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
     context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
@@ -3218,7 +3219,7 @@ def _lesson_state(
     }
     if include_explore:
         explore_catalog = _cached_education_explore_catalog(session, int(user_id), anchor)
-        if explore_catalog is None:
+        if explore_catalog is None and not explore_cache_only:
             explore_catalog = _education_explore_catalog_payload(
                 session,
                 plan=plan,
@@ -3234,15 +3235,30 @@ def _lesson_state(
                 anchor=anchor,
                 catalog=explore_catalog,
             )
-        payload["explore_catalog"] = explore_catalog
+        if explore_catalog is not None:
+            payload["explore_catalog"] = explore_catalog
+        else:
+            payload["explore_catalog_pending"] = True
     return payload
 
 
-def get_today_education_plan(user_id: int, *, anchor: date | None = None, include_explore: bool = False) -> dict[str, Any]:
+def get_today_education_plan(
+    user_id: int,
+    *,
+    anchor: date | None = None,
+    include_explore: bool = False,
+    explore_cache_only: bool = False,
+) -> dict[str, Any]:
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
-        payload = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor, include_explore=include_explore)
+        payload = _lesson_state(
+            session,
+            user_id=int(user_id),
+            anchor=resolved_anchor,
+            include_explore=include_explore,
+            explore_cache_only=explore_cache_only,
+        )
         session.commit()
         return payload
 
