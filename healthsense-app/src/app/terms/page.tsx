@@ -10,20 +10,37 @@ export default function TermsPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Coaching, not medical care</h2>
         <p>
-          CoachSense provides wellbeing coaching, habit support, education, and trend information. It does not provide
-          medical diagnosis, treatment, emergency support, or a replacement for professional medical advice.
+          CoachSense provides wellbeing coaching, check-ins, habit support, education, and reflection tools. It does
+          not provide medical diagnosis, treatment, emergency support, or a replacement for professional medical advice.
         </p>
         <p>
-          If you have symptoms, urgent concerns, unexpected biomarker results, or a medical condition, speak to a
-          qualified healthcare professional. In an emergency, contact your local emergency services.
+          If you have symptoms, urgent concerns, or a medical condition, speak to a qualified healthcare professional.
+          In an emergency, contact your local emergency services.
         </p>
       </section>
 
       <section className="space-y-1.5">
-        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Using health and urine test information</h2>
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">How the app works</h2>
         <p>
-          Biometrics and urine test markers are optional screening and trend signals. They should be interpreted with
-          context and repeat checks where appropriate. Do not use them as the sole basis for medical decisions.
+          You can complete an assessment, choose the pillars you want to use, record check-ins, review habit trends,
+          work through lessons, and answer lesson quizzes. CoachSense uses the information you enter to tailor the app
+          experience and provide coaching prompts.
+        </p>
+        <p>
+          Gia messages, cue cards, lessons, and weekly objectives are guidance and education. They are not instructions
+          that you must follow, and you remain responsible for deciding what is appropriate for your circumstances.
+        </p>
+      </section>
+
+      <section className="space-y-1.5">
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Preferences and content</h2>
+        <p>
+          You can update preferences such as theme, selected pillars, and account details in the app. Changing your
+          selected pillars changes which check-in and learning areas are shown.
+        </p>
+        <p>
+          Lesson and coaching content may change over time as CoachSense improves the programme, updates the app, or
+          adjusts available features.
         </p>
       </section>
 
