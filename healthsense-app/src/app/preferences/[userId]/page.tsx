@@ -1,6 +1,6 @@
 import { getUserStatus } from "@/lib/api";
 import Link from "next/link";
-import { Card, PageShell } from "@/components/ui";
+import { PageShell } from "@/components/ui";
 import PreferencesForm from "./PreferencesForm";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
@@ -37,7 +37,7 @@ export default async function PreferencesPage(props: PageProps) {
   );
 
   return (
-    <PageShell defaultTheme={themePreference}>
+    <PageShell defaultTheme={themePreference} contentClassName="mx-auto w-full max-w-4xl space-y-6">
       <TextScale defaultScale={textScale} />
       <AppNav
         userId={userId}
@@ -54,17 +54,12 @@ export default async function PreferencesPage(props: PageProps) {
         >
           <span className="text-3xl leading-none">‹</span>
         </Link>
-        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
-          <h2 className="text-base font-semibold">Set your preferences</h2>
-          <div className="mt-4">
-            <PreferencesForm
-              userId={String(userId)}
-              initialEmail={user.email || ""}
-              initialTheme={themePreference}
-              initialPillarSelections={initialPillarSelections}
-            />
-          </div>
-        </Card>
+        <PreferencesForm
+          userId={String(userId)}
+          initialEmail={user.email || ""}
+          initialTheme={themePreference}
+          initialPillarSelections={initialPillarSelections}
+        />
       </section>
 
     </PageShell>
