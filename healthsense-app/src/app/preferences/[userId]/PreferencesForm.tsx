@@ -135,15 +135,12 @@ export default function PreferencesForm({
                   }))
                 }
                 aria-pressed={selected}
-                className={`flex min-h-[5.75rem] w-full items-center gap-4 rounded-[28px] border px-4 py-4 text-left transition ${
+                className={`flex min-h-[5.75rem] w-full items-center gap-3 rounded-[28px] border px-4 py-4 text-left transition ${
                   selected
                     ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
                     : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
                 }`}
               >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-current/20 bg-[var(--surface)]">
-                  <img src={pillar.icon} alt="" className="h-7 w-7" />
-                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-lg font-semibold leading-6">{pillar.label}</span>
                   <span className={`mt-1 block text-sm leading-6 ${selected ? "text-[var(--action-primary-text)] opacity-80" : "text-[var(--text-secondary)]"}`}>
