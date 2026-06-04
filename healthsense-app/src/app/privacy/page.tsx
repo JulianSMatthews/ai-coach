@@ -18,7 +18,7 @@ export default function PrivacyPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">How we use it</h2>
         <p>
-          We use your data to provide the assessment, generate your plan, show progress, tailor Gia coaching messages,
+          We use your data to provide the assessment, generate your plan, show progress, tailor coach messages,
           support habit trends, keep the app secure, and respond to support or account requests.
         </p>
         <p>

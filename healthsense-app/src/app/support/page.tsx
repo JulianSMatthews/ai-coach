@@ -5,7 +5,7 @@ export default function SupportPage() {
     <LegalPage
       eyebrow="Support"
       title="Support"
-      subtitle="Get help with access, check-ins, lessons, Gia messages, preferences, or account changes."
+      subtitle="Get help with access, check-ins, lessons, coach messages, preferences, or account changes."
     >
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact CoachSense</h2>

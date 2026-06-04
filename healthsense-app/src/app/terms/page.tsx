@@ -27,7 +27,7 @@ export default function TermsPage() {
           experience and provide coaching prompts.
         </p>
         <p>
-          Gia messages, cue cards, lessons, and weekly objectives are guidance and education. They are not instructions
+          Coach messages, cue cards, lessons, and weekly objectives are guidance and education. They are not instructions
           that you must follow, and you remain responsible for deciding what is appropriate for your circumstances.
         </p>
       </section>
