@@ -1366,9 +1366,9 @@ export default function AssessmentChatBox({
     }
   }, [userId]);
   const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; prefetch?: boolean }) => {
-    const isPrefetch = Boolean(options?.prefetch);
-    const requestId = isPrefetch ? educationPlanRequestIdRef.current : educationPlanRequestIdRef.current + 1;
-    if (!isPrefetch) {
+    const isBackgroundLoad = Boolean(options?.prefetch || options?.exploreCacheOnly);
+    const requestId = isBackgroundLoad ? educationPlanRequestIdRef.current : educationPlanRequestIdRef.current + 1;
+    if (!isBackgroundLoad) {
       educationPlanRequestIdRef.current = requestId;
       setEducationPlanLoading(true);
       setEducationPlanError(null);
@@ -1393,7 +1393,7 @@ export default function AssessmentChatBox({
         throw new Error(parseApiError(text, "Failed to load the current lesson."));
       }
       const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
-      if (!isPrefetch && requestId !== educationPlanRequestIdRef.current) {
+      if (!isBackgroundLoad && requestId !== educationPlanRequestIdRef.current) {
         return;
       }
       setEducationPlan((current) => ({
@@ -1402,14 +1402,14 @@ export default function AssessmentChatBox({
         explore_catalog: data.explore_catalog || current?.explore_catalog,
       }));
     } catch (error) {
-      if (!isPrefetch && requestId !== educationPlanRequestIdRef.current) {
+      if (!isBackgroundLoad && requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      if (!isPrefetch) {
+      if (!isBackgroundLoad) {
         setEducationPlanError(error instanceof Error ? error.message : String(error));
       }
     } finally {
-      if (!isPrefetch && requestId === educationPlanRequestIdRef.current) {
+      if (!isBackgroundLoad && requestId === educationPlanRequestIdRef.current) {
         setEducationPlanLoading(false);
       }
     }
@@ -1837,11 +1837,6 @@ export default function AssessmentChatBox({
     if (educationPlan) return;
     void loadEducationPlan();
   }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
-
-  useEffect(() => {
-    if (!showGuidedHomeChatPanel || educationPlan || educationPlanLoading) return;
-    void loadEducationPlan({ prefetch: true, includeExplore: true, exploreCacheOnly: true });
-  }, [showGuidedHomeChatPanel, loadEducationPlan, educationPlan, educationPlanLoading]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || educationExplorePrefetchStartedRef.current) return;
@@ -2987,7 +2982,6 @@ export default function AssessmentChatBox({
                     <button
                       type="button"
                       onClick={() => void openEducationExplorer()}
-                      disabled={educationPlanLoading}
                       className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
                       style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
                     >
