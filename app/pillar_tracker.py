@@ -1850,7 +1850,7 @@ def _daily_pillar_quote(
                     .first()
                 )
                 stale_cached = _normalise_daily_pillar_quote(getattr(stale_pref, "value", None))
-                return stale_cached or ""
+                return stale_cached if not _is_fallback_daily_pillar_quote(stale_cached) else ""
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
             lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None
