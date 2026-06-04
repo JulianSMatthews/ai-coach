@@ -14,7 +14,7 @@ export default async function LegalPage({ title, subtitle, children }: LegalPage
   const userId = String(cookieStore.get("hs_user_id")?.value || "").trim();
 
   return (
-    <main className="h-[100dvh] overflow-hidden bg-[var(--background)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-[var(--foreground)] sm:px-6">
+    <main className="h-[100dvh] overflow-hidden bg-[var(--background)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)] text-[var(--foreground)] sm:px-6">
       <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-3">
         <AppNav userId={userId} />
         <article className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 text-[15px] leading-6 text-[var(--text-secondary)] sm:p-5">
