@@ -27,23 +27,31 @@ export default async function WearablesPage(props: PageProps) {
   const wearableMessage = firstValue(searchParams?.wearable_message) || null;
 
   return (
-    <PageShell defaultTheme={themePreference}>
+    <PageShell
+      defaultTheme={themePreference}
+      className="h-[100dvh] overflow-hidden px-0 py-0 pt-[env(safe-area-inset-top)]"
+      contentClassName="flex h-full min-w-0 flex-col overflow-hidden"
+    >
       <TextScale defaultScale={textScale} />
-      <AppNav
-        userId={userId}
-        promptBadge={promptBadge}
-        interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null}
-        userFirstName={data.user?.first_name || null}
-      />
-
-      <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
-        <WearablesPanel
-          userId={String(userId)}
-          providers={wearables.providers || []}
-          initialMessage={wearableMessage}
-          initialStatus={wearableStatus}
+      <div className="mx-auto w-full max-w-4xl shrink-0">
+        <AppNav
+          userId={userId}
+          promptBadge={promptBadge}
+          interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null}
+          userFirstName={data.user?.first_name || null}
         />
-      </Card>
+      </div>
+
+      <section className="mx-auto min-h-0 w-full max-w-4xl flex-1 overflow-x-hidden overflow-y-auto">
+        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
+          <WearablesPanel
+            userId={String(userId)}
+            providers={wearables.providers || []}
+            initialMessage={wearableMessage}
+            initialStatus={wearableStatus}
+          />
+        </Card>
+      </section>
     </PageShell>
   );
 }
