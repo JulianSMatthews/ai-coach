@@ -105,7 +105,7 @@ export default function AppNav({
 
   return (
     <>
-      <nav className="sticky top-0 z-50 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
+      <nav className="sticky top-0 z-50 mb-2 flex min-h-[4.25rem] min-w-0 flex-col justify-center gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:min-h-0 md:flex-row md:flex-nowrap md:items-center md:justify-start md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-start">
           <div className="min-w-0">
             {greetingLabel ? (
