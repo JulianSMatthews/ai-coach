@@ -1840,17 +1840,21 @@ def _daily_pillar_quote(
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
                     return cached
             if skip_generation:
-                stale_pref = (
+                stale_prefs = (
                     session.query(UserPreference)
                     .filter(
                         UserPreference.user_id == int(user_id),
                         UserPreference.key.like(f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:%"),
                     )
                     .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
-                    .first()
+                    .limit(12)
+                    .all()
                 )
-                stale_cached = _normalise_daily_pillar_quote(getattr(stale_pref, "value", None))
-                return stale_cached if not _is_fallback_daily_pillar_quote(stale_cached) else ""
+                for stale_pref in stale_prefs:
+                    stale_cached = _normalise_daily_pillar_quote(getattr(stale_pref, "value", None))
+                    if stale_cached and not _is_fallback_daily_pillar_quote(stale_cached):
+                        return stale_cached
+                return ""
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
             lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None

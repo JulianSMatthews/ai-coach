@@ -2059,7 +2059,7 @@ export default function LatestAssessmentPanel({
     const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
     return pillars.some((pillar) => {
       const quote = String(pillar.daily_quote || "").trim().toLowerCase();
-      return quote.length > 0 && HOME_PILLAR_FALLBACK_QUOTES.has(quote);
+      return !quote || HOME_PILLAR_FALLBACK_QUOTES.has(quote);
     });
   }, []);
 
