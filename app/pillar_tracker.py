@@ -30,7 +30,7 @@ _VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
 _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
-_HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote"
+_HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote_v2"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
     "purpose": "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
@@ -38,6 +38,14 @@ _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "recovery": "Give your body enough space to reset before asking for more.",
     "nutrition": "Make the next meal simple, steady, and supportive of your energy.",
     "training": "Move with intent today; consistency is the part that compounds.",
+}
+_HOME_PILLAR_QUOTE_GUIDANCE: dict[str, str] = {
+    "reflection": "For Reflection, make it about self-understanding, emotional signals, and what the pattern may reveal.",
+    "purpose": "For Purpose, make it reflective and insight-led rather than about choosing an action.",
+    "resilience": "For Resilience, make it about emotional capacity, pressure, recovery from stress, or how the user relates to challenge.",
+    "recovery": "For Recovery, make it about the user's capacity to restore, reset, and protect energy, not sleep performance.",
+    "nutrition": "For Nutrition, make it about how food choices may be affecting energy, steadiness, or self-care, not diet compliance.",
+    "training": "For Training, make it about body confidence, capability, and rhythm, not workout completion or progression.",
 }
 _HEAT_EXPOSURE_MINUTE_OPTIONS = {10, 15, 20, 25, 30}
 _COLD_EXPOSURE_MINUTE_OPTIONS = {1, 2, 3, 5, 10}
@@ -1763,7 +1771,44 @@ def _normalise_daily_pillar_quote(value: str | None) -> str:
     return quote
 
 
-def _daily_pillar_quote(user_id: int, pillar_key: str, label: str, score: int, anchor: date) -> str:
+def _concept_score_context(
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for concept_def in required_concepts:
+        scores = [
+            float(day_eval.get("score"))
+            for day_eval in (evaluations_by_concept.get(concept_def.concept_key) or {}).values()
+            if day_eval.get("score") is not None
+        ]
+        if not scores:
+            continue
+        rows.append(
+            {
+                "key": concept_def.concept_key,
+                "label": concept_def.label,
+                "score": round(sum(scores) / max(1, len(scores))),
+            }
+        )
+    if not rows:
+        return {}
+    strongest = max(rows, key=lambda item: (item["score"], item["label"]))
+    lowest = min(rows, key=lambda item: (item["score"], item["label"]))
+    return {
+        "strongest": strongest,
+        "lowest": lowest,
+    }
+
+
+def _daily_pillar_quote(
+    user_id: int,
+    pillar_key: str,
+    label: str,
+    score: int,
+    anchor: date,
+    concept_context: dict[str, Any] | None = None,
+) -> str:
     key = str(pillar_key or "").strip().lower()
     resolved_label = str(label or _pillar_label(key)).strip() or key.title()
     cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}"
@@ -1779,18 +1824,31 @@ def _daily_pillar_quote(user_id: int, pillar_key: str, label: str, score: int, a
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
                     return cached
 
-            purpose_guidance = (
-                "For Purpose, make it reflective and insight-led rather than about choosing an action.\n"
-                if key == "purpose"
-                else ""
+            strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
+            lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None
+            concept_lines = ""
+            if isinstance(strongest, dict) and isinstance(lowest, dict):
+                strongest_label = str(strongest.get("label") or "").strip()
+                lowest_label = str(lowest.get("label") or "").strip()
+                if strongest_label and lowest_label:
+                    concept_lines = (
+                        f"Strongest concept this week: {strongest_label}\n"
+                        f"Lowest concept this week: {lowest_label}\n"
+                    )
+            pillar_guidance = _HOME_PILLAR_QUOTE_GUIDANCE.get(
+                key,
+                "Make it reflective and insight-led, focused on what the pattern may suggest.",
             )
 
             prompt = (
-                "Write one short daily coaching quote for a mobile wellbeing score card.\n"
+                "Write one short insight-led coaching message for a mobile pillar cue card.\n"
                 f"Pillar: {resolved_label}\n"
                 f"Score: {int(round(float(score or 0)))} out of 100\n"
-                f"{purpose_guidance}"
-                "Requirements: one sentence, 10 to 18 words, direct and practical, British English, no quotation marks, no emoji."
+                f"{concept_lines}"
+                f"{pillar_guidance}\n"
+                "Use the strongest and lowest concepts as quiet context, not as a performance review.\n"
+                "Requirements: one sentence, 14 to 22 words, insight-led, British English, no quotation marks, no emoji.\n"
+                "Do not mention scores, targets, tracking, progress, streaks, completion, or instructions to take action."
             )
             generated = _normalise_daily_pillar_quote(
                 run_llm_prompt(
@@ -1838,6 +1896,7 @@ def _summary_pillar_payload(
         resolved_score = 0
     resolved_source = "tracker" if tracker_score is not None else "assessment" if baseline_score is not None else "default"
     label = _pillar_label(pillar_key)
+    concept_context = _concept_score_context(required_concepts, evaluations_by_concept)
     return {
         "pillar_key": pillar_key,
         "label": label,
@@ -1845,7 +1904,14 @@ def _summary_pillar_payload(
         "tracker_score": tracker_score,
         "baseline_score": baseline_score,
         "source": resolved_source,
-        "daily_quote": _daily_pillar_quote(int(user_id), pillar_key, label, int(round(float(resolved_score or 0))), anchor),
+        "daily_quote": _daily_pillar_quote(
+            int(user_id),
+            pillar_key,
+            label,
+            int(round(float(resolved_score or 0))),
+            anchor,
+            concept_context=concept_context,
+        ),
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
         "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),
