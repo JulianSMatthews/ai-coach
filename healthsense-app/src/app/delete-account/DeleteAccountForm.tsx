@@ -54,25 +54,25 @@ export default function DeleteAccountForm() {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3 text-[15px] leading-6">
+    <form onSubmit={onSubmit} className="space-y-3 text-[19px] leading-8">
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-        <label className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">User ID</label>
+        <label className="text-[13px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">User ID</label>
         <input
-          className="mt-2 w-full rounded-xl border px-3 py-2 text-[15px]"
+          className="mt-2 w-full rounded-xl border px-3 py-2 text-[19px]"
           value={userId}
           onChange={(event) => setUserId(event.target.value)}
           inputMode="numeric"
           placeholder="Sign in first if this is blank"
         />
-        <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
+        <p className="mt-2 text-[15px] leading-6 text-[var(--text-secondary)]">
           For security, deletion requests must come from a signed-in account.
         </p>
       </div>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-        <label className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">Contact email</label>
+        <label className="text-[13px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">Contact email</label>
         <input
-          className="mt-2 w-full rounded-xl border px-3 py-2 text-[15px]"
+          className="mt-2 w-full rounded-xl border px-3 py-2 text-[19px]"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
@@ -81,9 +81,9 @@ export default function DeleteAccountForm() {
       </div>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-        <label className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">Optional note</label>
+        <label className="text-[13px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">Optional note</label>
         <textarea
-          className="mt-2 w-full rounded-xl border px-3 py-2 text-[15px]"
+          className="mt-2 w-full rounded-xl border px-3 py-2 text-[19px]"
           rows={3}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
@@ -91,7 +91,7 @@ export default function DeleteAccountForm() {
         />
       </div>
 
-      <label className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-[15px] leading-6">
+      <label className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-[19px] leading-8">
         <input
           type="checkbox"
           className="mt-1 h-4 w-4"
@@ -108,17 +108,17 @@ export default function DeleteAccountForm() {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-[19px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Sending..." : "Request deletion"}
         </button>
-        <a className="text-[15px] text-[var(--accent)] underline" href="/login">
+        <a className="text-[19px] text-[var(--accent)] underline" href="/login">
           Sign in
         </a>
       </div>
 
       {status ? (
-        <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-[15px] leading-6">
+        <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-[19px] leading-8">
           {status}
         </p>
       ) : null}
