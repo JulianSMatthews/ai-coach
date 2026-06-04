@@ -2838,7 +2838,6 @@ export default function LatestAssessmentPanel({
           }),
         );
       }
-      await refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
       setActiveDockKey("checkin");
       setSummaryPanelVisible(true);
       if (guidedTrackingActive && typeof window !== "undefined") {
@@ -2870,9 +2869,10 @@ export default function LatestAssessmentPanel({
         );
       }
       closeTracker();
+      setSaving(false);
+      void refreshSummary().catch(() => undefined);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
-    } finally {
       setSaving(false);
     }
   };

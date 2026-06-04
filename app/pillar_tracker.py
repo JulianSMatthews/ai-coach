@@ -1830,7 +1830,17 @@ def _daily_pillar_quote(
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
                     return cached
             if skip_generation:
-                return _fallback_daily_pillar_quote(key, resolved_label)
+                stale_pref = (
+                    session.query(UserPreference)
+                    .filter(
+                        UserPreference.user_id == int(user_id),
+                        UserPreference.key.like(f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:%"),
+                    )
+                    .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                    .first()
+                )
+                stale_cached = _normalise_daily_pillar_quote(getattr(stale_pref, "value", None))
+                return stale_cached or ""
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
             lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None
