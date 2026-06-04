@@ -229,6 +229,7 @@ from .coach_insight import get_or_generate_cached_coach_insight
 from .education_plan import (
     ensure_education_plan_schema,
     get_today_education_plan,
+    queue_education_explore_catalog_warmup,
     record_education_video_progress,
     submit_education_quiz,
 )
@@ -7941,6 +7942,7 @@ def api_user_coach_insight(
 def api_user_education_plan_today(
     user_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     anchor_date: str | None = None,
     include_explore: bool = False,
     prefetch: bool = False,
@@ -7955,7 +7957,15 @@ def api_user_education_plan_today(
             raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
     else:
         anchor = None
-    result = get_today_education_plan(int(user_id), anchor=anchor, include_explore=bool(include_explore))
+    if prefetch:
+        result = get_today_education_plan(int(user_id), anchor=anchor, include_explore=False)
+        result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
+            int(user_id),
+            anchor=anchor,
+            background_tasks=background_tasks,
+        )
+    else:
+        result = get_today_education_plan(int(user_id), anchor=anchor, include_explore=bool(include_explore))
     lesson = result.get("lesson")
     if isinstance(lesson, dict):
         content = lesson.get("content")

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import urllib.request
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -39,6 +40,7 @@ from .models import (
     UserEducationDayProgress,
     UserEducationPlan,
     UserEducationQuizAnswer,
+    UserPreference,
 )
 from .okr import _normalize_concept_key
 from .pillar_tracker import tracker_today
@@ -51,6 +53,8 @@ _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
 _LEVEL_PRIORITY = ("support", "foundation", "build", "perform")
 _LESSON_NUMBER_WORD_PATTERN = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+EDUCATION_EXPLORE_CATALOG_CACHE_KEY = "education_explore_catalog_cache_v1"
+EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND = "education_explore_catalog_warmup"
 
 
 def _title_case_token(value: str) -> str:
@@ -2302,6 +2306,67 @@ def _education_explore_catalog_payload(
     return {"pillars": list(pillars.values())}
 
 
+def _education_explore_catalog_cache_row(session, user_id: int) -> UserPreference | None:
+    return (
+        session.execute(
+            select(UserPreference).where(
+                UserPreference.user_id == int(user_id),
+                UserPreference.key == EDUCATION_EXPLORE_CATALOG_CACHE_KEY,
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _cached_education_explore_catalog(session, user_id: int, anchor: date) -> dict[str, Any] | None:
+    row = _education_explore_catalog_cache_row(session, int(user_id))
+    if row is None:
+        return None
+    try:
+        cached = json.loads(str(getattr(row, "value", "") or "{}"))
+    except Exception:
+        return None
+    if not isinstance(cached, dict):
+        return None
+    if str(cached.get("lesson_date") or "") != anchor.isoformat():
+        return None
+    catalog = cached.get("catalog")
+    return catalog if isinstance(catalog, dict) else None
+
+
+def _store_education_explore_catalog_cache(
+    session,
+    *,
+    user_id: int,
+    anchor: date,
+    catalog: dict[str, Any],
+) -> None:
+    row = _education_explore_catalog_cache_row(session, int(user_id))
+    payload = {
+        "lesson_date": anchor.isoformat(),
+        "catalog": catalog,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    if row is None:
+        row = UserPreference(
+            user_id=int(user_id),
+            key=EDUCATION_EXPLORE_CATALOG_CACHE_KEY,
+        )
+    row.value = json.dumps(payload)
+    row.meta = {
+        "lesson_date": anchor.isoformat(),
+        "pillar_count": len(catalog.get("pillars") or []) if isinstance(catalog, dict) else 0,
+    }
+    session.add(row)
+
+
+def _clear_education_explore_catalog_cache(session, user_id: int) -> None:
+    row = _education_explore_catalog_cache_row(session, int(user_id))
+    if row is not None:
+        session.delete(row)
+
+
 def _completed_programme_ids_for_user(session, user_id: int) -> set[int]:
     plans = (
         session.execute(
@@ -3152,15 +3217,24 @@ def _lesson_state(
         "takeaway": takeaway,
     }
     if include_explore:
-        payload["explore_catalog"] = _education_explore_catalog_payload(
-            session,
-            plan=plan,
-            anchor=anchor,
-            context=context,
-            assessment=assessment,
-            progress_by_day_id=progress_by_day_id,
-            concept_level_by_key=concept_level_by_key,
-        )
+        explore_catalog = _cached_education_explore_catalog(session, int(user_id), anchor)
+        if explore_catalog is None:
+            explore_catalog = _education_explore_catalog_payload(
+                session,
+                plan=plan,
+                anchor=anchor,
+                context=context,
+                assessment=assessment,
+                progress_by_day_id=progress_by_day_id,
+                concept_level_by_key=concept_level_by_key,
+            )
+            _store_education_explore_catalog_cache(
+                session,
+                user_id=int(user_id),
+                anchor=anchor,
+                catalog=explore_catalog,
+            )
+        payload["explore_catalog"] = explore_catalog
     return payload
 
 
@@ -3171,6 +3245,63 @@ def get_today_education_plan(user_id: int, *, anchor: date | None = None, includ
         payload = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor, include_explore=include_explore)
         session.commit()
         return payload
+
+
+def warm_education_explore_catalog(user_id: int, *, anchor: date | None = None) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    resolved_anchor = _resolve_plan_date(anchor)
+    with SessionLocal() as session:
+        payload = _lesson_state(
+            session,
+            user_id=int(user_id),
+            anchor=resolved_anchor,
+            refresh_avatar_media=False,
+            include_explore=True,
+        )
+        catalog = payload.get("explore_catalog") if isinstance(payload, dict) else None
+        session.commit()
+        pillars = catalog.get("pillars") if isinstance(catalog, dict) else []
+        return {
+            "ok": bool(isinstance(catalog, dict)),
+            "user_id": int(user_id),
+            "lesson_date": resolved_anchor.isoformat(),
+            "pillar_count": len(pillars) if isinstance(pillars, list) else 0,
+        }
+
+
+def queue_education_explore_catalog_warmup(
+    user_id: int,
+    *,
+    anchor: date | None = None,
+    background_tasks: Any | None = None,
+) -> dict[str, Any]:
+    from .job_queue import enqueue_job_once, should_use_worker
+
+    resolved_anchor = _resolve_plan_date(anchor)
+    payload = {
+        "user_id": int(user_id),
+        "anchor_date": resolved_anchor.isoformat(),
+    }
+    if should_use_worker():
+        job_id, created = enqueue_job_once(
+            EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND,
+            payload,
+            user_id=int(user_id),
+            payload_match=payload,
+            running_stale_minutes=15,
+        )
+        return {"queued": True, "worker": True, "job_id": int(job_id), "created": bool(created)}
+    if background_tasks is not None:
+        background_tasks.add_task(warm_education_explore_catalog, int(user_id), anchor=resolved_anchor)
+        return {"queued": True, "worker": False, "background": True}
+
+    thread = threading.Thread(
+        target=warm_education_explore_catalog,
+        kwargs={"user_id": int(user_id), "anchor": resolved_anchor},
+        daemon=True,
+    )
+    thread.start()
+    return {"queued": True, "worker": False, "background": False}
 
 
 def record_education_video_progress(
@@ -3214,6 +3345,7 @@ def record_education_video_progress(
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
             _sync_plan_streaks(session, plan)
+        _clear_education_explore_catalog_cache(session, int(user_id))
         session.flush()
         state = _lesson_state(
             session,
@@ -3291,6 +3423,7 @@ def submit_education_quiz(
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
             _sync_plan_streaks(session, plan)
+        _clear_education_explore_catalog_cache(session, int(user_id))
         session.flush()
         state = _lesson_state(
             session,

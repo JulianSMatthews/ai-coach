@@ -1410,14 +1410,14 @@ export default function AssessmentChatBox({
     }
   }, [userId]);
 
-  const openEducationExplorer = useCallback(async () => {
-    if (!educationPlan?.explore_catalog) {
-      await loadEducationPlan({ includeExplore: true });
-    }
+  const openEducationExplorer = useCallback(() => {
     setEducationExplorerOpen(true);
     setEducationExplorerMode("pillars");
     setEducationExplorerPillarKey(null);
     setEducationExplorerConceptKey(null);
+    if (!educationPlan?.explore_catalog) {
+      void loadEducationPlan({ includeExplore: true });
+    }
   }, [educationPlan?.explore_catalog, loadEducationPlan]);
 
   useEffect(() => {

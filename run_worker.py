@@ -8,7 +8,7 @@ import socket
 import traceback
 import json
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.job_queue import (
     claim_job,
@@ -33,8 +33,10 @@ from app.reporting import (
 from app.db import SessionLocal, _table_exists, engine
 from app.coach_home_refresh import run_coach_home_tracker_refresh
 from app.education_plan import (
+    EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND,
     generate_all_education_programme_avatar_videos,
     generate_education_programme_avatar_videos,
+    warm_education_explore_catalog,
 )
 from app.models import User, AssessSession, PillarResult
 from app.okr import generate_and_update_okrs_for_pillar
@@ -394,6 +396,15 @@ def _process_education_avatar_generate_programme(payload: dict) -> dict:
     return result
 
 
+def _process_education_explore_catalog_warmup(payload: dict) -> dict:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("education_explore_catalog_warmup requires user_id")
+    anchor_value = str(payload.get("anchor_date") or "").strip()
+    anchor = date.fromisoformat(anchor_value) if anchor_value else None
+    return warm_education_explore_catalog(int(user_id), anchor=anchor)
+
+
 def process_job(kind: str, payload: dict) -> dict:
     if kind in {"day_prompt", "weekstart_flow", "kickoff_flow", "thursday_flow", "friday_flow"}:
         return {"ok": True, "retired": True, "kind": kind}
@@ -421,6 +432,8 @@ def process_job(kind: str, payload: dict) -> dict:
         return _process_wearable_sync(payload)
     if kind == "coach_home_tracker_refresh":
         return _process_coach_home_tracker_refresh(payload)
+    if kind == EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND:
+        return _process_education_explore_catalog_warmup(payload)
     if kind == "education_avatar_generate_all":
         return _process_education_avatar_generate_all(payload)
     if kind == "education_avatar_generate_programme":
