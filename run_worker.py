@@ -290,6 +290,8 @@ def _process_coach_home_tracker_refresh(payload: dict) -> dict:
     return run_coach_home_tracker_refresh(
         int(user_id),
         trigger=payload.get("trigger"),
+        pillar_key=payload.get("pillar_key"),
+        score_date=payload.get("score_date"),
         job_id=int(payload.get("job_id")) if payload.get("job_id") is not None else None,
     )
 

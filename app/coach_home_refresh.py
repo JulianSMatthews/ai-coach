@@ -15,7 +15,7 @@ from .db import SessionLocal
 from .general_support import get_or_generate_cached_tracker_summary_message
 from .job_queue import enqueue_job_once, should_use_worker
 from .models import User, UserPreference
-from .pillar_tracker import get_pillar_tracker_summary, tracker_today
+from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
 
 COACH_HOME_REFRESH_STATE_KEY = "coach_home_refresh_state"
 COACH_HOME_REFRESH_JOB_KIND = "coach_home_tracker_refresh"
@@ -76,6 +76,8 @@ def run_coach_home_tracker_refresh(
     user_id: int,
     *,
     trigger: str | None = None,
+    pillar_key: str | None = None,
+    score_date: str | None = None,
     job_id: int | None = None,
 ) -> dict[str, Any]:
     snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
@@ -87,6 +89,8 @@ def run_coach_home_tracker_refresh(
         int(user_id),
         status="running",
         trigger=str(trigger or "tracker_update").strip() or "tracker_update",
+        pillar_key=str(pillar_key or "").strip().lower() or None,
+        score_date=str(score_date or "").strip() or None,
         job_id=int(job_id) if job_id is not None else None,
         started_at=started_at,
         error=None,
@@ -94,6 +98,47 @@ def run_coach_home_tracker_refresh(
         plan_date=plan_date,
     )
     try:
+        normalized_trigger = str(trigger or "tracker_update").strip() or "tracker_update"
+        normalized_pillar_key = str(pillar_key or "").strip().lower() or None
+        normalized_score_date = str(score_date or "").strip() or None
+        if normalized_trigger == "pillar_tracker_update" and normalized_pillar_key:
+            pillar_quote_result = get_pillar_tracker_detail(
+                int(user_id),
+                normalized_pillar_key,
+                anchor=tracker_today(),
+                skip_quote_generation=False,
+            )
+            completed_at = datetime.utcnow().replace(microsecond=0).isoformat()
+            result = {
+                "ok": True,
+                "user_id": int(user_id),
+                "trigger": normalized_trigger,
+                "pillar_key": normalized_pillar_key,
+                "score_date": normalized_score_date,
+                "plan_date": plan_date,
+                "context_hash": context_hash,
+                "targeted": True,
+                "habits_ready": None,
+                "gia_ready": None,
+                "insight_ready": None,
+                "pillar_quotes_ready": bool((pillar_quote_result or {}).get("pillar")),
+                "completed_at": completed_at,
+            }
+            _update_refresh_state(
+                int(user_id),
+                status="succeeded",
+                trigger=normalized_trigger,
+                pillar_key=normalized_pillar_key,
+                score_date=normalized_score_date,
+                job_id=int(job_id) if job_id is not None else None,
+                completed_at=completed_at,
+                error=None,
+                context_hash=context_hash,
+                plan_date=plan_date,
+                result=result,
+            )
+            return result
+
         with SessionLocal() as s:
             user = s.get(User, int(user_id))
             if not user:
@@ -122,6 +167,8 @@ def run_coach_home_tracker_refresh(
             "ok": True,
             "user_id": int(user_id),
             "trigger": str(trigger or "tracker_update").strip() or "tracker_update",
+            "pillar_key": str(pillar_key or "").strip().lower() or None,
+            "score_date": str(score_date or "").strip() or None,
             "plan_date": plan_date,
             "context_hash": context_hash,
             "habits_ready": isinstance(habit_result, dict) and bool(
@@ -140,6 +187,8 @@ def run_coach_home_tracker_refresh(
             int(user_id),
             status="succeeded",
             trigger=str(trigger or "tracker_update").strip() or "tracker_update",
+            pillar_key=str(pillar_key or "").strip().lower() or None,
+            score_date=str(score_date or "").strip() or None,
             job_id=int(job_id) if job_id is not None else None,
             completed_at=completed_at,
             error=None,
@@ -154,6 +203,8 @@ def run_coach_home_tracker_refresh(
             int(user_id),
             status="failed",
             trigger=str(trigger or "tracker_update").strip() or "tracker_update",
+            pillar_key=str(pillar_key or "").strip().lower() or None,
+            score_date=str(score_date or "").strip() or None,
             job_id=int(job_id) if job_id is not None else None,
             completed_at=failed_at,
             error=str(exc),
@@ -191,6 +242,9 @@ def queue_coach_home_tracker_refresh(
             user_id=int(user_id),
             payload_match={
                 "user_id": int(user_id),
+                "trigger": payload["trigger"],
+                "pillar_key": payload["pillar_key"],
+                "score_date": payload["score_date"],
                 "context_hash": context_hash,
                 "plan_date": plan_date,
             },
@@ -199,6 +253,8 @@ def queue_coach_home_tracker_refresh(
             int(user_id),
             status="queued",
             trigger=payload["trigger"],
+            pillar_key=payload["pillar_key"],
+            score_date=payload["score_date"],
             job_id=int(job_id),
             queued_at=queued_at,
             error=None,
@@ -217,12 +273,16 @@ def queue_coach_home_tracker_refresh(
             run_coach_home_tracker_refresh,
             int(user_id),
             trigger=payload["trigger"],
+            pillar_key=payload["pillar_key"],
+            score_date=payload["score_date"],
             job_id=None,
         )
         _update_refresh_state(
             int(user_id),
             status="queued",
             trigger=payload["trigger"],
+            pillar_key=payload["pillar_key"],
+            score_date=payload["score_date"],
             job_id=None,
             queued_at=queued_at,
             error=None,
@@ -239,7 +299,13 @@ def queue_coach_home_tracker_refresh(
 
     def _runner() -> None:
         try:
-            run_coach_home_tracker_refresh(int(user_id), trigger=payload["trigger"], job_id=None)
+            run_coach_home_tracker_refresh(
+                int(user_id),
+                trigger=payload["trigger"],
+                pillar_key=payload["pillar_key"],
+                score_date=payload["score_date"],
+                job_id=None,
+            )
         except Exception as exc:
             print(f"[coach-home-refresh] failed user_id={user_id}: {exc}")
 
@@ -248,6 +314,8 @@ def queue_coach_home_tracker_refresh(
         int(user_id),
         status="queued",
         trigger=payload["trigger"],
+        pillar_key=payload["pillar_key"],
+        score_date=payload["score_date"],
         job_id=None,
         queued_at=queued_at,
         error=None,
