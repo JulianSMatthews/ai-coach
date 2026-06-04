@@ -3728,15 +3728,15 @@ export default function LatestAssessmentPanel({
                 >
                   <span className="text-3xl leading-none">‹</span>
                 </button>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-secondary)]">
+                <div className="min-w-0 space-y-1.5">
+                  <h2 className="text-[1.65rem] font-semibold leading-[1.05] tracking-normal text-[var(--text-primary)] sm:text-3xl">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
                         ? "General options"
                         : selectedObjectivesPillar?.label || "Weekly objectives"
                       : "Weekly objectives"}
-                  </p>
-                  <p className="text-sm text-[var(--text-secondary)]">
+                  </h2>
+                  <p className="text-base leading-snug text-[var(--text-secondary)]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
                         ? "Set optional general tracking preferences."
