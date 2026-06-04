@@ -119,9 +119,6 @@ export default function PreferencesForm({
 
       <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] p-5">
         <h3 className="text-xl font-semibold text-[var(--text-primary)]">Choose your pillars</h3>
-        <p className="mt-2 text-base leading-7 text-[var(--text-secondary)]">
-          Choose the pillars you want to use for check-in, learn, and weekly objectives.
-        </p>
         <div className="mt-5 grid gap-3">
           {PREFERENCE_PILLARS.map((pillar) => {
             const selected = Boolean(pillarSelections[pillar.key]);
