@@ -340,7 +340,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     <PageShell defaultTheme={themePreference} className={resolvedPageShellClassName} contentClassName={resolvedPageContentClassName}>
       <TextScale defaultScale={textScale} />
       {!leadFlow && !leadGuest ? (
-        <div className={useAppSurface ? "mx-auto w-full max-w-4xl shrink-0 px-3 pt-4 sm:px-5 sm:pt-5" : ""}>
+        <div className={useAppSurface ? "mx-auto w-full max-w-4xl shrink-0" : ""}>
           <AppNav
             userId={userId}
             promptBadge={promptBadge}
