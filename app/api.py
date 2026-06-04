@@ -8294,7 +8294,7 @@ def api_user_preferences_update(
     Update coaching preferences for a user (note, coaching access, channel, display, account details).
     """
     allowed_channels = {"whatsapp", "app", "sms", "email"}
-    allowed_themes = {"light", "dark", "system"}
+    allowed_themes = {"light", "dark", "system", "auto"}
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
     if _is_readonly_admin_preview_request(
         request,
@@ -8452,7 +8452,7 @@ def api_user_preferences_update(
         if theme is not None:
             theme_val = str(theme).strip().lower()
             if theme_val and theme_val not in allowed_themes:
-                raise HTTPException(status_code=400, detail="theme must be light|dark|system")
+                raise HTTPException(status_code=400, detail="theme must be light|dark|system|auto")
             pref = (
                 s.query(UserPreference)
                 .filter(UserPreference.user_id == user_id, UserPreference.key == "theme")

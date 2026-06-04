@@ -1,20 +1,28 @@
 export const THEME_STORAGE_KEY = "healthsense.theme";
 export const THEME_COOKIE_KEY = "healthsense_theme";
 
-export type ThemePreference = "light" | "dark" | "system";
+export type ThemePreference = "light" | "dark" | "system" | "auto";
 export type ResolvedTheme = "light" | "dark";
 
 export function normalizeThemePreference(value: unknown): ThemePreference {
   const token = String(value || "").trim().toLowerCase();
-  if (token === "light" || token === "dark" || token === "system") {
+  if (token === "light" || token === "dark" || token === "system" || token === "auto") {
     return token;
   }
   return "light";
 }
 
+export function resolveAutoTheme(now = new Date()): ResolvedTheme {
+  const hour = now.getHours();
+  return hour >= 19 || hour < 7 ? "dark" : "light";
+}
+
 export function resolveTheme(preference: ThemePreference): ResolvedTheme {
   if (preference === "light" || preference === "dark") {
     return preference;
+  }
+  if (preference === "auto") {
+    return resolveAutoTheme();
   }
   if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
     return "dark";
@@ -80,10 +88,13 @@ export function themeBootstrapScript(): string {
           var cookieMatch = document.cookie.match(new RegExp("(?:^|; )" + COOKIE_KEY + "=([^;]+)"));
           raw = cookieMatch && cookieMatch[1] ? decodeURIComponent(cookieMatch[1]) : "light";
         }
-        var preference = raw === "light" || raw === "dark" || raw === "system" ? raw : "light";
-        var resolved = preference === "system"
-          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-          : preference;
+        var preference = raw === "light" || raw === "dark" || raw === "system" || raw === "auto" ? raw : "light";
+        var hour = new Date().getHours();
+        var resolved = preference === "auto"
+          ? (hour >= 19 || hour < 7 ? "dark" : "light")
+          : preference === "system"
+            ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+            : preference;
         var root = document.documentElement;
         root.setAttribute("data-theme-preference", preference);
         root.setAttribute("data-theme", resolved);

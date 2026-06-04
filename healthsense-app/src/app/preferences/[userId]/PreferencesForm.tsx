@@ -35,7 +35,7 @@ export default function PreferencesForm({
   const [theme, setTheme] = useState(() => {
     const stored = readStoredThemePreference();
     const normalized = normalizeThemePreference(stored || initialTheme);
-    return normalized === "light" ? "light" : "dark";
+    return normalized;
   });
   const [pillarSelections, setPillarSelections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(PREFERENCE_PILLARS.map((pillar) => [pillar.key, Boolean(initialPillarSelections[pillar.key])])),
@@ -108,10 +108,12 @@ export default function PreferencesForm({
             <select
               className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
               value={theme}
-              onChange={(e) => setTheme(e.target.value === "light" ? "light" : "dark")}
+              onChange={(e) => setTheme(normalizeThemePreference(e.target.value))}
             >
+              <option value="auto">Auto</option>
               <option value="dark">Dark</option>
               <option value="light">Light</option>
+              <option value="system">System</option>
             </select>
           </div>
         </div>
