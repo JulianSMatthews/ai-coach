@@ -12,6 +12,7 @@ import type {
   UrineTestMarker,
   UrineTestResponse,
   WeeklyObjectivePillarConfig,
+  WeeklyObjectiveWellbeingItem,
   WeeklyObjectivesResponse,
 } from "@/lib/api";
 import {
@@ -1118,6 +1119,37 @@ function formatWeeklyObjectiveSectionLabel(sectionKey: string, label?: string | 
   return String(label || "").trim() || normalizedKey.replace(/_/g, " ");
 }
 
+function getWellbeingObjectivePillarKey(item: WeeklyObjectiveWellbeingItem): ObjectivesSectionKey | null {
+  const itemKey = String(item?.key || "").trim().toLowerCase();
+  if (["fasting_mode", "alcohol_tracking", "ketogenic_diet", "omega_3", "vitamin_d"].includes(itemKey)) {
+    return "nutrition";
+  }
+  if (itemKey === "creatine") {
+    return "training";
+  }
+  if (["heat_exposure", "cold_exposure", "magnesium"].includes(itemKey)) {
+    return "recovery";
+  }
+  return null;
+}
+
+function isWellbeingObjectiveConfigured(
+  item: WeeklyObjectiveWellbeingItem,
+  draft: Record<string, string>,
+): boolean {
+  const itemKey = String(item?.key || "").trim();
+  const itemValue = String(draft[itemKey] ?? item?.value ?? "off").trim().toLowerCase();
+  if (["fasting_mode"].includes(itemKey)) return itemValue !== "off";
+  if (["alcohol_tracking", "ketogenic_diet"].includes(itemKey)) return itemValue === "on";
+  const fields = Array.isArray(item?.fields) ? item.fields : [];
+  if (!fields.length) return itemValue === "on";
+  return fields.some((field) => {
+    const fieldKey = String(field?.key || "").trim();
+    const fieldValue = Number(draft[fieldKey] ?? field?.value ?? 0);
+    return Number.isFinite(fieldValue) && fieldValue > 0;
+  });
+}
+
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
@@ -1239,9 +1271,38 @@ export default function LatestAssessmentPanel({
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
-  const objectivesSections = useMemo(
-    () => (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : []),
+  const wellbeingObjectiveItems = useMemo(
+    () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
     [weeklyObjectives],
+  );
+  const wellbeingObjectiveItemsByPillar = useMemo(() => {
+    const grouped: Partial<Record<ObjectivesSectionKey, WeeklyObjectiveWellbeingItem[]>> = {};
+    wellbeingObjectiveItems.forEach((item) => {
+      const pillarKey = getWellbeingObjectivePillarKey(item);
+      if (!pillarKey) return;
+      grouped[pillarKey] = [...(grouped[pillarKey] || []), item];
+    });
+    return grouped;
+  }, [wellbeingObjectiveItems]);
+  const objectivesSections = useMemo(
+    () =>
+      (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : [])
+        .filter((section) => String(section?.key || "").trim().toLowerCase() !== "wellbeing")
+        .map((section) => {
+          const sectionKey = String(section?.key || "").trim().toLowerCase() as ObjectivesSectionKey;
+          const movedItems = wellbeingObjectiveItemsByPillar[sectionKey] || [];
+          if (!movedItems.length) return section;
+          const configuredCount = Number(section?.configured_count);
+          const totalCount = Number(section?.total_count);
+          return {
+            ...section,
+            configured_count:
+              (Number.isFinite(configuredCount) ? configuredCount : 0) +
+              movedItems.filter((item) => isWellbeingObjectiveConfigured(item, wellbeingObjectiveDraft)).length,
+            total_count: (Number.isFinite(totalCount) ? totalCount : 0) + movedItems.length,
+          };
+        }),
+    [weeklyObjectives, wellbeingObjectiveDraft, wellbeingObjectiveItemsByPillar],
   );
   const selectedObjectivesPillar = useMemo(
     () =>
@@ -1259,9 +1320,9 @@ export default function LatestAssessmentPanel({
         : {},
     [pillarObjectiveDrafts, selectedObjectivesSection],
   );
-  const wellbeingObjectiveItems = useMemo(
-    () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
-    [weeklyObjectives],
+  const selectedPillarWellbeingItems = useMemo(
+    () => (selectedObjectivesSection ? wellbeingObjectiveItemsByPillar[selectedObjectivesSection] || [] : []),
+    [selectedObjectivesSection, wellbeingObjectiveItemsByPillar],
   );
   const ketogenicDietActive = useMemo(
     () =>
@@ -2363,28 +2424,39 @@ export default function LatestAssessmentPanel({
     setWeeklyObjectivesSaving(true);
     setWeeklyObjectivesError(null);
     try {
-      const body =
-        selectedObjectivesSection === "wellbeing"
-          ? {
-              userId,
-              sectionKey: "wellbeing",
-              wellbeing: wellbeingObjectiveDraft,
-            }
-          : {
-              userId,
-              sectionKey: selectedObjectivesSection,
-              conceptTargets: selectedPillarObjectiveDraft,
-            };
-      const res = await fetch("/api/weekly-objectives", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const text = await res.text().catch(() => "");
-      if (!res.ok) {
-        throw new Error(normalizeError(text, "Failed to save weekly objectives."));
+      const savePayload = async (body: Record<string, unknown>) => {
+        const res = await fetch("/api/weekly-objectives", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+          throw new Error(normalizeError(text, "Failed to save weekly objectives."));
+        }
+        return (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
+      };
+      let payload: WeeklyObjectivesResponse;
+      if (selectedObjectivesSection === "wellbeing") {
+        payload = await savePayload({
+          userId,
+          sectionKey: "wellbeing",
+          wellbeing: wellbeingObjectiveDraft,
+        });
+      } else {
+        payload = await savePayload({
+          userId,
+          sectionKey: selectedObjectivesSection,
+          conceptTargets: selectedPillarObjectiveDraft,
+        });
+        if (selectedPillarWellbeingItems.length) {
+          payload = await savePayload({
+            userId,
+            sectionKey: "wellbeing",
+            wellbeing: wellbeingObjectiveDraft,
+          });
+        }
       }
-      const payload = (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
       applyWeeklyObjectivesPayload(payload);
       logUserAppEvent("weekly_objectives_save", { section: selectedObjectivesSection });
       await refreshSummary().catch(() => undefined);
@@ -2410,6 +2482,7 @@ export default function LatestAssessmentPanel({
     refreshSummary,
     selectedObjectivesSection,
     selectedPillarObjectiveDraft,
+    selectedPillarWellbeingItems,
     userId,
     wellbeingObjectiveDraft,
   ]);
@@ -3764,6 +3837,88 @@ export default function LatestAssessmentPanel({
                             );
                           })}
                         </div>
+                      </div>
+                    );
+                  })}
+                  {selectedPillarWellbeingItems.map((item) => {
+                    const itemKey = String(item?.key || "").trim();
+                    const selectedValue = String(wellbeingObjectiveDraft[itemKey] || item?.value || "off").trim() || "off";
+                    const itemFields = Array.isArray(item?.fields) ? item.fields : [];
+                    return (
+                      <div key={`wellbeing-${itemKey}`} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">{item?.label}</p>
+                          <p className="text-xs text-[var(--text-secondary)]">{item?.helper}</p>
+                        </div>
+                        {itemFields.length ? (
+                          <div className="mt-4 space-y-4">
+                            {itemFields.map((field) => {
+                              const fieldKey = String(field?.key || "").trim();
+                              if (!fieldKey) return null;
+                              const fieldValue = String(
+                                wellbeingObjectiveDraft[fieldKey] ?? field?.value ?? "",
+                              ).trim();
+                              return (
+                                <div key={`${itemKey}-${fieldKey}`} className="space-y-2">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
+                                    {field?.label}
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(field?.options || []).map((option) => {
+                                      const optionValue = String(option?.value ?? "").trim();
+                                      const isActive = optionValue === fieldValue;
+                                      return (
+                                        <button
+                                          key={`${fieldKey}-${optionValue}`}
+                                          type="button"
+                                          onClick={() =>
+                                            setWellbeingObjectiveDraft((current) => ({
+                                              ...current,
+                                              [fieldKey]: optionValue,
+                                            }))
+                                          }
+                                          className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                            isActive
+                                              ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                              : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+                                          }`}
+                                        >
+                                          {option?.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {(item?.options || []).map((option) => {
+                              const optionValue = String(option?.value || "").trim();
+                              const isActive = optionValue === selectedValue;
+                              return (
+                                <button
+                                  key={`${itemKey}-${optionValue}`}
+                                  type="button"
+                                  onClick={() =>
+                                    setWellbeingObjectiveDraft((current) => ({
+                                      ...current,
+                                      [itemKey]: optionValue,
+                                    }))
+                                  }
+                                  className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                    isActive
+                                      ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+                                  }`}
+                                >
+                                  {option?.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
