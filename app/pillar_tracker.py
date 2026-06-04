@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
+from .models import AssessmentRun, DailyPillarTrackerEntry, PillarCueQuote, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 from .pillar_config import active_pillar_keys, pillar_label
 from .prompts import run_llm_prompt
@@ -383,6 +383,7 @@ def ensure_pillar_tracker_schema() -> None:
         return
     try:
         DailyPillarTrackerEntry.__table__.create(bind=engine, checkfirst=True)
+        PillarCueQuote.__table__.create(bind=engine, checkfirst=True)
         _TRACKER_SCHEMA_READY = True
     except Exception:
         _TRACKER_SCHEMA_READY = False
@@ -1804,29 +1805,59 @@ def _save_latest_daily_pillar_quote(
     stored_quote = _stored_generated_daily_pillar_quote(quote)
     if not stored_quote:
         return
-    latest_key = _latest_daily_pillar_quote_key(anchor, pillar_key)
-    pref = (
-        session.query(UserPreference)
-        .filter(UserPreference.user_id == int(user_id), UserPreference.key == latest_key)
+    normalized_pillar_key = str(pillar_key or "").strip().lower()
+    row = (
+        session.query(PillarCueQuote)
+        .filter(
+            PillarCueQuote.user_id == int(user_id),
+            PillarCueQuote.quote_date == anchor,
+            PillarCueQuote.pillar_key == normalized_pillar_key,
+        )
         .first()
     )
+    generated_at = datetime.utcnow().replace(microsecond=0)
     meta = {
-        "pillar_key": str(pillar_key or "").strip().lower(),
-        "lesson_date": anchor.isoformat(),
+        "pillar_key": normalized_pillar_key,
+        "quote_date": anchor.isoformat(),
         "source_cache_key": source_cache_key,
-        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+        "generated_at": generated_at.isoformat(),
     }
-    if pref:
-        pref.value = stored_quote
-        pref.meta = meta
+    if row:
+        row.quote = stored_quote
+        row.source_cache_key = source_cache_key
+        row.meta = meta
+        row.generated_at = generated_at
     else:
-        session.add(UserPreference(user_id=int(user_id), key=latest_key, value=stored_quote, meta=meta))
+        session.add(
+            PillarCueQuote(
+                user_id=int(user_id),
+                quote_date=anchor,
+                pillar_key=normalized_pillar_key,
+                quote=stored_quote,
+                source_cache_key=source_cache_key,
+                meta=meta,
+                generated_at=generated_at,
+            )
+        )
 
 
 def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str, anchor: date) -> str:
+    normalized_pillar_key = str(pillar_key or "").strip().lower()
+    row = (
+        session.query(PillarCueQuote)
+        .filter(
+            PillarCueQuote.user_id == int(user_id),
+            PillarCueQuote.quote_date == anchor,
+            PillarCueQuote.pillar_key == normalized_pillar_key,
+        )
+        .first()
+    )
+    quote = _stored_generated_daily_pillar_quote(getattr(row, "quote", None))
+    if quote:
+        return quote
     pref = (
         session.query(UserPreference)
-        .filter(UserPreference.user_id == int(user_id), UserPreference.key == _latest_daily_pillar_quote_key(anchor, pillar_key))
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == _latest_daily_pillar_quote_key(anchor, normalized_pillar_key))
         .first()
     )
     return _stored_generated_daily_pillar_quote(getattr(pref, "value", None))

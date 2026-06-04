@@ -981,6 +981,27 @@ class DailyPillarTrackerEntry(Base):
     )
 
 
+class PillarCueQuote(Base):
+    __tablename__ = "pillar_cue_quotes"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    quote_date = Column(Date, nullable=False, index=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    quote = Column(Text, nullable=False)
+    source_cache_key = Column(String(255), nullable=True)
+    meta = Column(JSONType, nullable=True)
+    generated_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "quote_date", "pillar_key", name="uq_pillar_cue_quotes_user_day_pillar"),
+        Index("ix_pillar_cue_quotes_user_day", "user_id", "quote_date"),
+        Index("ix_pillar_cue_quotes_user_pillar_day", "user_id", "pillar_key", "quote_date"),
+    )
+
+
 class DailyCoachHabitPlan(Base):
     __tablename__ = "daily_coach_habit_plans"
 
