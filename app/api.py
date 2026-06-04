@@ -7677,7 +7677,7 @@ def api_user_pillar_tracker_summary(
     user_id: int,
     request: Request,
     anchor_date: str | None = None,
-    skip_quote_generation: bool = False,
+    skip_quote_generation: bool = True,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -7698,7 +7698,7 @@ def api_user_pillar_tracker_detail(
     pillar_key: str,
     request: Request,
     anchor_date: str | None = None,
-    skip_quote_generation: bool = False,
+    skip_quote_generation: bool = True,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -7739,7 +7739,7 @@ def api_user_pillar_tracker_save(
     raw_entries = payload.get("entries")
     if not isinstance(raw_entries, list):
         raise HTTPException(status_code=400, detail="entries must be a list")
-    skip_quote_generation = bool(payload.get("skip_quote_generation"))
+    skip_quote_generation = bool(payload.get("skip_quote_generation", True))
     try:
         result = save_pillar_tracker_day(
             user_id,

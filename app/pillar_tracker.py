@@ -1954,7 +1954,7 @@ def _summary_pillar_payload(
     }
 
 
-def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip_quote_generation: bool = False) -> dict[str, Any]:
+def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip_quote_generation: bool = True) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     resolved_anchor = anchor or tracker_today()
     current_day = tracker_today()
@@ -2003,7 +2003,7 @@ def get_pillar_tracker_detail(
     pillar_key: str,
     anchor: date | None = None,
     *,
-    skip_quote_generation: bool = False,
+    skip_quote_generation: bool = True,
 ) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     key = str(pillar_key or "").strip().lower()
@@ -2172,7 +2172,7 @@ def save_pillar_tracker_day(
     *,
     score_date: date | None = None,
     entries: list[dict[str, Any]] | None = None,
-    skip_quote_generation: bool = False,
+    skip_quote_generation: bool = True,
 ) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     current_day = tracker_today()

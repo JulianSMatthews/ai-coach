@@ -15,6 +15,7 @@ from .db import SessionLocal
 from .general_support import get_or_generate_cached_tracker_summary_message
 from .job_queue import enqueue_job_once, should_use_worker
 from .models import User, UserPreference
+from .pillar_tracker import get_pillar_tracker_summary, tracker_today
 
 COACH_HOME_REFRESH_STATE_KEY = "coach_home_refresh_state"
 COACH_HOME_REFRESH_JOB_KIND = "coach_home_tracker_refresh"
@@ -111,6 +112,11 @@ def run_coach_home_tracker_refresh(
             tracker_snapshot=snapshot,
         )
         insight_result = get_or_generate_cached_coach_insight(int(user_id), force=False)
+        pillar_quote_result = get_pillar_tracker_summary(
+            int(user_id),
+            anchor=tracker_today(),
+            skip_quote_generation=False,
+        )
         completed_at = datetime.utcnow().replace(microsecond=0).isoformat()
         result = {
             "ok": True,
@@ -127,6 +133,7 @@ def run_coach_home_tracker_refresh(
             "insight_ready": isinstance(insight_result, dict) and bool(
                 (insight_result.get("content") if isinstance(insight_result, dict) else None)
             ),
+            "pillar_quotes_ready": bool((pillar_quote_result or {}).get("pillars")),
             "completed_at": completed_at,
         }
         _update_refresh_state(
