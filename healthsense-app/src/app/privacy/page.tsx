@@ -13,18 +13,13 @@ export default function PrivacyPage() {
           We collect the information needed to run your account, including your name, mobile number, email address,
           login/session details, assessment answers, coaching preferences, app activity, and support requests.
         </p>
-        <p>
-          If you choose to use biometrics, CoachSense may read selected Apple Health metrics such as resting heart
-          rate, heart rate variability, step count, and exercise minutes. If you choose to use urine testing, we process
-          the photo and derived marker results needed to show your screening history.
-        </p>
       </section>
 
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">How we use it</h2>
         <p>
           We use your data to provide the assessment, generate your plan, show progress, tailor Gia coaching messages,
-          support biomarker and habit trends, keep the app secure, and respond to support or account requests.
+          support habit trends, keep the app secure, and respond to support or account requests.
         </p>
         <p>
           Health data is used only for wellbeing coaching and app features. It is not used for advertising and is not
@@ -43,9 +38,8 @@ export default function PrivacyPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Your choices</h2>
         <p>
-          Apple Health access, photo access, camera access, and notifications are optional and controlled by your device
-          settings. You can update coaching preferences in the app and request account deletion from the Delete account
-          page.
+          Notifications are optional and controlled by your device settings. You can update coaching preferences in the
+          app and request account deletion from the Delete account page.
         </p>
       </section>
 
