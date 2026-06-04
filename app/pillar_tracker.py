@@ -31,6 +31,7 @@ _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
 _HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote_v3"
+_HOME_PILLAR_LATEST_QUOTE_PREF_PREFIX = "coach_home_pillar_latest_quote_v1"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
     "purpose": "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
@@ -1781,6 +1782,56 @@ def _is_fallback_daily_pillar_quote(value: str | None) -> bool:
     return bool(quote and quote in _HOME_PILLAR_QUOTE_FALLBACK_VALUES)
 
 
+def _latest_daily_pillar_quote_key(anchor: date, pillar_key: str) -> str:
+    key = str(pillar_key or "").strip().lower()
+    return f"{_HOME_PILLAR_LATEST_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}"
+
+
+def _stored_generated_daily_pillar_quote(value: str | None) -> str:
+    quote = _normalise_daily_pillar_quote(value)
+    return quote if quote and not _is_fallback_daily_pillar_quote(quote) else ""
+
+
+def _save_latest_daily_pillar_quote(
+    session,
+    *,
+    user_id: int,
+    pillar_key: str,
+    anchor: date,
+    quote: str,
+    source_cache_key: str,
+) -> None:
+    stored_quote = _stored_generated_daily_pillar_quote(quote)
+    if not stored_quote:
+        return
+    latest_key = _latest_daily_pillar_quote_key(anchor, pillar_key)
+    pref = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == latest_key)
+        .first()
+    )
+    meta = {
+        "pillar_key": str(pillar_key or "").strip().lower(),
+        "lesson_date": anchor.isoformat(),
+        "source_cache_key": source_cache_key,
+        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+    }
+    if pref:
+        pref.value = stored_quote
+        pref.meta = meta
+    else:
+        session.add(UserPreference(user_id=int(user_id), key=latest_key, value=stored_quote, meta=meta))
+
+
+def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str, anchor: date) -> str:
+    pref = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == _latest_daily_pillar_quote_key(anchor, pillar_key))
+        .first()
+    )
+    return _stored_generated_daily_pillar_quote(getattr(pref, "value", None))
+
+
 def _concept_score_context(
     required_concepts: tuple[PillarTrackerConceptDefinition, ...],
     evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
@@ -1840,6 +1891,9 @@ def _daily_pillar_quote(
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
                     return cached
             if skip_generation:
+                latest_cached = _latest_generated_daily_pillar_quote(session, int(user_id), key, anchor)
+                if latest_cached:
+                    return latest_cached
                 stale_prefs = (
                     session.query(UserPreference)
                     .filter(
@@ -1898,12 +1952,25 @@ def _daily_pillar_quote(
                     pref.value = generated
                 else:
                     session.add(UserPreference(user_id=int(user_id), key=cache_key, value=generated))
+                _save_latest_daily_pillar_quote(
+                    session,
+                    user_id=int(user_id),
+                    pillar_key=key,
+                    anchor=anchor,
+                    quote=generated,
+                    source_cache_key=cache_key,
+                )
                 session.commit()
                 return generated
             return _fallback_daily_pillar_quote(key, resolved_label)
     except Exception as exc:
         print(f"[pillar_tracker] daily quote failed user_id={user_id} pillar={key}: {exc}")
         return _fallback_daily_pillar_quote(key, resolved_label)
+
+
+def _daily_pillar_quote_is_generated(value: str | None) -> bool:
+    quote = _normalise_daily_pillar_quote(value)
+    return bool(quote and not _is_fallback_daily_pillar_quote(quote))
 
 
 def _summary_pillar_payload(
@@ -1932,6 +1999,16 @@ def _summary_pillar_payload(
     resolved_source = "tracker" if tracker_score is not None else "assessment" if baseline_score is not None else "default"
     label = _pillar_label(pillar_key)
     concept_context = _concept_score_context(required_concepts, evaluations_by_concept)
+    daily_quote = _daily_pillar_quote(
+        int(user_id),
+        pillar_key,
+        label,
+        int(round(float(resolved_score or 0))),
+        anchor,
+        concept_context=concept_context,
+        skip_generation=skip_quote_generation,
+    )
+    daily_quote_generated = _daily_pillar_quote_is_generated(daily_quote)
     return {
         "pillar_key": pillar_key,
         "label": label,
@@ -1939,15 +2016,9 @@ def _summary_pillar_payload(
         "tracker_score": tracker_score,
         "baseline_score": baseline_score,
         "source": resolved_source,
-        "daily_quote": _daily_pillar_quote(
-            int(user_id),
-            pillar_key,
-            label,
-            int(round(float(resolved_score or 0))),
-            anchor,
-            concept_context=concept_context,
-            skip_generation=skip_quote_generation,
-        ),
+        "daily_quote": daily_quote,
+        "daily_quote_generated": daily_quote_generated,
+        "daily_quote_pending": not daily_quote_generated,
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
         "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),

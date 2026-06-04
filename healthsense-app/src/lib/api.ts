@@ -347,6 +347,8 @@ export type PillarTrackerPillar = {
   baseline_score?: number | null;
   source?: string | null;
   daily_quote?: string | null;
+  daily_quote_generated?: boolean | null;
+  daily_quote_pending?: boolean | null;
   completed_days_count?: number | null;
   streak_days?: number | null;
   today_complete?: boolean;

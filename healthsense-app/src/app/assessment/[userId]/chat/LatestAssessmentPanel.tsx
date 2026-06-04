@@ -2055,29 +2055,46 @@ export default function LatestAssessmentPanel({
     return payload;
   }, [userId]);
 
-  const summaryHasFallbackCueMessages = useCallback((payload: PillarTrackerSummaryResponse | null | undefined) => {
-    const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
-    return pillars.some((pillar) => {
-      const quote = String(pillar.daily_quote || "").trim().toLowerCase();
-      return !quote || HOME_PILLAR_FALLBACK_QUOTES.has(quote);
-    });
+  const pillarNeedsGeneratedCue = useCallback((pillar: PillarTrackerPillar | null | undefined) => {
+    if (!pillar) return true;
+    if (pillar.daily_quote_generated === true) return false;
+    if (pillar.daily_quote_pending === true) return true;
+    if (pillar.daily_quote_generated === false) return true;
+    const quote = String(pillar.daily_quote || "").trim().toLowerCase();
+    return !quote || HOME_PILLAR_FALLBACK_QUOTES.has(quote);
   }, []);
 
-  const refreshSummaryFromWorkerCache = useCallback(() => {
+  const summaryHasFallbackCueMessages = useCallback((payload: PillarTrackerSummaryResponse | null | undefined) => {
+    const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
+    return pillars.some((pillar) => pillarNeedsGeneratedCue(pillar));
+  }, [pillarNeedsGeneratedCue]);
+
+  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null) => {
     if (typeof window === "undefined") return;
-    const delays = [1400, 2400, 3600, 5200, 7600, 10400];
+    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
+    const delays = [1400, 2400, 3600, 5200, 7600, 10400, 14000, 18000];
+    let resolved = false;
     delays.forEach((delay) => {
       window.setTimeout(() => {
+        if (resolved) return;
         void refreshSummary({ skipQuoteGeneration: true })
           .then((payload) => {
-            if (!summaryHasFallbackCueMessages(payload)) {
+            const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
+            const targetPillar = normalizedPillarKey
+              ? pillars.find((pillar) => String(pillar.pillar_key || "").trim().toLowerCase() === normalizedPillarKey)
+              : null;
+            if (targetPillar && !pillarNeedsGeneratedCue(targetPillar)) {
+              resolved = true;
               return;
+            }
+            if (!normalizedPillarKey && !summaryHasFallbackCueMessages(payload)) {
+              resolved = true;
             }
           })
           .catch(() => undefined);
       }, delay);
     });
-  }, [refreshSummary, summaryHasFallbackCueMessages]);
+  }, [pillarNeedsGeneratedCue, refreshSummary, summaryHasFallbackCueMessages]);
 
   useEffect(() => {
     void refreshSummary().catch(() => undefined);
@@ -2522,7 +2539,7 @@ export default function LatestAssessmentPanel({
       applyWeeklyObjectivesPayload(payload);
       logUserAppEvent("weekly_objectives_save", { section: selectedObjectivesSection });
       void refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
-      refreshSummaryFromWorkerCache();
+      refreshSummaryFromWorkerCache(selectedObjectivesSection);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-tracker-updated", {
@@ -2900,7 +2917,7 @@ export default function LatestAssessmentPanel({
       closeTracker();
       setSaving(false);
       void refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
-      refreshSummaryFromWorkerCache();
+      refreshSummaryFromWorkerCache(String(detail.pillar.pillar_key || "").trim().toLowerCase());
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
       setSaving(false);
