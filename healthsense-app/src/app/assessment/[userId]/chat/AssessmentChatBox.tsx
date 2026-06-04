@@ -805,18 +805,14 @@ export default function AssessmentChatBox({
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<HomeSurface>("blank");
   const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
-  const [morningSequenceDay, setMorningSequenceDay] = useState(() =>
-    resolveMorningSequenceDay(initialTrackerSummary),
-  );
+  const [morningSequenceDay, setMorningSequenceDay] = useState(() => String(initialTrackerSummary?.today || "").trim());
   const [journeyCompleted, setJourneyCompleted] = useState(
-    () => {
-      const initialState = readMorningSequenceState(userId, resolveMorningSequenceDay(initialTrackerSummary));
-      return resolveJourneyCompleted({
+    () =>
+      resolveJourneyCompleted({
         assessmentCompleted,
         summary: initialTrackerSummary,
-        sequenceState: initialState,
-      });
-    },
+        sequenceState: "idle",
+      }),
   );
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
@@ -854,7 +850,7 @@ export default function AssessmentChatBox({
     const token = String(leadToken || "").trim();
     return token ? `&lt=${encodeURIComponent(token)}` : "";
   }, [leadToken]);
-  const initialMorningSequenceDay = resolveMorningSequenceDay(initialTrackerSummary);
+  const initialMorningSequenceDay = String(initialTrackerSummary?.today || "").trim();
   const allowResultSummaryInChat = leadFlow || isLeadGuest;
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;

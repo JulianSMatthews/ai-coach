@@ -1125,9 +1125,9 @@ export default function LatestAssessmentPanel({
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
-    () => resolveSummaryPanelVisible(initialSummary, readMorningSequenceState(userId, initialSummary.today)),
+    () => resolveSummaryPanelVisible(initialSummary, "idle"),
   );
-  const [displayTheme, setDisplayTheme] = useState<DisplayTheme>(() => resolveCurrentDisplayTheme());
+  const [displayTheme, setDisplayTheme] = useState<DisplayTheme>("light");
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
