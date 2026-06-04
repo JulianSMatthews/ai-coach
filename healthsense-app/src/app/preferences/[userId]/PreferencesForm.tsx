@@ -11,9 +11,10 @@ type PreferencesFormProps = {
   initialPillarSelections?: Record<string, boolean>;
 };
 
-const PREFERENCE_PILLARS = PILLARS.filter((pillar) =>
-  ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"].includes(pillar.key),
-);
+const PREFERENCE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
+const PREFERENCE_PILLARS = PREFERENCE_PILLAR_ORDER.map((key) => PILLARS.find((pillar) => pillar.key === key)).filter(
+  Boolean,
+) as typeof PILLARS;
 
 const PILLAR_PREF_KEYS: Record<string, string> = {
   reflection: "home_pillar_reflection",
@@ -117,7 +118,7 @@ export default function PreferencesForm({
       </section>
 
       <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] p-5">
-        <h3 className="text-xl font-semibold text-[var(--text-primary)]">Pillars</h3>
+        <h3 className="text-xl font-semibold text-[var(--text-primary)]">Choose your pillars</h3>
         <p className="mt-2 text-base leading-7 text-[var(--text-secondary)]">
           Choose the pillars you want to use for check-in, learn, and weekly objectives.
         </p>
@@ -135,21 +136,17 @@ export default function PreferencesForm({
                   }))
                 }
                 aria-pressed={selected}
-                className={`flex min-h-[5.75rem] w-full items-center gap-3 rounded-[28px] border px-4 py-4 text-left transition ${
-                  selected
-                    ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
-                    : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
-                }`}
+                className="flex min-h-[5.75rem] w-full items-center gap-3 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-left text-[var(--text-primary)] transition"
               >
                 <span className="min-w-0 flex-1">
                   <span className="block text-lg font-semibold leading-6">{pillar.label}</span>
-                  <span className={`mt-1 block text-sm leading-6 ${selected ? "text-[var(--action-primary-text)] opacity-80" : "text-[var(--text-secondary)]"}`}>
+                  <span className="mt-1 block text-sm leading-6 text-[var(--text-secondary)]">
                     {pillar.note}
                   </span>
                 </span>
                 <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
-                    selected ? "border-current bg-transparent" : "border-[var(--border)]"
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${
+                    selected ? "border-[#111111] bg-white text-[#111111]" : "border-[var(--border)] bg-[var(--surface)]"
                   }`}
                   aria-hidden="true"
                 >
