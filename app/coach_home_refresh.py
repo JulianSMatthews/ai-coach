@@ -13,7 +13,7 @@ from .daily_habits import (
 )
 from .db import SessionLocal
 from .general_support import get_or_generate_cached_tracker_summary_message
-from .job_queue import enqueue_job_once, should_use_worker
+from .job_queue import enqueue_job, enqueue_job_once, should_use_worker
 from .models import User, UserPreference
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
 
@@ -236,19 +236,23 @@ def queue_coach_home_tracker_refresh(
     }
     queued_at = datetime.utcnow().replace(microsecond=0).isoformat()
     if should_use_worker() and not _in_worker_process():
-        job_id, created = enqueue_job_once(
-            COACH_HOME_REFRESH_JOB_KIND,
-            payload,
-            user_id=int(user_id),
-            payload_match={
-                "user_id": int(user_id),
-                "trigger": payload["trigger"],
-                "pillar_key": payload["pillar_key"],
-                "score_date": payload["score_date"],
-                "context_hash": context_hash,
-                "plan_date": plan_date,
-            },
-        )
+        if payload["trigger"] == "pillar_tracker_update" and payload["pillar_key"]:
+            job_id = enqueue_job(COACH_HOME_REFRESH_JOB_KIND, payload, user_id=int(user_id))
+            created = True
+        else:
+            job_id, created = enqueue_job_once(
+                COACH_HOME_REFRESH_JOB_KIND,
+                payload,
+                user_id=int(user_id),
+                payload_match={
+                    "user_id": int(user_id),
+                    "trigger": payload["trigger"],
+                    "pillar_key": payload["pillar_key"],
+                    "score_date": payload["score_date"],
+                    "context_hash": context_hash,
+                    "plan_date": plan_date,
+                },
+            )
         _update_refresh_state(
             int(user_id),
             status="queued",
