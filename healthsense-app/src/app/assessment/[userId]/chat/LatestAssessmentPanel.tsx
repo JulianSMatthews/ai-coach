@@ -2034,8 +2034,12 @@ export default function LatestAssessmentPanel({
             }
           : null;
 
-  const refreshSummary = useCallback(async () => {
-    const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
+  const refreshSummary = useCallback(async ({ skipQuoteGeneration = false }: { skipQuoteGeneration?: boolean } = {}) => {
+    const params = new URLSearchParams({ userId });
+    if (skipQuoteGeneration) {
+      params.set("skipQuoteGeneration", "true");
+    }
+    const res = await fetch(`/api/pillar-tracker/summary?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -2816,6 +2820,7 @@ export default function LatestAssessmentPanel({
           userId,
           score_date: activeDate || detail.pillar.today,
           entries,
+          skipQuoteGeneration: true,
         }),
       });
       const text = await res.text().catch(() => "");
@@ -2833,7 +2838,7 @@ export default function LatestAssessmentPanel({
           }),
         );
       }
-      await refreshSummary().catch(() => undefined);
+      await refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
       setActiveDockKey("checkin");
       setSummaryPanelVisible(true);
       if (guidedTrackingActive && typeof window !== "undefined") {

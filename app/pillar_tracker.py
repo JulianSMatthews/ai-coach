@@ -1809,6 +1809,7 @@ def _daily_pillar_quote(
     score: int,
     anchor: date,
     concept_context: dict[str, Any] | None = None,
+    skip_generation: bool = False,
 ) -> str:
     key = str(pillar_key or "").strip().lower()
     resolved_label = str(label or _pillar_label(key)).strip() or key.title()
@@ -1828,6 +1829,8 @@ def _daily_pillar_quote(
             if cached:
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
                     return cached
+            if skip_generation:
+                return _fallback_daily_pillar_quote(key, resolved_label)
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
             lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None
@@ -1889,6 +1892,7 @@ def _summary_pillar_payload(
     anchor: date,
     current_day: date,
     baseline_score: int | None,
+    skip_quote_generation: bool = False,
 ) -> dict[str, Any]:
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
@@ -1917,6 +1921,7 @@ def _summary_pillar_payload(
             int(round(float(resolved_score or 0))),
             anchor,
             concept_context=concept_context,
+            skip_generation=skip_quote_generation,
         ),
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
@@ -1939,7 +1944,7 @@ def _summary_pillar_payload(
     }
 
 
-def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict[str, Any]:
+def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip_quote_generation: bool = False) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     resolved_anchor = anchor or tracker_today()
     current_day = tracker_today()
@@ -1964,6 +1969,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
                 anchor=resolved_anchor,
                 current_day=current_day,
                 baseline_score=baseline_scores.get(pillar_key),
+                skip_quote_generation=skip_quote_generation,
             )
         )
     total_pillars = len(pillars)
@@ -1982,7 +1988,13 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
     }
 
 
-def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None = None) -> dict[str, Any]:
+def get_pillar_tracker_detail(
+    user_id: int,
+    pillar_key: str,
+    anchor: date | None = None,
+    *,
+    skip_quote_generation: bool = False,
+) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     key = str(pillar_key or "").strip().lower()
     current_day = tracker_today()
@@ -2009,6 +2021,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
         anchor=resolved_anchor,
         current_day=current_day,
         baseline_score=baseline_scores.get(key),
+        skip_quote_generation=skip_quote_generation,
     )
     concepts_payload = []
     today_rows = entries_by_day.get(resolved_anchor, {})
@@ -2149,6 +2162,7 @@ def save_pillar_tracker_day(
     *,
     score_date: date | None = None,
     entries: list[dict[str, Any]] | None = None,
+    skip_quote_generation: bool = False,
 ) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     current_day = tracker_today()
@@ -2253,4 +2267,4 @@ def save_pillar_tracker_day(
             required_concepts=required_concepts,
         )
         s.commit()
-    return get_pillar_tracker_detail(user_id, key, resolved_date)
+    return get_pillar_tracker_detail(user_id, key, resolved_date, skip_quote_generation=skip_quote_generation)

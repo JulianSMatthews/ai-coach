@@ -7677,6 +7677,7 @@ def api_user_pillar_tracker_summary(
     user_id: int,
     request: Request,
     anchor_date: str | None = None,
+    skip_quote_generation: bool = False,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -7688,7 +7689,7 @@ def api_user_pillar_tracker_summary(
             raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
     else:
         anchor = None
-    return get_pillar_tracker_summary(user_id, anchor=anchor)
+    return get_pillar_tracker_summary(user_id, anchor=anchor, skip_quote_generation=bool(skip_quote_generation))
 
 
 @api_v1.get("/users/{user_id}/pillar-tracker/{pillar_key}")
@@ -7697,6 +7698,7 @@ def api_user_pillar_tracker_detail(
     pillar_key: str,
     request: Request,
     anchor_date: str | None = None,
+    skip_quote_generation: bool = False,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -7709,7 +7711,7 @@ def api_user_pillar_tracker_detail(
     else:
         anchor = None
     try:
-        return get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor)
+        return get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor, skip_quote_generation=bool(skip_quote_generation))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -7737,12 +7739,14 @@ def api_user_pillar_tracker_save(
     raw_entries = payload.get("entries")
     if not isinstance(raw_entries, list):
         raise HTTPException(status_code=400, detail="entries must be a list")
+    skip_quote_generation = bool(payload.get("skip_quote_generation"))
     try:
         result = save_pillar_tracker_day(
             user_id,
             pillar_key,
             score_date=score_date,
             entries=[item for item in raw_entries if isinstance(item, dict)],
+            skip_quote_generation=skip_quote_generation,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
