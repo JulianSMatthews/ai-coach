@@ -99,7 +99,7 @@ export default function DeleteAccountForm() {
           onChange={(event) => setConfirm(event.target.checked)}
         />
         <span>
-          I understand this starts deletion of my CoachSense account and related coaching, health trend, assessment,
+          I understand this starts deletion of my CoachSense account and related assessment, check-in, lesson, coaching,
           and message records after identity verification.
         </span>
       </label>

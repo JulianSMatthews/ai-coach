@@ -11,8 +11,8 @@ export default function DeleteAccountPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">What deletion includes</h2>
         <p>
-          Account deletion removes or disables your CoachSense user account and related assessment, coaching, biometric
-          trend, urine test, preference, session, and message records where we are able to delete them.
+          Account deletion removes or disables your CoachSense user account and related assessment, check-in, lesson,
+          quiz, preference, session, coaching, and message records where we are able to delete them.
         </p>
         <p>
           Some security, legal, or operational records may need to be retained where required by law or for

@@ -22,6 +22,10 @@ export default function PrivacyPage() {
           support habit trends, keep the app secure, and respond to support or account requests.
         </p>
         <p>
+          This includes using your check-ins, selected pillars, lesson progress, quiz answers, preferences, and app
+          activity to show relevant cue cards, lessons, weekly objectives, and coaching messages.
+        </p>
+        <p>
           Health data is used only for wellbeing coaching and app features. It is not used for advertising and is not
           sold.
         </p>
