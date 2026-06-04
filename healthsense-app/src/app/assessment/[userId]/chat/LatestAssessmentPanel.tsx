@@ -146,6 +146,18 @@ function formatBiometricDayNumber(value?: string | null): string {
   return parsed.toLocaleDateString("en-GB", { day: "numeric" });
 }
 
+function formatJournalDate(value?: string | null): string {
+  const token = String(value || "").trim();
+  if (!token) return "";
+  const parsed = new Date(`${token}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return token;
+  return parsed.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
 function formatCompactStepCount(value?: number | null): string {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved < 0) return "—";
@@ -2919,6 +2931,7 @@ export default function LatestAssessmentPanel({
                   const palette = getPillarPalette(pillarKey);
                   const score = resolvePillarDisplayScore(pillar);
                   const quote = resolveHomePillarQuote(pillar, pillarKey);
+                  const journalDate = formatJournalDate(summary.today || summary.week?.anchor_date || "");
                   const checkinOptions = Array.isArray(pillar.checkin_options)
                     ? pillar.checkin_options.filter((option) => String(option?.date || "").trim())
                     : [];
@@ -2947,12 +2960,19 @@ export default function LatestAssessmentPanel({
                         <p className="text-[2.4rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.8rem]">
                           {pillar.label}
                         </p>
+                        {journalDate ? (
+                          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-current opacity-50">
+                            Journal {journalDate}
+                          </p>
+                        ) : null}
                       </div>
-                      <div className="mt-12 max-w-[18rem] sm:mt-14">
-                        <p className="text-[1.45rem] font-medium leading-[1.18] text-current opacity-80 sm:text-[1.65rem]">
-                          {quote}
-                        </p>
-                        <div className="mt-5 grid max-w-[16rem] grid-cols-2 gap-2">
+                      <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
+                        <div className="max-h-[9.5rem] max-w-[18rem] overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-h-[10.75rem]">
+                          <p className="text-[1.32rem] font-medium leading-[1.2] text-current opacity-80 sm:text-[1.48rem]">
+                            {quote}
+                          </p>
+                        </div>
+                        <div className="mt-auto grid max-w-[16rem] grid-cols-2 gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(

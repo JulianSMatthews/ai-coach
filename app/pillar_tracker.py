@@ -30,7 +30,7 @@ _VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
 _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
-_HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote_v2"
+_HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote_v3"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
     "purpose": "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
@@ -1766,8 +1766,8 @@ def _normalise_daily_pillar_quote(value: str | None) -> str:
     quote = quote.strip("\"'“”‘’")
     quote = " ".join(quote.split())
     words = quote.split()
-    if len(words) > 24:
-        quote = " ".join(words[:24]).rstrip(" ,.;:") + "."
+    if len(words) > 34:
+        quote = " ".join(words[:34]).rstrip(" ,.;:") + "."
     return quote
 
 
@@ -1798,6 +1798,7 @@ def _concept_score_context(
     return {
         "strongest": strongest,
         "lowest": lowest,
+        "signature": ",".join(f"{item['key']}:{item['score']}" for item in sorted(rows, key=lambda item: item["key"])),
     }
 
 
@@ -1811,7 +1812,11 @@ def _daily_pillar_quote(
 ) -> str:
     key = str(pillar_key or "").strip().lower()
     resolved_label = str(label or _pillar_label(key)).strip() or key.title()
-    cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}"
+    context_signature = ""
+    if isinstance(concept_context, dict):
+        context_signature = str(concept_context.get("signature") or "").strip().replace(" ", "")
+    cache_suffix = context_signature or "baseline"
+    cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:{cache_suffix}"
     try:
         with SessionLocal() as session:
             pref = (
@@ -1847,7 +1852,8 @@ def _daily_pillar_quote(
                 f"{concept_lines}"
                 f"{pillar_guidance}\n"
                 "Use the strongest and lowest concepts as quiet context, not as a performance review.\n"
-                "Requirements: one sentence, 14 to 22 words, insight-led, British English, no quotation marks, no emoji.\n"
+                "Requirements: one sentence, 22 to 32 words, insight-led, British English, no quotation marks, no emoji.\n"
+                "Vary the opening language across pillars; do not start every message with Notice.\n"
                 "Do not mention scores, targets, tracking, progress, streaks, completion, or instructions to take action."
             )
             generated = _normalise_daily_pillar_quote(
