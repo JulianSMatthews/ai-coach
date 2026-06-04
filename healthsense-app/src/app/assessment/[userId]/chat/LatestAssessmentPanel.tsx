@@ -1031,12 +1031,30 @@ function resolvePillarDisplayScore(pillar: PillarTrackerPillar): number | null {
   return resolveScore(pillar.score ?? pillar.tracker_score ?? pillar.baseline_score);
 }
 
-function circleDayTone(status?: string | null, isActive?: boolean): string {
-  const activeRing = isActive ? " ring-1 ring-[#d9cdbb]" : "";
-  if (status === "success") return `border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]${activeRing}`;
-  if (status === "warning") return `border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]${activeRing}`;
-  if (status === "danger") return `border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]${activeRing}`;
-  return `border-[#ece5d9] bg-[var(--surface)] text-[var(--text-tertiary)]${activeRing}`;
+function circleDayTone(theme: DisplayTheme, status?: string | null, isActive?: boolean): string {
+  const activeRing = isActive
+    ? theme === "dark"
+      ? " ring-1 ring-[#f2dccb]"
+      : " ring-1 ring-[#8c7b65]"
+    : "";
+  if (status === "success") {
+    return theme === "dark"
+      ? `border-[#7fbf5a] bg-[#24401f] text-[#e4ffd6]${activeRing}`
+      : `border-[#79b84a] bg-[#dff5cf] text-[#1f5a14]${activeRing}`;
+  }
+  if (status === "warning") {
+    return theme === "dark"
+      ? `border-[#d89a54] bg-[#44301d] text-[#ffe0b8]${activeRing}`
+      : `border-[#d28a35] bg-[#ffead1] text-[#794712]${activeRing}`;
+  }
+  if (status === "danger") {
+    return theme === "dark"
+      ? `border-[#f07b61] bg-[#4a211b] text-[#ffd7cf]${activeRing}`
+      : `border-[#d25b3f] bg-[#ffe1d8] text-[#8f2414]${activeRing}`;
+  }
+  return theme === "dark"
+    ? `border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]${activeRing}`
+    : `border-[#ece5d9] bg-[var(--surface)] text-[var(--text-tertiary)]${activeRing}`;
 }
 
 function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | null; tone: string; compact?: boolean }) {
@@ -4095,7 +4113,7 @@ export default function LatestAssessmentPanel({
                             {(concept.week || []).map((day) => (
                               <div
                                 key={`${conceptKey}-${day.date}`}
-                                className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(day.daily_status, day.is_active)}`}
+                                className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(displayTheme, day.daily_status, day.is_active)}`}
                               >
                                 <p className="font-semibold">{day.label}</p>
                                 <p className="mt-1 truncate">{day.value_label || "-"}</p>
