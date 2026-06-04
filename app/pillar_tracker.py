@@ -1920,6 +1920,15 @@ def _daily_pillar_quote(
             cached = _normalise_daily_pillar_quote(getattr(pref, "value", None))
             if cached and not _is_fallback_daily_pillar_quote(cached):
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
+                    _save_latest_daily_pillar_quote(
+                        session,
+                        user_id=int(user_id),
+                        pillar_key=key,
+                        anchor=anchor,
+                        quote=cached,
+                        source_cache_key=cache_key,
+                    )
+                    session.commit()
                     return cached
             if skip_generation:
                 latest_cached = _latest_generated_daily_pillar_quote(session, int(user_id), key, anchor)
@@ -1938,6 +1947,15 @@ def _daily_pillar_quote(
                 for stale_pref in stale_prefs:
                     stale_cached = _normalise_daily_pillar_quote(getattr(stale_pref, "value", None))
                     if stale_cached and not _is_fallback_daily_pillar_quote(stale_cached):
+                        _save_latest_daily_pillar_quote(
+                            session,
+                            user_id=int(user_id),
+                            pillar_key=key,
+                            anchor=anchor,
+                            quote=stale_cached,
+                            source_cache_key=str(getattr(stale_pref, "key", "") or ""),
+                        )
+                        session.commit()
                         return stale_cached
                 return ""
 
