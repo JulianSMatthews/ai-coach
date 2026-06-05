@@ -6,12 +6,15 @@ import HealthSenseMark from "@/components/HealthSenseMark";
 export default function AppSplash() {
   const [visible, setVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
+  const [showWords, setShowWords] = useState(false);
 
   useEffect(() => {
+    const wordsTimer = window.setTimeout(() => setShowWords(true), 1650);
     const leaveTimer = window.setTimeout(() => setLeaving(true), 3150);
     const removeTimer = window.setTimeout(() => setVisible(false), 3650);
 
     return () => {
+      window.clearTimeout(wordsTimer);
       window.clearTimeout(leaveTimer);
       window.clearTimeout(removeTimer);
     };
@@ -30,12 +33,14 @@ export default function AppSplash() {
       <div className="splash-logo">
         <HealthSenseMark className="h-24 w-16 sm:h-28 sm:w-20" />
       </div>
-      <div className="splash-words" aria-hidden="true">
-        <span className="splash-word splash-word-find">Find</span>
-        <span className="splash-word splash-word-your">your</span>
-        <span className="splash-word splash-word-own">own</span>
-        <span className="splash-word splash-word-way">way.</span>
-      </div>
+      {showWords ? (
+        <div className="splash-words" aria-hidden="true">
+          <span className="splash-word splash-word-find">Find</span>
+          <span className="splash-word splash-word-your">your</span>
+          <span className="splash-word splash-word-own">own</span>
+          <span className="splash-word splash-word-way">way.</span>
+        </div>
+      ) : null}
       <span className="sr-only">Find your own way.</span>
       <style jsx>{`
         .splash-logo {
@@ -64,7 +69,6 @@ export default function AppSplash() {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
           animation: splash-word-arrive 1.05s cubic-bezier(0.18, 0.86, 0.22, 1) forwards;
-          animation-delay: 1.45s;
         }
 
         .splash-word-find {
@@ -79,7 +83,7 @@ export default function AppSplash() {
           --from-y: 56dvh;
           --to-x: 0.18em;
           --to-y: calc(-50% - 0.55em);
-          animation-delay: 1.58s;
+          animation-delay: 0.13s;
         }
 
         .splash-word-own {
@@ -87,7 +91,7 @@ export default function AppSplash() {
           --from-y: 54dvh;
           --to-x: calc(-100% - 0.18em);
           --to-y: calc(-50% + 0.55em);
-          animation-delay: 1.71s;
+          animation-delay: 0.26s;
         }
 
         .splash-word-way {
@@ -95,7 +99,7 @@ export default function AppSplash() {
           --from-y: -54dvh;
           --to-x: 0.18em;
           --to-y: calc(-50% + 0.55em);
-          animation-delay: 1.84s;
+          animation-delay: 0.39s;
         }
 
         @keyframes splash-logo-flight {

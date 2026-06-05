@@ -304,7 +304,7 @@ export default function LoginPage() {
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
-            Sign in with your mobile number, or create a free HealthSense account.
+            Sign in with your mobile number, or create a free CoachSense account.
           </p>
         </div>
 
