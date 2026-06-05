@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, date, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body, BackgroundTasks
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_, update, false
 from sqlalchemy.exc import IntegrityError
@@ -487,12 +487,60 @@ except Exception as e:
 app = FastAPI(title="AI Coach")
 router = APIRouter()
 _STARTUP_TASKS_DONE = threading.Event()
+_DB_RESET_IN_PROGRESS = threading.Event()
 _RENDER_INFRA_CACHE_LOCK = threading.Lock()
 _RENDER_INFRA_CACHE: dict[str, object] = {
     "payload": None,
     "fetched_at_monotonic": 0.0,
     "rate_limited_until_monotonic": 0.0,
 }
+
+
+def _parse_bool_env_value(raw: str | None) -> bool | None:
+    val = (raw or "").strip().lower()
+    if val == "":
+        return None
+    if val in {"1", "true", "yes", "on"}:
+        return True
+    if val in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _startup_reset_requested_from_env() -> bool:
+    canonical = _parse_bool_env_value(os.getenv("RESET_DB_ON_STARTUP"))
+    if canonical is not None:
+        return bool(canonical)
+    for key in ("RESET_DATABASE_ON_STARTUP", "reset_database_on_startup", "reset_db_on_startup"):
+        if _parse_bool_env_value(os.getenv(key)) is True:
+            return True
+    return False
+
+
+def _start_scheduler_after_startup() -> None:
+    try:
+        try:
+            scheduler.ensure_apscheduler_tables()
+            debug_log("apscheduler tables ensured", tag="scheduler")
+        except Exception as e:
+            print(f"⚠️  ensure_apscheduler_tables failed: {e!r}")
+        scheduler.start_scheduler()
+        scheduler.schedule_auto_daily_prompts()
+        scheduler.schedule_out_of_session_messages()
+        scheduler.schedule_reports_retention()
+    except Exception as e:
+        print(f"⚠️  Scheduler start failed: {e!r}")
+
+
+@app.middleware("http")
+async def _block_requests_while_db_resetting(request: Request, call_next):
+    if _DB_RESET_IN_PROGRESS.is_set() and request.url.path not in {"/health", "/"}:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "error": "database_reset_in_progress"},
+            headers={"Retry-After": "5"},
+        )
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -544,6 +592,9 @@ async def _startup_init() -> None:
         threading.Thread(target=_bootstrap_quick_replies, daemon=True).start()
     except Exception as e:
         print(f"[startup] Twilio quick replies bootstrap skipped: {e!r}")
+    if _startup_reset_requested_from_env():
+        debug_log("DB reset requested; scheduler start deferred until reset completes", tag="startup")
+        return
     # Wait for startup tasks (e.g., DB reset/seed) to finish before scheduler starts.
     try:
         wait_sec_raw = (os.getenv("STARTUP_TASKS_WAIT_SEC") or "30").strip()
@@ -558,18 +609,7 @@ async def _startup_init() -> None:
             pass
 
     # Scheduler must start on the running event loop.
-    try:
-        try:
-            scheduler.ensure_apscheduler_tables()
-            debug_log("apscheduler tables ensured", tag="scheduler")
-        except Exception as e:
-            print(f"⚠️  ensure_apscheduler_tables failed: {e!r}")
-        scheduler.start_scheduler()
-        scheduler.schedule_auto_daily_prompts()
-        scheduler.schedule_out_of_session_messages()
-        scheduler.schedule_reports_retention()
-    except Exception as e:
-        print(f"⚠️  Scheduler start failed: {e!r}")
+    _start_scheduler_after_startup()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -613,15 +653,24 @@ def _drop_all_except(keep_tables: set[str]) -> None:
                 print(f"⚠️  Drop warning for {table.name}: {e}")
 
 
-def _clear_reset_runtime_tables() -> None:
+def _table_row_count(conn, table_name: str) -> int | None:
+    try:
+        return int(conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar() or 0)
+    except Exception:
+        return None
+
+
+def _clear_reset_runtime_tables() -> dict[str, int | None]:
     """Clear runtime/user generated tables that must not survive a DB reset."""
     runtime_tables = [
         "assess_sessions",
         "background_jobs",
         "urine_tests",
     ]
+    remaining: dict[str, int | None] = {}
     with engine.begin() as conn:
         for table_name in runtime_tables:
+            before_count = _table_row_count(conn, table_name)
             try:
                 conn.execute(text(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY CASCADE'))
             except Exception:
@@ -629,6 +678,26 @@ def _clear_reset_runtime_tables() -> None:
                     conn.execute(text(f'DELETE FROM "{table_name}"'))
                 except Exception as exc:
                     print(f"⚠️  Reset cleanup warning for {table_name}: {exc}")
+            after_count = _table_row_count(conn, table_name)
+            remaining[table_name] = after_count
+            print(f"[startup] reset cleanup {table_name}: before={before_count} after={after_count}")
+    return remaining
+
+
+def _clear_reset_runtime_tables_with_retry(*, attempts: int = 3, delay_seconds: float = 1.0) -> None:
+    last_remaining: dict[str, int | None] = {}
+    for attempt in range(1, max(1, attempts) + 1):
+        last_remaining = _clear_reset_runtime_tables()
+        uncleared = {
+            table_name: count
+            for table_name, count in last_remaining.items()
+            if count not in (0, None)
+        }
+        if not uncleared:
+            return
+        print(f"[startup] reset cleanup retry {attempt}/{attempts}: remaining={uncleared}")
+        time.sleep(max(0.0, delay_seconds))
+    print(f"⚠️  Runtime table reset cleanup finished with remaining rows: {last_remaining}")
 
 
 def _drop_reset_runtime_tables() -> None:
@@ -780,6 +849,7 @@ def on_startup():
             print("[startup] begin")
             reset_requested, reset_source, reset_values = _resolve_reset_requested()
             if reset_requested:
+                _DB_RESET_IN_PROGRESS.set()
                 reset_lock_conn = _acquire_db_reset_advisory_lock()
             # Ensure logging/usage schemas before handling traffic.
             try:
@@ -909,7 +979,7 @@ def on_startup():
 
                 # Clear runtime tables that are outside the preserved education programme definitions.
                 try:
-                    _clear_reset_runtime_tables()
+                    _clear_reset_runtime_tables_with_retry()
                 except Exception as e:
                     print(f"⚠️  Runtime table reset cleanup error: {e!r}")
 
@@ -931,7 +1001,7 @@ def on_startup():
                 except Exception as e:
                     print(f"⚠️  ensure_apscheduler_tables after reset failed: {e!r}")
                 try:
-                    _clear_reset_runtime_tables()
+                    _clear_reset_runtime_tables_with_retry()
                 except Exception as e:
                     print(f"⚠️  Final runtime table reset cleanup error: {e!r}")
 
@@ -959,6 +1029,7 @@ def on_startup():
             print("[startup] end")
         finally:
             _release_db_reset_advisory_lock(reset_lock_conn)
+            _DB_RESET_IN_PROGRESS.clear()
             try:
                 _STARTUP_TASKS_DONE.set()
             except Exception:
@@ -966,6 +1037,26 @@ def on_startup():
 
     # Run all startup tasks off-thread so we don't block port binding.
     threading.Thread(target=_startup_tasks, daemon=True).start()
+
+
+@app.on_event("startup")
+async def _startup_scheduler_after_reset() -> None:
+    if not _startup_reset_requested_from_env():
+        return
+    try:
+        wait_sec_raw = (os.getenv("STARTUP_TASKS_WAIT_SEC") or "180").strip()
+        wait_secs = float(wait_sec_raw or "180")
+    except Exception:
+        wait_secs = 180.0
+    debug_log(f"waiting for DB reset before scheduler start (timeout={wait_secs}s)", tag="startup")
+    try:
+        await asyncio.to_thread(_STARTUP_TASKS_DONE.wait, max(1.0, wait_secs))
+    except Exception:
+        pass
+    if _DB_RESET_IN_PROGRESS.is_set():
+        print("⚠️  Scheduler start deferred because DB reset is still in progress")
+        return
+    _start_scheduler_after_startup()
 
 
 def _record_freeform_checkin(user, body: str) -> None:
@@ -4898,8 +4989,10 @@ async def twilio_inbound(request: Request):
 @app.get("/health")
 def health():
     reports_dir, reports_source = resolve_reports_dir_with_source()
+    resetting = _DB_RESET_IN_PROGRESS.is_set()
     return {
-        "ok": True,
+        "ok": not resetting,
+        "reset_in_progress": resetting,
         "env": ENV,
         "timezone": "Europe/London",
         "app_start_uk": APP_START_UK_STR,
