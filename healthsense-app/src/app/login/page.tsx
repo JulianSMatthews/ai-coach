@@ -2,13 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
+import { looksLikePhone, normalizePhoneForAuth } from "@/lib/phone";
 import HealthSenseMark from "@/components/HealthSenseMark";
-
-function looksLikePhone(value: string) {
-  const trimmed = value.trim();
-  const digits = trimmed.replace(/[^\d]/g, "");
-  return trimmed.startsWith("+") && digits.length >= 8;
-}
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "create">("signin");
@@ -167,7 +162,8 @@ export default function LoginPage() {
 
   const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
     if (event) event.preventDefault();
-    if (!phone.trim()) {
+    const normalizedPhone = normalizePhoneForAuth(phone);
+    if (!normalizedPhone) {
       setStatus("Please enter your phone number to continue.");
       return;
     }
@@ -179,9 +175,12 @@ export default function LoginPage() {
       setStatus("Please accept the Terms and Privacy Policy to create your account.");
       return;
     }
-    if (!looksLikePhone(phone)) {
+    if (!looksLikePhone(normalizedPhone)) {
       setStatus("Enter a valid mobile number, ideally with country code.");
       return;
+    }
+    if (normalizedPhone !== phone) {
+      setPhone(normalizedPhone);
     }
 
     setLoading(true);
@@ -192,7 +191,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone,
+          phone: normalizedPhone,
           password: mode === "signin" ? password || undefined : undefined,
           first_name: mode === "create" ? firstName : undefined,
           surname: mode === "create" ? surname : undefined,
@@ -221,7 +220,7 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.setItem("hs_login_otp_id", String(data.otp_id));
-          window.sessionStorage.setItem("hs_login_phone", phone);
+          window.sessionStorage.setItem("hs_login_phone", normalizedPhone);
           window.sessionStorage.setItem("hs_login_setup", String(Boolean(data.setup_required)));
           window.sessionStorage.setItem("hs_login_mode", mode);
           window.sessionStorage.setItem("hs_login_first_name", firstName);
@@ -239,6 +238,7 @@ export default function LoginPage() {
   const verifyOtp = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!otpId) return;
+    const normalizedPhone = normalizePhoneForAuth(phone);
     setLoading(true);
     setStatus(null);
     try {
@@ -246,7 +246,7 @@ export default function LoginPage() {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp_id: otpId, code, remember_me: rememberMe }),
+        body: JSON.stringify({ phone: normalizedPhone, otp_id: otpId, code, remember_me: rememberMe }),
       });
       if (!res.ok) {
         const fallback = `Failed to verify code (HTTP ${res.status}).`;

@@ -2,13 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
+import { looksLikePhone, normalizePhoneForAuth } from "@/lib/phone";
 import HealthSenseMark from "@/components/HealthSenseMark";
-
-function looksLikePhone(value: string) {
-  const trimmed = value.trim();
-  const digits = trimmed.replace(/[^\d]/g, "");
-  return trimmed.startsWith("+") && digits.length >= 8;
-}
 
 export default function ResetPasswordPage() {
   const [phone, setPhone] = useState("");
@@ -50,13 +45,17 @@ export default function ResetPasswordPage() {
 
   const requestReset = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
     if (event) event.preventDefault();
-    if (!phone.trim()) {
+    const normalizedPhone = normalizePhoneForAuth(phone);
+    if (!normalizedPhone) {
       setStatus("Please enter your phone number to continue.");
       return;
     }
-    if (!looksLikePhone(phone)) {
+    if (!looksLikePhone(normalizedPhone)) {
       setStatus("Enter a valid mobile number, ideally with country code.");
       return;
+    }
+    if (normalizedPhone !== phone) {
+      setPhone(normalizedPhone);
     }
     setLoading(true);
     setStatus(null);
@@ -64,7 +63,7 @@ export default function ResetPasswordPage() {
       const res = await fetch("/api/auth/password/reset/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, channel }),
+        body: JSON.stringify({ phone: normalizedPhone, channel }),
       });
       if (!res.ok) {
         const fallback = `Failed to request code (HTTP ${res.status}).`;
@@ -85,7 +84,7 @@ export default function ResetPasswordPage() {
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.setItem("hs_reset_otp_id", String(data.otp_id));
-          window.sessionStorage.setItem("hs_reset_phone", phone);
+          window.sessionStorage.setItem("hs_reset_phone", normalizedPhone);
         } catch {}
       }
     } catch (error) {
@@ -98,6 +97,7 @@ export default function ResetPasswordPage() {
   const verifyReset = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!otpId) return;
+    const normalizedPhone = normalizePhoneForAuth(phone);
     if (!password || password.length < 8) {
       setStatus("Password must be at least 8 characters.");
       return;
@@ -112,7 +112,7 @@ export default function ResetPasswordPage() {
       const res = await fetch("/api/auth/password/reset/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp_id: otpId, code, password, remember_me: rememberMe }),
+        body: JSON.stringify({ phone: normalizedPhone, otp_id: otpId, code, password, remember_me: rememberMe }),
       });
       if (!res.ok) {
         const fallback = `Failed to reset password (HTTP ${res.status}).`;
