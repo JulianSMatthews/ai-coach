@@ -307,10 +307,12 @@ export default function LoginPage() {
     <main className="flex min-h-[100dvh] items-center overflow-x-hidden bg-[var(--background)] px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[var(--foreground)] sm:px-6">
       <section className="mx-auto flex w-full max-w-md flex-col gap-6">
         <div className="space-y-3">
-          <HealthSenseMark className="h-12 w-8" />
-          <div>
+          <div className="flex items-center gap-3">
+            <HealthSenseMark className="h-12 w-8 shrink-0" />
             <h1 className="text-[2.4rem] font-semibold leading-none text-[var(--text-primary)]">Sign in</h1>
-            <p className="mt-3 text-[18px] leading-7 text-[var(--text-secondary)]">
+          </div>
+          <div>
+            <p className="text-[18px] leading-7 text-[var(--text-secondary)]">
             Sign in with your mobile number, or create a free CoachSense account.
             </p>
           </div>
