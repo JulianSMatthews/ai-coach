@@ -779,10 +779,14 @@ def on_startup():
                 keep_prompt_templates = bool(_parse_bool_env(os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET")))
                 keep_content = bool(_parse_bool_env(os.getenv("KEEP_CONTENT_ON_RESET")))
                 keep_kb = bool(_parse_bool_env(os.getenv("KEEP_KB_SNIPPETS_ON_RESET")))
+                keep_education_programmes = _parse_bool_env(os.getenv("KEEP_EDUCATION_PROGRAMMES_ON_RESET"))
+                if keep_education_programmes is None:
+                    keep_education_programmes = True
                 print(
                     "[startup] reset requested -> "
                     f"keep_prompt_templates={keep_prompt_templates} "
-                    f"keep_content={keep_content} keep_kb={keep_kb}"
+                    f"keep_content={keep_content} keep_kb={keep_kb} "
+                    f"keep_education_programmes={keep_education_programmes}"
                 )
                 try:
                     _predrop_legacy_tables()
@@ -790,7 +794,7 @@ def on_startup():
                     print(f"⚠️  Legacy table pre-drop error: {e}")
 
                 # Recreate schema
-                if keep_prompt_templates or keep_content or keep_kb:
+                if keep_prompt_templates or keep_content or keep_kb or keep_education_programmes:
                     keep_tables: set[str] = set()
                     if keep_prompt_templates:
                         keep_tables.update({"prompt_templates", "prompt_template_versions", "prompt_settings"})
@@ -800,6 +804,16 @@ def on_startup():
                             "content_prompt_settings",
                             "content_prompt_generations",
                             "content_library_items",
+                        })
+                    if keep_education_programmes:
+                        keep_tables.update({
+                            "content_prompt_generations",
+                            "content_library_items",
+                            "education_programmes",
+                            "education_programme_days",
+                            "education_lesson_variants",
+                            "education_quizzes",
+                            "education_quiz_questions",
                         })
                     if keep_kb:
                         keep_tables.update({
