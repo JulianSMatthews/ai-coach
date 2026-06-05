@@ -296,7 +296,7 @@ export default async function AssessmentChatPage(props: PageProps) {
       ? ""
       : leadFlow
       ? ""
-      : "Start your assessment with Gia here. Each question will guide you one step at a time.";
+      : "";
   let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
   if (!leadFlow && !leadGuest && assessmentCompleted && !assessmentInProgress) {
     try {

@@ -858,7 +858,7 @@ export default function AssessmentChatBox({
   const promptActive = Boolean(currentPrompt);
   const showResultCard = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive;
   const showInlineCoachingPlan = showResultCard && showCoachingPlan;
-  const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
+  const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (leadFlow || hasActiveSession);
   const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultCard && !promptActive;
   const showGuidedHomeChatPanel = showHomeChatPanel && !journeyCompleted;
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
