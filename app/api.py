@@ -631,6 +631,21 @@ def _clear_reset_runtime_tables() -> None:
                     print(f"⚠️  Reset cleanup warning for {table_name}: {exc}")
 
 
+def _drop_reset_runtime_tables() -> None:
+    """Force-drop reset-only runtime tables, including raw-SQL tables outside Base.metadata."""
+    runtime_tables = [
+        "assess_sessions",
+        "background_jobs",
+        "urine_tests",
+    ]
+    with engine.begin() as conn:
+        for table_name in runtime_tables:
+            try:
+                conn.execute(text(f'DROP TABLE IF EXISTS "{table_name}" CASCADE'))
+            except Exception as exc:
+                print(f"⚠️  Runtime table drop warning for {table_name}: {exc}")
+
+
 def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
     reports_dir = resolve_reports_dir()
     if not os.path.isdir(reports_dir):
@@ -843,7 +858,19 @@ def on_startup():
                     _drop_all_except(keep_tables)
                 else:
                     Base.metadata.drop_all(bind=engine)
+                try:
+                    _drop_reset_runtime_tables()
+                except Exception as e:
+                    print(f"⚠️  Runtime table drop error: {e!r}")
                 Base.metadata.create_all(bind=engine)
+                try:
+                    ensure_job_table()
+                except Exception as e:
+                    print(f"⚠️  Could not recreate job table after reset: {e!r}")
+                try:
+                    ensure_urine_test_schema()
+                except Exception as e:
+                    print(f"⚠️  Could not recreate urine test schema after reset: {e!r}")
 
                 # Seed
                 run_seed()
