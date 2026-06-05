@@ -10,6 +10,8 @@ import json
 import urllib.request
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import text as sa_text
+
 from app.job_queue import (
     claim_job,
     ensure_job_table,
@@ -43,6 +45,8 @@ from app.okr import generate_and_update_okrs_for_pillar
 from app.wearables import ensure_wearables_schema, process_sync_run as process_wearable_sync_run
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
+
+_DB_RESET_ADVISORY_LOCK_KEY = int(os.getenv("DB_RESET_ADVISORY_LOCK_KEY", "582914607"))
 
 
 def _process_day_prompt(payload: dict) -> None:
@@ -446,6 +450,7 @@ def process_job(kind: str, payload: dict) -> dict:
 def main() -> None:
     os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
     _wait_for_api_ready()
+    _wait_for_db_reset_to_finish()
     try:
         ensure_usage_schema()
     except Exception as e:
@@ -462,6 +467,7 @@ def main() -> None:
         ensure_wearables_schema()
     except Exception as e:
         print(f"[worker] WARN: ensure wearable schema failed: {e}")
+    _wait_for_db_reset_to_finish()
     _wait_for_job_table_ready()
     worker_id = os.getenv("WORKER_ID") or socket.gethostname()
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "2") or "2")
@@ -470,6 +476,7 @@ def main() -> None:
 
     print(f"[worker] started id={worker_id} poll={poll_seconds}s lock_timeout={lock_timeout}m max_attempts={max_attempts}")
     while True:
+        _wait_for_db_reset_to_finish()
         job = claim_job(worker_id=worker_id, lock_timeout_minutes=lock_timeout)
         if not job:
             time.sleep(max(1, poll_seconds))
@@ -567,6 +574,34 @@ def _wait_for_job_table_ready() -> None:
             print(f"[worker] waiting for background_jobs table: {exc}")
             time.sleep(max(1, poll_s))
     raise RuntimeError(f"background_jobs table not ready after {timeout_s}s: {last_error}")
+
+
+def _wait_for_db_reset_to_finish() -> None:
+    if getattr(engine.dialect, "name", "") != "postgresql":
+        return
+    poll_s = int((os.getenv("WORKER_DB_RESET_POLL_SECONDS") or "3").strip() or "3")
+    warned = False
+    while True:
+        try:
+            with engine.begin() as conn:
+                got_lock = conn.execute(
+                    sa_text("SELECT pg_try_advisory_lock(:lock_key)"),
+                    {"lock_key": _DB_RESET_ADVISORY_LOCK_KEY},
+                ).scalar()
+                if got_lock:
+                    conn.execute(
+                        sa_text("SELECT pg_advisory_unlock(:lock_key)"),
+                        {"lock_key": _DB_RESET_ADVISORY_LOCK_KEY},
+                    )
+                    if warned:
+                        print("[worker] DB reset finished; resuming")
+                    return
+        except Exception as exc:
+            print(f"[worker] waiting for DB reset check: {exc}")
+        if not warned:
+            print("[worker] DB reset in progress; suspending job claims")
+            warned = True
+        time.sleep(max(1, poll_s))
 
 
 if __name__ == "__main__":

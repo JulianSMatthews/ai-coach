@@ -646,6 +646,35 @@ def _drop_reset_runtime_tables() -> None:
                 print(f"⚠️  Runtime table drop warning for {table_name}: {exc}")
 
 
+_DB_RESET_ADVISORY_LOCK_KEY = int(os.getenv("DB_RESET_ADVISORY_LOCK_KEY", "582914607"))
+
+
+def _acquire_db_reset_advisory_lock():
+    if getattr(engine.dialect, "name", "") != "postgresql":
+        return None
+    conn = engine.connect()
+    conn.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": _DB_RESET_ADVISORY_LOCK_KEY})
+    conn.commit()
+    print("[startup] DB reset worker suspension lock acquired")
+    return conn
+
+
+def _release_db_reset_advisory_lock(conn) -> None:
+    if conn is None:
+        return
+    try:
+        conn.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": _DB_RESET_ADVISORY_LOCK_KEY})
+        conn.commit()
+        print("[startup] DB reset worker suspension lock released")
+    except Exception as exc:
+        print(f"⚠️  DB reset worker suspension unlock warning: {exc!r}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
     reports_dir = resolve_reports_dir()
     if not os.path.isdir(reports_dir):
@@ -746,8 +775,12 @@ def on_startup():
         return False, "none", values
 
     def _startup_tasks() -> None:
+        reset_lock_conn = None
         try:
             print("[startup] begin")
+            reset_requested, reset_source, reset_values = _resolve_reset_requested()
+            if reset_requested:
+                reset_lock_conn = _acquire_db_reset_advisory_lock()
             # Ensure logging/usage schemas before handling traffic.
             try:
                 from .usage import ensure_usage_schema
@@ -802,7 +835,6 @@ def on_startup():
             except Exception as e:
                 print(f"⚠️  Could not ensure builtin prompt templates: {e!r}")
 
-            reset_requested, reset_source, reset_values = _resolve_reset_requested()
             print(
                 "[startup] reset flags: "
                 + ", ".join(f"{k}='{v}'" for k, v in reset_values.items())
@@ -926,6 +958,7 @@ def on_startup():
                 print(f"⚠️  Could not start auth email diagnostic: {e!r}")
             print("[startup] end")
         finally:
+            _release_db_reset_advisory_lock(reset_lock_conn)
             try:
                 _STARTUP_TASKS_DONE.set()
             except Exception:
