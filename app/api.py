@@ -22740,6 +22740,29 @@ def admin_user_status(user_id: int, admin_user: User = Depends(_require_admin)):
     return data
 
 
+@admin.post("/runtime/reset")
+def admin_reset_runtime_tables(admin_user: User = Depends(_require_admin)):
+    """
+    Clear global runtime-only tables that should not survive a database reset.
+    Intended for test/admin maintenance after workers have been suspended.
+    """
+    if _user_admin_role(admin_user) != ADMIN_ROLE_GLOBAL:
+        raise HTTPException(status_code=403, detail="Global admin role required")
+
+    table_names = ["assess_sessions", "background_jobs"]
+    result: dict[str, dict[str, int | None]] = {}
+    with engine.begin() as conn:
+        for table_name in table_names:
+            before_count = _table_row_count(conn, table_name)
+            try:
+                conn.execute(text(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY CASCADE'))
+            except Exception:
+                conn.execute(text(f'DELETE FROM "{table_name}"'))
+            after_count = _table_row_count(conn, table_name)
+            result[table_name] = {"before": before_count, "after": after_count}
+    return {"ok": True, "cleared": result}
+
+
 @admin.post("/users/{user_id}/reset")
 def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
     """
@@ -22827,6 +22850,31 @@ def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
         _delete_rows("psych_profiles", s.query(PsychProfile).filter(PsychProfile.user_id == user_id))
         _delete_rows("assessment_runs", s.query(AssessmentRun).filter(AssessmentRun.user_id == user_id))
         _delete_rows("assess_sessions", s.query(AssessSession).filter(AssessSession.user_id == user_id))
+        try:
+            count = s.execute(text("DELETE FROM assess_sessions WHERE user_id = :user_id"), {"user_id": user_id}).rowcount
+            deleted["assess_sessions_raw"] = int(count or 0)
+        except Exception:
+            deleted["assess_sessions_raw"] = 0
+        try:
+            if getattr(engine.dialect, "name", "") == "postgresql":
+                count = s.execute(
+                    text(
+                        """
+                        DELETE FROM background_jobs
+                        WHERE user_id = :user_id
+                           OR payload ->> 'user_id' = :user_id_text
+                        """
+                    ),
+                    {"user_id": user_id, "user_id_text": str(user_id)},
+                ).rowcount
+            else:
+                count = s.execute(
+                    text("DELETE FROM background_jobs WHERE user_id = :user_id"),
+                    {"user_id": user_id},
+                ).rowcount
+            deleted["background_jobs"] = int(count or 0)
+        except Exception:
+            deleted["background_jobs"] = 0
 
         _delete_rows("check_ins", s.query(CheckIn).filter(CheckIn.user_id == user_id))
         _delete_rows("preference_inference_audit", s.query(PreferenceInferenceAudit).filter(PreferenceInferenceAudit.user_id == user_id))
