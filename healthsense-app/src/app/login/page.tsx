@@ -295,25 +295,35 @@ export default function LoginPage() {
     }
   };
 
+  const inputClass =
+    "mt-2 h-13 w-full rounded-[14px] border border-[var(--border)] bg-[var(--input-background)] px-4 text-[17px] text-[var(--text-primary)] outline-none transition focus:border-[var(--text-primary)]";
+  const labelClass = "text-[14px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]";
+  const primaryButtonClass =
+    "min-h-13 w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-[17px] font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
+  const secondaryButtonClass =
+    "min-h-13 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-[17px] font-semibold text-[var(--text-primary)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
+
   return (
-    <main className="min-h-[100dvh] overflow-x-hidden bg-white px-4 py-5 text-[#1e1b16] sm:px-6 sm:py-6">
-      <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)] sm:p-8">
-        <div>
-          <div className="flex items-center">
-            <HealthSenseMark className="h-10 w-7" />
-          </div>
-          <h1 className="mt-4 text-3xl">Sign in</h1>
-          <p className="mt-2 text-sm text-[#6b6257]">
+    <main className="flex min-h-[100dvh] items-center overflow-x-hidden bg-[var(--background)] px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[var(--foreground)] sm:px-6">
+      <section className="mx-auto flex w-full max-w-md flex-col gap-6">
+        <div className="space-y-3">
+          <HealthSenseMark className="h-12 w-8" />
+          <div>
+            <h1 className="text-[2.4rem] font-semibold leading-none text-[var(--text-primary)]">Sign in</h1>
+            <p className="mt-3 text-[18px] leading-7 text-[var(--text-secondary)]">
             Sign in with your mobile number, or create a free CoachSense account.
-          </p>
+            </p>
+          </div>
         </div>
 
         {!otpId ? (
-          <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-4" autoComplete="off">
-            <div className="grid grid-cols-2 gap-1 rounded-full border border-[#efe7db] bg-[#faf7f1] p-1 text-xs sm:gap-2 sm:text-sm">
+          <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-5" autoComplete="off">
+            <div className="grid grid-cols-2 gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1 text-[16px]">
               <button
                 type="button"
-                className={`rounded-full px-2 py-2 ${mode === "signin" ? "bg-white text-[#1e1b16] shadow-sm" : "text-[#6b6257]"}`}
+                className={`min-h-12 rounded-full px-3 py-2 font-semibold transition ${
+                  mode === "signin" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-secondary)]"
+                }`}
                 onClick={() => {
                   setMode("signin");
                   resetOtpState();
@@ -323,7 +333,9 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                className={`rounded-full px-2 py-2 ${mode === "create" ? "bg-white text-[#1e1b16] shadow-sm" : "text-[#6b6257]"}`}
+                className={`min-h-12 rounded-full px-3 py-2 font-semibold transition ${
+                  mode === "create" ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-secondary)]"
+                }`}
                 onClick={() => {
                   setMode("create");
                   resetOtpState();
@@ -335,9 +347,9 @@ export default function LoginPage() {
             {mode === "create" ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">First name</label>
+                  <label className={labelClass}>First name</label>
                   <input
-                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                    className={inputClass}
                     type="text"
                     autoComplete="given-name"
                     value={firstName}
@@ -346,9 +358,9 @@ export default function LoginPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Surname</label>
+                  <label className={labelClass}>Surname</label>
                   <input
-                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                    className={inputClass}
                     type="text"
                     autoComplete="family-name"
                     value={surname}
@@ -359,9 +371,9 @@ export default function LoginPage() {
               </div>
             ) : null}
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Mobile number</label>
+              <label className={labelClass}>Mobile number</label>
               <input
-                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                className={inputClass}
                 type="text"
                 autoComplete="tel"
                 inputMode="tel"
@@ -372,9 +384,9 @@ export default function LoginPage() {
             </div>
             {mode === "signin" ? (
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Password</label>
+              <label className={labelClass}>Password</label>
               <input
-                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                className={inputClass}
                 type="password"
                 autoComplete="current-password"
                 value={password}
@@ -382,26 +394,26 @@ export default function LoginPage() {
                 placeholder="Leave blank if first time"
               />
               <div className="mt-2 text-right">
-                <a className="text-xs text-[var(--accent)] underline" href="/reset-password">
+                <a className="text-[15px] font-semibold text-[var(--accent)] underline" href="/reset-password">
                   Forgot password?
                 </a>
               </div>
             </div>
             ) : (
-              <label className="flex items-start gap-2 text-sm text-[#6b6257]">
+              <label className="flex items-start gap-3 text-[16px] leading-6 text-[var(--text-secondary)]">
                 <input
-                  className="mt-1"
+                  className="mt-1 h-5 w-5 accent-[var(--action-primary-bg)]"
                   type="checkbox"
                   checked={acceptedTerms}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
                 />
                 <span>
                   I agree to the{" "}
-                  <a className="text-[var(--accent)] underline" href="/terms" target="_blank" rel="noreferrer">
+                  <a className="font-semibold text-[var(--accent)] underline" href="/terms" target="_blank" rel="noreferrer">
                     Terms
                   </a>{" "}
                   and{" "}
-                  <a className="text-[var(--accent)] underline" href="/privacy" target="_blank" rel="noreferrer">
+                  <a className="font-semibold text-[var(--accent)] underline" href="/privacy" target="_blank" rel="noreferrer">
                     Privacy Policy
                   </a>
                   .
@@ -409,14 +421,15 @@ export default function LoginPage() {
               </label>
             )}
             <button
-              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className={primaryButtonClass}
               type="submit"
               disabled={loading || restoringSession}
             >
               {loading ? "Sending…" : mode === "create" ? "Create account" : "Send login code"}
             </button>
-            <label className="flex items-center gap-2 text-sm text-[#6b6257]">
+            <label className="flex items-center gap-3 text-[16px] text-[var(--text-secondary)]">
               <input
+                className="h-5 w-5 accent-[var(--action-primary-bg)]"
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
@@ -425,13 +438,13 @@ export default function LoginPage() {
             </label>
           </form>
         ) : (
-          <form onSubmit={verifyOtp} className="space-y-4" autoComplete="off">
+          <form onSubmit={verifyOtp} className="space-y-5" autoComplete="off">
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              <label className={labelClass}>
                 {mode === "create" ? "Account code" : "Login code"}
               </label>
               <input
-                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm tracking-[0.3em]"
+                className={`${inputClass} text-center tracking-[0.3em]`}
                 inputMode="numeric"
                 pattern="[0-9]*"
                 autoComplete="one-time-code"
@@ -440,12 +453,12 @@ export default function LoginPage() {
                 placeholder="123456"
               />
             </div>
-            <p className="text-sm text-[#6b6257]">Use the code sent to your mobile number.</p>
+            <p className="text-[16px] leading-6 text-[var(--text-secondary)]">Use the code sent to your mobile number.</p>
             {setupRequired && mode === "signin" ? (
-              <p className="text-sm text-[#6b6257]">First time login — you’ll be prompted to set your security after this step.</p>
+              <p className="text-[16px] leading-6 text-[var(--text-secondary)]">First time login - you’ll be prompted to set your security after this step.</p>
             ) : null}
             <button
-              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className={primaryButtonClass}
               type="submit"
               disabled={loading || restoringSession}
             >
@@ -453,7 +466,7 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+              className={secondaryButtonClass}
               onClick={() => requestOtp(null, "whatsapp")}
               disabled={loading || restoringSession}
             >
@@ -461,7 +474,7 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+              className={secondaryButtonClass}
               onClick={() => requestOtp(null, "sms")}
               disabled={loading || restoringSession}
             >
@@ -469,7 +482,7 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+              className={secondaryButtonClass}
               onClick={resetOtpState}
             >
               Use a different number
@@ -477,8 +490,12 @@ export default function LoginPage() {
           </form>
         )}
 
-        {status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
-      </div>
+        {status ? (
+          <p className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[16px] leading-6 text-[var(--text-secondary)]">
+            {status}
+          </p>
+        ) : null}
+      </section>
     </main>
   );
 }
