@@ -616,6 +616,7 @@ def _drop_all_except(keep_tables: set[str]) -> None:
 def _clear_reset_runtime_tables() -> None:
     """Clear runtime/user generated tables that must not survive a DB reset."""
     runtime_tables = [
+        "assess_sessions",
         "background_jobs",
         "urine_tests",
     ]
