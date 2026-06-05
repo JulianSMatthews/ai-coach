@@ -1,14 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import HealthSenseMark from "@/components/HealthSenseMark";
 
+const NO_SPLASH_PATHS = new Set([
+  "/login",
+  "/reset-password",
+  "/setup-security",
+  "/privacy",
+  "/terms",
+  "/support",
+  "/delete-account",
+]);
+
 export default function AppSplash() {
+  const pathname = usePathname();
   const [visible, setVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const [showWords, setShowWords] = useState(false);
 
   useEffect(() => {
+    if (NO_SPLASH_PATHS.has(pathname || "")) {
+      setVisible(false);
+      return;
+    }
+    setVisible(true);
+    setLeaving(false);
+    setShowWords(false);
     const wordsTimer = window.setTimeout(() => setShowWords(true), 1650);
     const leaveTimer = window.setTimeout(() => setLeaving(true), 3150);
     const removeTimer = window.setTimeout(() => setVisible(false), 3650);
@@ -18,7 +37,7 @@ export default function AppSplash() {
       window.clearTimeout(leaveTimer);
       window.clearTimeout(removeTimer);
     };
-  }, []);
+  }, [pathname]);
 
   if (!visible) return null;
 
