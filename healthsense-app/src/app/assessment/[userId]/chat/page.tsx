@@ -234,7 +234,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   const pageShellClassName = "px-3 py-4 sm:px-5 sm:py-6";
   const pageContentClassName = "mx-auto max-w-4xl space-y-4 sm:space-y-5";
   const chatPath = `/assessment/${encodeURIComponent(userId)}/chat${isTruthyToken(resolvedSearchParams.lead) ? "?lead=1" : ""}`;
-  const reloginHref = `/login?next=${encodeURIComponent(chatPath)}`;
+  const reloginHref = `/login?resetSession=1&next=${encodeURIComponent(chatPath)}`;
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
   const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
   const cookieStore = await cookies();
@@ -306,7 +306,14 @@ export default async function AssessmentChatPage(props: PageProps) {
     }
   }
   if (statusLoadError && !leadFlow) {
-    const shouldRelogin = statusLoadError.status === 401 || statusLoadError.status === 403;
+    const lowerStatusMessage = statusLoadError.message.toLowerCase();
+    const shouldRelogin =
+      statusLoadError.status === 401 ||
+      statusLoadError.status === 403 ||
+      statusLoadError.status === 404 ||
+      lowerStatusMessage.includes("user not found") ||
+      lowerStatusMessage.includes("invalid session") ||
+      lowerStatusMessage.includes("session required");
     return (
       <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName="flex min-h-[70dvh] items-center justify-center">
         <Card className="w-full max-w-[24rem] text-center shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">

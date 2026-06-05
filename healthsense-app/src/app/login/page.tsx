@@ -47,6 +47,24 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const resetSession = (() => {
+      try {
+        const url = new URL(window.location.href);
+        const raw = (url.searchParams.get("resetSession") || "").trim().toLowerCase();
+        return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+      } catch {
+        return false;
+      }
+    })();
+    if (resetSession) {
+      try {
+        document.cookie = "hs_session=; path=/; max-age=0";
+        document.cookie = "hs_user_id=; path=/; max-age=0";
+        window.localStorage.removeItem("hs_session_local");
+        window.localStorage.removeItem("hs_user_id_local");
+      } catch {}
+      clearStoredLoginState();
+    }
     try {
       const savedOtpId = window.sessionStorage.getItem("hs_login_otp_id");
       const savedPhone = window.sessionStorage.getItem("hs_login_phone");
@@ -93,13 +111,21 @@ export default function LoginPage() {
     };
 
     const hasSessionCookie = document.cookie.includes("hs_session=");
-    if (hasSessionCookie) {
+    const resetSession = (() => {
+      try {
+        const raw = (new URLSearchParams(window.location.search).get("resetSession") || "").trim().toLowerCase();
+        return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+      } catch {
+        return false;
+      }
+    })();
+    if (hasSessionCookie && !resetSession) {
       redirectToApp();
       return;
     }
 
     const token = window.localStorage.getItem("hs_session_local");
-    if (!token) return;
+    if (!token || resetSession) return;
 
     const restoreSession = async () => {
       setRestoringSession(true);
