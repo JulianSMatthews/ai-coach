@@ -898,6 +898,10 @@ def on_startup():
                     debug_log("apscheduler tables ensured after reset", tag="scheduler")
                 except Exception as e:
                     print(f"⚠️  ensure_apscheduler_tables after reset failed: {e!r}")
+                try:
+                    _clear_reset_runtime_tables()
+                except Exception as e:
+                    print(f"⚠️  Final runtime table reset cleanup error: {e!r}")
 
                 # Ensure reports dir exists even when not resetting DB
                 try:
