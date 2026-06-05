@@ -16,12 +16,13 @@ const NO_SPLASH_PATHS = new Set([
 
 export default function AppSplash() {
   const pathname = usePathname();
+  const skipSplash = NO_SPLASH_PATHS.has(pathname || "");
   const [visible, setVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const [showWords, setShowWords] = useState(false);
 
   useEffect(() => {
-    if (NO_SPLASH_PATHS.has(pathname || "")) {
+    if (skipSplash) {
       setVisible(false);
       return;
     }
@@ -37,9 +38,9 @@ export default function AppSplash() {
       window.clearTimeout(leaveTimer);
       window.clearTimeout(removeTimer);
     };
-  }, [pathname]);
+  }, [skipSplash]);
 
-  if (!visible) return null;
+  if (skipSplash || !visible) return null;
 
   return (
     <div
