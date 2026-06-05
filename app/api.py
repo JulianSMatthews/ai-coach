@@ -660,6 +660,40 @@ def _table_row_count(conn, table_name: str) -> int | None:
         return None
 
 
+def _reset_table_identity(conn, table_name: str) -> None:
+    if getattr(engine.dialect, "name", "") != "postgresql":
+        return
+    try:
+        sequence_name = conn.execute(text("SELECT pg_get_serial_sequence(:table_name, 'id')"), {"table_name": table_name}).scalar()
+        if sequence_name:
+            conn.execute(text("SELECT setval(:sequence_name, 1, false)"), {"sequence_name": sequence_name})
+    except Exception as exc:
+        print(f"⚠️  Reset identity warning for {table_name}: {exc}")
+
+
+def _delete_all_rows_from_table(table_name: str) -> tuple[int | None, int | None]:
+    """
+    Delete runtime rows without TRUNCATE CASCADE so preserved tables that hold
+    nullable references are not truncated as a side effect.
+    """
+    before_count: int | None = None
+    after_count: int | None = None
+    with engine.begin() as conn:
+        before_count = _table_row_count(conn, table_name)
+        try:
+            if table_name == "background_jobs":
+                conn.execute(text("UPDATE content_prompt_generations SET job_id = NULL WHERE job_id IS NOT NULL"))
+            elif table_name == "assess_sessions":
+                conn.execute(text("UPDATE user_concept_state SET source_assess_session_id = NULL WHERE source_assess_session_id IS NOT NULL"))
+            conn.execute(text(f'DELETE FROM "{table_name}"'))
+            _reset_table_identity(conn, table_name)
+        except Exception as exc:
+            print(f"⚠️  Reset cleanup warning for {table_name}: {exc}")
+            raise
+        after_count = _table_row_count(conn, table_name)
+    return before_count, after_count
+
+
 def _clear_reset_runtime_tables() -> dict[str, int | None]:
     """Clear runtime/user generated tables that must not survive a DB reset."""
     runtime_tables = [
@@ -668,19 +702,14 @@ def _clear_reset_runtime_tables() -> dict[str, int | None]:
         "urine_tests",
     ]
     remaining: dict[str, int | None] = {}
-    with engine.begin() as conn:
-        for table_name in runtime_tables:
-            before_count = _table_row_count(conn, table_name)
-            try:
-                conn.execute(text(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY CASCADE'))
-            except Exception:
-                try:
-                    conn.execute(text(f'DELETE FROM "{table_name}"'))
-                except Exception as exc:
-                    print(f"⚠️  Reset cleanup warning for {table_name}: {exc}")
-            after_count = _table_row_count(conn, table_name)
-            remaining[table_name] = after_count
-            print(f"[startup] reset cleanup {table_name}: before={before_count} after={after_count}")
+    for table_name in runtime_tables:
+        try:
+            before_count, after_count = _delete_all_rows_from_table(table_name)
+        except Exception:
+            before_count = None
+            after_count = None
+        remaining[table_name] = after_count
+        print(f"[startup] reset cleanup {table_name}: before={before_count} after={after_count}")
     return remaining
 
 
@@ -22751,15 +22780,9 @@ def admin_reset_runtime_tables(admin_user: User = Depends(_require_admin)):
 
     table_names = ["assess_sessions", "background_jobs"]
     result: dict[str, dict[str, int | None]] = {}
-    with engine.begin() as conn:
-        for table_name in table_names:
-            before_count = _table_row_count(conn, table_name)
-            try:
-                conn.execute(text(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY CASCADE'))
-            except Exception:
-                conn.execute(text(f'DELETE FROM "{table_name}"'))
-            after_count = _table_row_count(conn, table_name)
-            result[table_name] = {"before": before_count, "after": after_count}
+    for table_name in table_names:
+        before_count, after_count = _delete_all_rows_from_table(table_name)
+        result[table_name] = {"before": before_count, "after": after_count}
     return {"ok": True, "cleared": result}
 
 
