@@ -613,6 +613,23 @@ def _drop_all_except(keep_tables: set[str]) -> None:
                 print(f"⚠️  Drop warning for {table.name}: {e}")
 
 
+def _clear_reset_runtime_tables() -> None:
+    """Clear runtime/user generated tables that must not survive a DB reset."""
+    runtime_tables = [
+        "background_jobs",
+        "urine_tests",
+    ]
+    with engine.begin() as conn:
+        for table_name in runtime_tables:
+            try:
+                conn.execute(text(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY CASCADE'))
+            except Exception:
+                try:
+                    conn.execute(text(f'DELETE FROM "{table_name}"'))
+                except Exception as exc:
+                    print(f"⚠️  Reset cleanup warning for {table_name}: {exc}")
+
+
 def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
     reports_dir = resolve_reports_dir()
     if not os.path.isdir(reports_dir):
@@ -829,6 +846,12 @@ def on_startup():
 
                 # Seed
                 run_seed()
+
+                # Clear runtime tables that are outside the preserved education programme definitions.
+                try:
+                    _clear_reset_runtime_tables()
+                except Exception as e:
+                    print(f"⚠️  Runtime table reset cleanup error: {e!r}")
 
                 # Clean reports after reset (optionally keep content files)
                 try:
