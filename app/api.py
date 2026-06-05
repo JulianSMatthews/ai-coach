@@ -3629,8 +3629,8 @@ def _send_auth_code(
 
     phone_target = str(user_phone or "").strip()
     email_target = _normalize_auth_email(user_email)
-    text = f"Your HealthSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
-    email_subject = f"Your HealthSense {purpose_label}"
+    text = f"Your CoachSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
+    email_subject = f"Your CoachSense {purpose_label}"
 
     def _try_email_via_smtp() -> str:
         host = (os.getenv("AUTH_SMTP_HOST") or "").strip()
