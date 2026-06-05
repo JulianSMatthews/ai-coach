@@ -462,7 +462,7 @@ def main() -> None:
         ensure_wearables_schema()
     except Exception as e:
         print(f"[worker] WARN: ensure wearable schema failed: {e}")
-    ensure_job_table()
+    _wait_for_job_table_ready()
     worker_id = os.getenv("WORKER_ID") or socket.gethostname()
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "2") or "2")
     lock_timeout = int(os.getenv("WORKER_LOCK_TIMEOUT_MINUTES", "30") or "30")
@@ -551,6 +551,22 @@ def _wait_for_api_ready() -> None:
                 pass
         time.sleep(max(1, poll_s))
     print("[worker] API wait timeout reached; continuing startup")
+
+
+def _wait_for_job_table_ready() -> None:
+    timeout_s = int((os.getenv("WORKER_WAIT_FOR_JOB_TABLE_TIMEOUT_SECONDS") or "180").strip() or "180")
+    poll_s = int((os.getenv("WORKER_WAIT_FOR_JOB_TABLE_POLL_SECONDS") or "3").strip() or "3")
+    deadline = time.time() + max(5, timeout_s)
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        try:
+            ensure_job_table()
+            return
+        except Exception as exc:
+            last_error = exc
+            print(f"[worker] waiting for background_jobs table: {exc}")
+            time.sleep(max(1, poll_s))
+    raise RuntimeError(f"background_jobs table not ready after {timeout_s}s: {last_error}")
 
 
 if __name__ == "__main__":

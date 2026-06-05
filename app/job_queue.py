@@ -6,18 +6,17 @@ from datetime import datetime, timedelta
 from typing import Any, Iterable
 
 from sqlalchemy import and_, or_, text as sa_text
-from sqlalchemy.exc import ProgrammingError, OperationalError
+from sqlalchemy.exc import IntegrityError, ProgrammingError, OperationalError
 
 from .db import SessionLocal, engine
-from .models import BackgroundJob, Base, PromptSettings
+from .models import BackgroundJob, PromptSettings
 
 
 def ensure_job_table() -> None:
     try:
-        Base.metadata.create_all(bind=engine, tables=[BackgroundJob.__table__])
-    except Exception:
-        # Fallback: create all if table list not supported
-        Base.metadata.create_all(bind=engine)
+        BackgroundJob.__table__.create(bind=engine, checkfirst=True)
+    except (IntegrityError, ProgrammingError, OperationalError):
+        raise
     try:
         with engine.connect() as conn:
             conn.execute(sa_text("ALTER TABLE background_jobs ADD COLUMN IF NOT EXISTS available_at timestamp;"))
