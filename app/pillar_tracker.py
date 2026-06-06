@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import math
+import hashlib
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -31,6 +32,7 @@ _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
 _HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote_v3"
+_HOME_PILLAR_QUOTE_SHORT_PREF_PREFIX = "hpq3"
 _HOME_PILLAR_LATEST_QUOTE_PREF_PREFIX = "coach_home_pillar_latest_quote_v1"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
@@ -1800,6 +1802,13 @@ def _latest_daily_pillar_quote_key(anchor: date, pillar_key: str) -> str:
     return f"{_HOME_PILLAR_LATEST_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}"
 
 
+def _daily_pillar_quote_cache_key(anchor: date, pillar_key: str, context_signature: str) -> str:
+    key = str(pillar_key or "").strip().lower()
+    signature = str(context_signature or "").strip()
+    suffix = hashlib.sha1(signature.encode("utf-8")).hexdigest()[:8] if signature else "base"
+    return f"{_HOME_PILLAR_QUOTE_SHORT_PREF_PREFIX}:{anchor.isoformat()}:{key}:{suffix}"
+
+
 def _stored_generated_daily_pillar_quote(value: str | None) -> str:
     quote = _normalise_daily_pillar_quote(value)
     return quote if quote and not _is_fallback_daily_pillar_quote(quote) else ""
@@ -1934,7 +1943,8 @@ def _daily_pillar_quote(
     if isinstance(concept_context, dict):
         context_signature = str(concept_context.get("signature") or "").strip().replace(" ", "")
     cache_suffix = context_signature or "baseline"
-    cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:{cache_suffix}"
+    cache_key = _daily_pillar_quote_cache_key(anchor, key, context_signature)
+    legacy_cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:{cache_suffix}"
     generated_for_persistence = ""
     try:
         with SessionLocal() as session:
@@ -1943,6 +1953,12 @@ def _daily_pillar_quote(
                 .filter(UserPreference.user_id == int(user_id), UserPreference.key == cache_key)
                 .first()
             )
+            if pref is None and len(legacy_cache_key) <= 64:
+                pref = (
+                    session.query(UserPreference)
+                    .filter(UserPreference.user_id == int(user_id), UserPreference.key == legacy_cache_key)
+                    .first()
+                )
             cached = _normalise_daily_pillar_quote(getattr(pref, "value", None))
             if cached and not _is_fallback_daily_pillar_quote(cached):
                 if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
@@ -2024,10 +2040,6 @@ def _daily_pillar_quote(
             )
             if generated:
                 generated_for_persistence = generated
-                if pref:
-                    pref.value = generated
-                else:
-                    session.add(UserPreference(user_id=int(user_id), key=cache_key, value=generated))
                 _save_latest_daily_pillar_quote(
                     session,
                     user_id=int(user_id),
@@ -2037,6 +2049,23 @@ def _daily_pillar_quote(
                     source_cache_key=cache_key,
                 )
                 session.commit()
+                try:
+                    cache_pref = (
+                        session.query(UserPreference)
+                        .filter(UserPreference.user_id == int(user_id), UserPreference.key == cache_key)
+                        .first()
+                    )
+                    if cache_pref:
+                        cache_pref.value = generated
+                    else:
+                        session.add(UserPreference(user_id=int(user_id), key=cache_key, value=generated))
+                    session.commit()
+                except Exception as cache_exc:
+                    session.rollback()
+                    print(
+                        f"[pillar_tracker] daily quote cache failed user_id={user_id} "
+                        f"pillar={key} key={cache_key}: {cache_exc}"
+                    )
                 return generated
             return _fallback_daily_pillar_quote(key, resolved_label)
     except Exception as exc:
