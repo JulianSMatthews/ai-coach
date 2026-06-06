@@ -5,14 +5,13 @@ import { friendlyAuthError } from "@/lib/authErrors";
 import { looksLikePhone, normalizePhoneForAuth } from "@/lib/phone";
 import HealthSenseMark from "@/components/HealthSenseMark";
 
-const LAST_LOGIN_PHONE_KEY = "hs_last_login_phone";
-
 export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "create">("signin");
   const [firstName, setFirstName] = useState("");
   const [surname, setSurname] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [signinPasswordStep, setSigninPasswordStep] = useState(false);
   const [createPassword, setCreatePassword] = useState("");
   const [createConfirmPassword, setCreateConfirmPassword] = useState("");
   const [otpId, setOtpId] = useState<number | null>(null);
@@ -42,6 +41,7 @@ export default function LoginPage() {
     setOtpId(null);
     setCode("");
     setSetupRequired(false);
+    setSigninPasswordStep(false);
     setCreatePassword("");
     setCreateConfirmPassword("");
     clearStoredLoginState();
@@ -75,8 +75,7 @@ export default function LoginPage() {
       const savedFirstName = window.sessionStorage.getItem("hs_login_first_name");
       const savedSurname = window.sessionStorage.getItem("hs_login_surname");
       const savedTerms = window.sessionStorage.getItem("hs_login_terms");
-      const savedLastPhone = window.localStorage.getItem(LAST_LOGIN_PHONE_KEY);
-      if (savedPhone || savedLastPhone) setPhone(savedPhone || savedLastPhone || "");
+      if (savedPhone) setPhone(savedPhone);
       if (savedFirstName) setFirstName(savedFirstName);
       if (savedSurname) setSurname(savedSurname);
       if (savedMode === "create") setMode("create");
@@ -198,9 +197,11 @@ export default function LoginPage() {
     if (normalizedPhone !== phone) {
       setPhone(normalizedPhone);
     }
-    try {
-      window.localStorage.setItem(LAST_LOGIN_PHONE_KEY, normalizedPhone);
-    } catch {}
+    if (mode === "signin" && !signinPasswordStep) {
+      setSigninPasswordStep(true);
+      setStatus(null);
+      return;
+    }
 
     setLoading(true);
     setStatus(null);
@@ -254,8 +255,8 @@ export default function LoginPage() {
     }
   };
 
-  const verifyOtp = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const verifyOtp = async (event?: React.FormEvent) => {
+    event?.preventDefault();
     if (!otpId) return;
     const normalizedPhone = normalizePhoneForAuth(phone);
     if (mode === "create") {
@@ -299,7 +300,6 @@ export default function LoginPage() {
         try {
           window.localStorage.setItem("hs_session_local", token);
           window.localStorage.setItem("hs_user_id_local", String(userId));
-          window.localStorage.setItem(LAST_LOGIN_PHONE_KEY, normalizedPhone);
         } catch {}
       }
       if (mode === "create") {
@@ -416,25 +416,45 @@ export default function LoginPage() {
                 </div>
               </div>
             ) : null}
-            <div>
-              <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
-              <input
-                id="mobile-number"
-                name="tel"
-                className={inputClass}
-                type="tel"
-                autoComplete="tel"
-                inputMode="tel"
-                enterKeyHint="next"
-                autoFocus
-                autoCapitalize="none"
-                autoCorrect="off"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+44 7700 900000"
-              />
-            </div>
-            {mode === "signin" ? (
+            {mode === "signin" && signinPasswordStep ? (
+              <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">Mobile number</p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="text-[17px] font-semibold text-[var(--text-primary)]">{phone}</p>
+                  <button
+                    type="button"
+                    className="text-[15px] font-semibold text-[var(--accent)] underline"
+                    onClick={() => {
+                      setSigninPasswordStep(false);
+                      setPassword("");
+                      setStatus(null);
+                    }}
+                  >
+                    Change
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
+                <input
+                  id="mobile-number"
+                  name="tel"
+                  className={inputClass}
+                  type="tel"
+                  autoComplete="tel"
+                  inputMode="tel"
+                  enterKeyHint="next"
+                  autoFocus
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+44 7700 900000"
+                />
+              </div>
+            )}
+            {mode === "signin" && signinPasswordStep ? (
             <div>
               <label className={labelClass}>Password</label>
               <input
@@ -452,7 +472,7 @@ export default function LoginPage() {
                 </a>
               </div>
             </div>
-            ) : (
+            ) : mode === "create" ? (
               <label className="flex items-start gap-3 text-[16px] leading-6 text-[var(--text-secondary)]">
                 <input
                   className="mt-1 h-5 w-5 accent-[var(--action-primary-bg)]"
@@ -472,13 +492,19 @@ export default function LoginPage() {
                   .
                 </span>
               </label>
-            )}
+            ) : null}
             <button
               className={primaryButtonClass}
               type="submit"
               disabled={loading || restoringSession}
             >
-              {loading ? "Sending…" : mode === "create" ? "Create account" : "Send login code"}
+              {loading
+                ? "Sending…"
+                : mode === "create"
+                  ? "Create account"
+                  : signinPasswordStep
+                    ? "Send login code"
+                    : "Continue"}
             </button>
             <label className="flex items-center gap-3 text-[16px] text-[var(--text-secondary)]">
               <input
@@ -491,27 +517,29 @@ export default function LoginPage() {
             </label>
           </form>
         ) : (
-          <form onSubmit={verifyOtp} className="space-y-5" autoComplete="on">
-            <div>
-              <label className={labelClass}>
-                {mode === "create" ? "Account code" : "Login code"}
-              </label>
-              <input
-                ref={codeInputRef}
-                id="auth-code"
-                name="one-time-code"
-                className={`${inputClass} text-center tracking-[0.3em]`}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="one-time-code"
-                enterKeyHint="next"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="123456"
-              />
-            </div>
-            <p className="text-[16px] leading-6 text-[var(--text-secondary)]">Use the code sent to your mobile number.</p>
+          <div className="space-y-5">
+            <form onSubmit={verifyOtp} className="space-y-5" autoComplete="one-time-code">
+              <div>
+                <label className={labelClass}>
+                  {mode === "create" ? "Account code" : "Login code"}
+                </label>
+                <input
+                  ref={codeInputRef}
+                  id="auth-code"
+                  name="one-time-code"
+                  className={`${inputClass} text-center tracking-[0.3em]`}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  enterKeyHint="next"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123456"
+                />
+              </div>
+              <p className="text-[16px] leading-6 text-[var(--text-secondary)]">Use the code sent to your mobile number.</p>
+            </form>
             {mode === "create" ? (
               <div className="space-y-4">
                 <div>
@@ -545,7 +573,8 @@ export default function LoginPage() {
             ) : null}
             <button
               className={primaryButtonClass}
-              type="submit"
+              type="button"
+              onClick={() => void verifyOtp()}
               disabled={loading || restoringSession}
             >
               {loading ? "Verifying…" : "Verify & continue"}
@@ -573,7 +602,7 @@ export default function LoginPage() {
             >
               Use a different number
             </button>
-          </form>
+          </div>
         )}
 
         {status ? (
