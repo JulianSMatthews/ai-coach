@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
 import { looksLikePhone, normalizePhoneForAuth } from "@/lib/phone";
 import HealthSenseMark from "@/components/HealthSenseMark";
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [restoringSession, setRestoringSession] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearStoredLoginState = () => {
     if (typeof window === "undefined") return;
@@ -163,6 +164,14 @@ export default function LoginPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!otpId) return;
+    const timeout = window.setTimeout(() => {
+      codeInputRef.current?.focus();
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [otpId]);
 
   const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
     if (event) event.preventDefault();
@@ -474,10 +483,15 @@ export default function LoginPage() {
                 {mode === "create" ? "Account code" : "Login code"}
               </label>
               <input
+                ref={codeInputRef}
+                id="auth-code"
+                name="one-time-code"
                 className={`${inputClass} text-center tracking-[0.3em]`}
+                type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 autoComplete="one-time-code"
+                enterKeyHint="next"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="123456"
