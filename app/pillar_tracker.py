@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text as sa_text
 
 from .db import SessionLocal, engine
 from .models import AssessmentRun, DailyPillarTrackerEntry, PillarCueQuote, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
@@ -384,6 +384,18 @@ def ensure_pillar_tracker_schema() -> None:
     try:
         DailyPillarTrackerEntry.__table__.create(bind=engine, checkfirst=True)
         PillarCueQuote.__table__.create(bind=engine, checkfirst=True)
+        with engine.connect() as conn:
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS quote_date date;"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS pillar_key varchar(64);"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS quote text;"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS source_cache_key varchar(255);"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS meta json;"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS generated_at timestamp DEFAULT now();"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();"))
+            conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now();"))
+            conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_pillar_cue_quotes_user_day ON pillar_cue_quotes(user_id, quote_date);"))
+            conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_pillar_cue_quotes_user_pillar_day ON pillar_cue_quotes(user_id, pillar_key, quote_date);"))
+            conn.commit()
         _TRACKER_SCHEMA_READY = True
     except Exception:
         _TRACKER_SCHEMA_READY = False
@@ -1843,7 +1855,7 @@ def _save_latest_daily_pillar_quote(
 
 def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str, anchor: date) -> str:
     normalized_pillar_key = str(pillar_key or "").strip().lower()
-    row = (
+    exact_row = (
         session.query(PillarCueQuote)
         .filter(
             PillarCueQuote.user_id == int(user_id),
@@ -1852,7 +1864,20 @@ def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str,
         )
         .first()
     )
-    quote = _stored_generated_daily_pillar_quote(getattr(row, "quote", None))
+    quote = _stored_generated_daily_pillar_quote(getattr(exact_row, "quote", None))
+    if quote:
+        return quote
+    latest_row = (
+        session.query(PillarCueQuote)
+        .filter(
+            PillarCueQuote.user_id == int(user_id),
+            PillarCueQuote.pillar_key == normalized_pillar_key,
+            PillarCueQuote.quote_date <= anchor,
+        )
+        .order_by(PillarCueQuote.quote_date.desc(), PillarCueQuote.generated_at.desc(), PillarCueQuote.id.desc())
+        .first()
+    )
+    quote = _stored_generated_daily_pillar_quote(getattr(latest_row, "quote", None))
     if quote:
         return quote
     pref = (
@@ -1910,6 +1935,7 @@ def _daily_pillar_quote(
         context_signature = str(concept_context.get("signature") or "").strip().replace(" ", "")
     cache_suffix = context_signature or "baseline"
     cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:{cache_suffix}"
+    generated_for_persistence = ""
     try:
         with SessionLocal() as session:
             pref = (
@@ -1997,6 +2023,7 @@ def _daily_pillar_quote(
                 )
             )
             if generated:
+                generated_for_persistence = generated
                 if pref:
                     pref.value = generated
                 else:
@@ -2014,6 +2041,8 @@ def _daily_pillar_quote(
             return _fallback_daily_pillar_quote(key, resolved_label)
     except Exception as exc:
         print(f"[pillar_tracker] daily quote failed user_id={user_id} pillar={key}: {exc}")
+        if generated_for_persistence:
+            raise
         return _fallback_daily_pillar_quote(key, resolved_label)
 
 
