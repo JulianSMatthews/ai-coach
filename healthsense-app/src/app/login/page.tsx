@@ -420,10 +420,10 @@ export default function LoginPage() {
               <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
               <input
                 id="mobile-number"
-                name="phone"
+                name={mode === "signin" ? "username" : "tel"}
                 className={inputClass}
                 type="tel"
-                autoComplete="tel"
+                autoComplete={mode === "signin" ? "username" : "tel"}
                 inputMode="tel"
                 enterKeyHint="next"
                 autoFocus
@@ -438,19 +438,9 @@ export default function LoginPage() {
             <div>
               <label className={labelClass}>Password</label>
               <input
-                className="sr-only"
-                type="text"
-                name="username"
-                autoComplete="username"
-                value={phone}
-                readOnly
-                tabIndex={-1}
-                aria-hidden="true"
-              />
-              <input
                 className={inputClass}
                 type="password"
-                name="current-password"
+                name="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -502,16 +492,18 @@ export default function LoginPage() {
           </form>
         ) : (
           <form onSubmit={verifyOtp} className="space-y-5" autoComplete="on">
-            <input
-              className="sr-only"
-              type="text"
-              name="username"
-              autoComplete="username"
-              value={phone}
-              readOnly
-              tabIndex={-1}
-              aria-hidden="true"
-            />
+            {mode === "create" ? (
+              <input
+                className="sr-only"
+                type="text"
+                name="username"
+                autoComplete="username"
+                value={phone}
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+            ) : null}
             <div>
               <label className={labelClass}>
                 {mode === "create" ? "Account code" : "Login code"}
