@@ -356,7 +356,7 @@ export default function LoginPage() {
         </div>
 
         {!otpId ? (
-          <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-5" autoComplete="off">
+          <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-5" autoComplete="on">
             <div className="grid grid-cols-2 gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1 text-[16px]">
               <button
                 type="button"
@@ -413,12 +413,13 @@ export default function LoginPage() {
               <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
               <input
                 id="mobile-number"
-                name="tel"
+                name="phone"
                 className={inputClass}
                 type="tel"
                 autoComplete="tel"
                 inputMode="tel"
                 enterKeyHint="next"
+                autoFocus
                 autoCapitalize="none"
                 autoCorrect="off"
                 value={phone}
@@ -430,8 +431,19 @@ export default function LoginPage() {
             <div>
               <label className={labelClass}>Password</label>
               <input
+                className="sr-only"
+                type="text"
+                name="username"
+                autoComplete="username"
+                value={phone}
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <input
                 className={inputClass}
                 type="password"
+                name="current-password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -482,7 +494,17 @@ export default function LoginPage() {
             </label>
           </form>
         ) : (
-          <form onSubmit={verifyOtp} className="space-y-5" autoComplete="off">
+          <form onSubmit={verifyOtp} className="space-y-5" autoComplete="on">
+            <input
+              className="sr-only"
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={phone}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+            />
             <div>
               <label className={labelClass}>
                 {mode === "create" ? "Account code" : "Login code"}
@@ -510,6 +532,7 @@ export default function LoginPage() {
                   <input
                     className={inputClass}
                     type="password"
+                    name="new-password"
                     autoComplete="new-password"
                     value={createPassword}
                     onChange={(e) => setCreatePassword(e.target.value)}
@@ -521,6 +544,7 @@ export default function LoginPage() {
                   <input
                     className={inputClass}
                     type="password"
+                    name="confirm-new-password"
                     autoComplete="new-password"
                     value={createConfirmPassword}
                     onChange={(e) => setCreateConfirmPassword(e.target.value)}
