@@ -1,16 +1,13 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import {
-  getPillarTrackerSummary,
   getUserStatus,
-  type PillarTrackerSummaryResponse,
   type UserStatusResponse,
 } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
-import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
-import LatestAssessmentPanel from "./LatestAssessmentPanel";
 import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 
 type AppIntroHelpVideos = {
@@ -216,10 +213,6 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type CoachAppPageProps = PageProps & {
-  forceModernHome?: boolean;
-};
-
 function firstSearchValue(value: string | string[] | undefined): string {
   return String(Array.isArray(value) ? value[0] : value || "").trim();
 }
@@ -232,16 +225,17 @@ function resolveIntroAvatarOverride(value: string | string[] | undefined): boole
   return null;
 }
 
-export async function renderCoachAppPage(props: CoachAppPageProps) {
+export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
-  const forceModernHome = Boolean(props.forceModernHome);
   const resolvedSearchParams = (await props.searchParams) || {};
   const pageShellClassName = "px-3 py-4 sm:px-5 sm:py-6";
   const pageContentClassName = "mx-auto max-w-4xl space-y-4 sm:space-y-5";
   const chatPath = `/assessment/${encodeURIComponent(userId)}/chat${isTruthyToken(resolvedSearchParams.lead) ? "?lead=1" : ""}`;
-  const reloginHref = `/login?resetSession=1&next=${encodeURIComponent(chatPath)}`;
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
   const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
+  if (!leadFlow) {
+    redirect("/");
+  }
   const cookieStore = await cookies();
   const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
   const leadTokenParam = firstSearchValue(resolvedSearchParams.lt);
@@ -253,9 +247,7 @@ export async function renderCoachAppPage(props: CoachAppPageProps) {
   const assessmentIntroAvatar = shouldLoadAssessmentIntroAvatar
     ? await getAssessmentIntroAvatar(introAvatarOverride === true)
     : null;
-  const introLibraryMedia = forceModernHome
-    ? { appIntroAvatar: null, coachProductAvatar: null, helpVideos: {} }
-    : await getAppIntroLibraryMedia();
+  const introLibraryMedia = await getAppIntroLibraryMedia();
   const coachProductAvatar = introLibraryMedia.coachProductAvatar;
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
@@ -287,54 +279,23 @@ export async function renderCoachAppPage(props: CoachAppPageProps) {
   const onboarding = status.onboarding || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "light";
-  const promptState = (status.prompt_state_override || "").toLowerCase();
-  const promptBadge =
-    promptState && promptState !== "live"
-      ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
-      : "";
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(onboarding.assessment_completed_at) ||
     Boolean(status.latest_run?.finished_at);
-  const assessmentInProgress = status.status === "in_progress";
-  const chatIntroText = assessmentCompleted
-    ? ""
-    : assessmentInProgress
-      ? ""
-      : leadFlow
-      ? ""
-      : "";
-  let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
-  if (!leadFlow && !leadGuest && (forceModernHome || !assessmentInProgress)) {
-    try {
-      pillarTrackerSummary = await getPillarTrackerSummary(userId);
-    } catch {
-      pillarTrackerSummary = null;
-    }
-  }
   if (statusLoadError && !leadFlow) {
-    const lowerStatusMessage = statusLoadError.message.toLowerCase();
-    const shouldRelogin =
-      statusLoadError.status === 401 ||
-      statusLoadError.status === 403 ||
-      statusLoadError.status === 404 ||
-      lowerStatusMessage.includes("user not found") ||
-      lowerStatusMessage.includes("invalid session") ||
-      lowerStatusMessage.includes("session required");
     return (
       <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName="flex min-h-[70dvh] items-center justify-center">
         <Card className="w-full max-w-[24rem] text-center shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <p className="text-[1.75rem] font-semibold leading-tight text-[var(--text-primary)]">
-            {shouldRelogin
-              ? "Your session may have expired. Sign in again to continue."
-              : "CoachSense is being worked on. Please try again shortly."}
+            CoachSense is being worked on. Please try again shortly.
           </p>
           <div className="mt-5">
             <a
-              href={shouldRelogin ? reloginHref : chatPath}
+              href={chatPath}
               className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] sm:w-auto"
             >
-              {shouldRelogin ? "Sign in again" : "Try again"}
+              Try again
             </a>
           </div>
         </Card>
@@ -342,56 +303,21 @@ export async function renderCoachAppPage(props: CoachAppPageProps) {
     );
   }
 
-  const useAppSurface = (forceModernHome || Boolean(pillarTrackerSummary)) && !leadFlow && !leadGuest;
-  const useModernHome = useAppSurface || assessmentCompleted;
-  const resolvedPageShellClassName = useAppSurface
-    ? "h-[100dvh] overflow-hidden px-0 py-0 pt-[env(safe-area-inset-top)]"
-    : pageShellClassName;
-  const resolvedPageContentClassName = useAppSurface
-    ? "flex h-full min-w-0 flex-col overflow-hidden"
-    : pageContentClassName;
-
   return (
-    <PageShell defaultTheme={themePreference} className={resolvedPageShellClassName} contentClassName={resolvedPageContentClassName}>
+    <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
       <TextScale defaultScale={textScale} />
-      {!leadFlow && !leadGuest ? (
-        <div className={useAppSurface ? "mx-auto w-full max-w-4xl shrink-0" : ""}>
-          <AppNav
-            userId={userId}
-            promptBadge={promptBadge}
-            overallScore={status.latest_run?.combined_overall ?? null}
-            interactionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
-            userFirstName={status.user?.first_name || null}
-          />
-        </div>
-      ) : null}
-
-      <section className={useAppSurface ? "min-h-0 flex-1 overflow-x-hidden" : "space-y-3 sm:space-y-4"}>
-        {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
+      <section className="space-y-3 sm:space-y-4">
         <AssessmentChatBox
           userId={userId}
-          assessmentCompleted={useModernHome}
-          modernHomeOnly={forceModernHome}
+          assessmentCompleted={assessmentCompleted}
           isLeadGuest={leadGuest}
           leadToken={leadToken || leadTokenParam || undefined}
           showLeadBranding={leadFlow}
           introAvatar={assessmentIntroAvatar}
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
-          initialTrackerSummary={pillarTrackerSummary}
         />
-        {pillarTrackerSummary ? (
-          <LatestAssessmentPanel
-            userId={userId}
-            initialSummary={pillarTrackerSummary}
-            initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
-          />
-        ) : null}
       </section>
     </PageShell>
   );
-}
-
-export default async function AssessmentChatPage(props: PageProps) {
-  return renderCoachAppPage(props);
 }

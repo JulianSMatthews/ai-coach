@@ -12,18 +12,18 @@ Last reviewed: 2026-06-06
 
 ## Legacy or mixed areas
 
-- `/assessment/[userId]/chat` remains a mixed wrapper. It still contains both the old assessment dialog flow and the current check-in/Learn app surface.
-- `AssessmentChatBox.tsx` is the main mixed component. It currently includes legacy assessment chat state, lead assessment handling, claim identity, current check-in home, Learn, final coach message, and education quiz UI.
+- `/assessment/[userId]/chat` is now reserved for explicit lead/assessment traffic. Non-lead traffic redirects to `/`.
+- `AssessmentChatBox.tsx` remains the main mixed component. It currently includes legacy assessment chat state, lead assessment handling, claim identity, current check-in home, Learn, final coach message, and education quiz UI.
 - `/api/assessment/chat/*`, `/api/assessment/report`, `/api/assessment/*avatar*`, and `/ig/start` are assessment/lead-era routes.
 - Legacy naming remains in internal code paths, including `assessment`, `Gia`, `HealthSense`, `dashboard`, and KR/OKR wording.
 - Historical reporting, seed, and scheduler modules still contain HealthSense/Gia/assessment-era text and should not be treated as current app copy without review.
 
 ## Changes made in this cleanup pass
 
-- `/` now calls the app renderer with `forceModernHome: true`.
+- `/` now renders through the dedicated `CoachHomePage` server component.
 - The modern home path no longer needs the old assessment-completed flag before rendering the check-in/Learn surface.
 - The current home path skips the legacy assessment chat state load, preventing the old dialog textarea from appearing as the default logged-in experience.
-- The old `/assessment/[userId]/chat` route remains available for legacy and lead assessment flows.
+- The old `/assessment/[userId]/chat` route remains available only for explicit lead assessment flows.
 
 ## Recommended next cleanup
 
