@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import json
 import math
-import hashlib
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -31,9 +30,6 @@ _VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
 _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
-_HOME_PILLAR_QUOTE_PREF_PREFIX = "coach_home_pillar_daily_quote_v3"
-_HOME_PILLAR_QUOTE_SHORT_PREF_PREFIX = "hpq3"
-_HOME_PILLAR_LATEST_QUOTE_PREF_PREFIX = "coach_home_pillar_latest_quote_v1"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
     "purpose": "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
@@ -1797,18 +1793,6 @@ def _is_fallback_daily_pillar_quote(value: str | None) -> bool:
     return bool(quote and quote in _HOME_PILLAR_QUOTE_FALLBACK_VALUES)
 
 
-def _latest_daily_pillar_quote_key(anchor: date, pillar_key: str) -> str:
-    key = str(pillar_key or "").strip().lower()
-    return f"{_HOME_PILLAR_LATEST_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}"
-
-
-def _daily_pillar_quote_cache_key(anchor: date, pillar_key: str, context_signature: str) -> str:
-    key = str(pillar_key or "").strip().lower()
-    signature = str(context_signature or "").strip()
-    suffix = hashlib.sha1(signature.encode("utf-8")).hexdigest()[:8] if signature else "base"
-    return f"{_HOME_PILLAR_QUOTE_SHORT_PREF_PREFIX}:{anchor.isoformat()}:{key}:{suffix}"
-
-
 def _stored_generated_daily_pillar_quote(value: str | None) -> str:
     quote = _normalise_daily_pillar_quote(value)
     return quote if quote and not _is_fallback_daily_pillar_quote(quote) else ""
@@ -1889,12 +1873,7 @@ def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str,
     quote = _stored_generated_daily_pillar_quote(getattr(latest_row, "quote", None))
     if quote:
         return quote
-    pref = (
-        session.query(UserPreference)
-        .filter(UserPreference.user_id == int(user_id), UserPreference.key == _latest_daily_pillar_quote_key(anchor, normalized_pillar_key))
-        .first()
-    )
-    return _stored_generated_daily_pillar_quote(getattr(pref, "value", None))
+    return ""
 
 
 def _concept_score_context(
@@ -1939,66 +1918,13 @@ def _daily_pillar_quote(
 ) -> str:
     key = str(pillar_key or "").strip().lower()
     resolved_label = str(label or _pillar_label(key)).strip() or key.title()
-    context_signature = ""
-    if isinstance(concept_context, dict):
-        context_signature = str(concept_context.get("signature") or "").strip().replace(" ", "")
-    cache_suffix = context_signature or "baseline"
-    cache_key = _daily_pillar_quote_cache_key(anchor, key, context_signature)
-    legacy_cache_key = f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:{cache_suffix}"
     generated_for_persistence = ""
     try:
         with SessionLocal() as session:
-            pref = (
-                session.query(UserPreference)
-                .filter(UserPreference.user_id == int(user_id), UserPreference.key == cache_key)
-                .first()
-            )
-            if pref is None and len(legacy_cache_key) <= 64:
-                pref = (
-                    session.query(UserPreference)
-                    .filter(UserPreference.user_id == int(user_id), UserPreference.key == legacy_cache_key)
-                    .first()
-                )
-            cached = _normalise_daily_pillar_quote(getattr(pref, "value", None))
-            if cached and not _is_fallback_daily_pillar_quote(cached):
-                if key != "purpose" or cached != "Choose one action that makes today feel aligned with what matters.":
-                    _save_latest_daily_pillar_quote(
-                        session,
-                        user_id=int(user_id),
-                        pillar_key=key,
-                        anchor=anchor,
-                        quote=cached,
-                        source_cache_key=cache_key,
-                    )
-                    session.commit()
-                    return cached
             if skip_generation:
                 latest_cached = _latest_generated_daily_pillar_quote(session, int(user_id), key, anchor)
                 if latest_cached:
                     return latest_cached
-                stale_prefs = (
-                    session.query(UserPreference)
-                    .filter(
-                        UserPreference.user_id == int(user_id),
-                        UserPreference.key.like(f"{_HOME_PILLAR_QUOTE_PREF_PREFIX}:{anchor.isoformat()}:{key}:%"),
-                    )
-                    .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
-                    .limit(12)
-                    .all()
-                )
-                for stale_pref in stale_prefs:
-                    stale_cached = _normalise_daily_pillar_quote(getattr(stale_pref, "value", None))
-                    if stale_cached and not _is_fallback_daily_pillar_quote(stale_cached):
-                        _save_latest_daily_pillar_quote(
-                            session,
-                            user_id=int(user_id),
-                            pillar_key=key,
-                            anchor=anchor,
-                            quote=stale_cached,
-                            source_cache_key=str(getattr(stale_pref, "key", "") or ""),
-                        )
-                        session.commit()
-                        return stale_cached
                 return ""
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
@@ -2046,26 +1972,9 @@ def _daily_pillar_quote(
                     pillar_key=key,
                     anchor=anchor,
                     quote=generated,
-                    source_cache_key=cache_key,
+                    source_cache_key="home_pillar_daily_quote",
                 )
                 session.commit()
-                try:
-                    cache_pref = (
-                        session.query(UserPreference)
-                        .filter(UserPreference.user_id == int(user_id), UserPreference.key == cache_key)
-                        .first()
-                    )
-                    if cache_pref:
-                        cache_pref.value = generated
-                    else:
-                        session.add(UserPreference(user_id=int(user_id), key=cache_key, value=generated))
-                    session.commit()
-                except Exception as cache_exc:
-                    session.rollback()
-                    print(
-                        f"[pillar_tracker] daily quote cache failed user_id={user_id} "
-                        f"pillar={key} key={cache_key}: {cache_exc}"
-                    )
                 return generated
             return _fallback_daily_pillar_quote(key, resolved_label)
     except Exception as exc:
