@@ -45,9 +45,6 @@ export default function SetupSecurityPage() {
     setSaving(true);
     setStatus(null);
     try {
-      if (!email.trim()) {
-        throw new Error("email is required");
-      }
       if (password.length < 8) {
         throw new Error("Password must be at least 8 characters.");
       }
@@ -63,7 +60,7 @@ export default function SetupSecurityPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: resolvedUserId,
-          email,
+          email: email.trim() || undefined,
           password,
           preferred_channel: "app",
         }),
@@ -95,7 +92,7 @@ export default function SetupSecurityPage() {
           <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">First time setup</p>
           <h1 className="mt-2 text-3xl">Secure your account</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
-            Set a password for {user?.display_name || "your account"}.
+            Set a password for {user?.display_name || "your account"}. Email is optional.
           </p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4" autoComplete="off">
@@ -113,9 +110,8 @@ export default function SetupSecurityPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              required
             />
-            <p className="mt-2 text-xs text-[#6b6257]">Required for account recovery and important updates.</p>
+            <p className="mt-2 text-xs text-[#6b6257]">Optional. Add one if you want email recovery or updates.</p>
           </div>
           <div>
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Password</label>

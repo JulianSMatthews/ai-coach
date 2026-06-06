@@ -11,6 +11,8 @@ export default function LoginPage() {
   const [surname, setSurname] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createConfirmPassword, setCreateConfirmPassword] = useState("");
   const [otpId, setOtpId] = useState<number | null>(null);
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -37,6 +39,8 @@ export default function LoginPage() {
     setOtpId(null);
     setCode("");
     setSetupRequired(false);
+    setCreatePassword("");
+    setCreateConfirmPassword("");
     clearStoredLoginState();
   };
 
@@ -239,6 +243,16 @@ export default function LoginPage() {
     event.preventDefault();
     if (!otpId) return;
     const normalizedPhone = normalizePhoneForAuth(phone);
+    if (mode === "create") {
+      if (createPassword.length < 8) {
+        setStatus("Password must be at least 8 characters.");
+        return;
+      }
+      if (createPassword !== createConfirmPassword) {
+        setStatus("Passwords do not match.");
+        return;
+      }
+    }
     setLoading(true);
     setStatus(null);
     try {
@@ -272,6 +286,21 @@ export default function LoginPage() {
           window.localStorage.setItem("hs_user_id_local", String(userId));
         } catch {}
       }
+      if (mode === "create") {
+        const passwordRes = await fetch("/api/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            password: createPassword,
+            preferred_channel: "app",
+          }),
+        });
+        if (!passwordRes.ok) {
+          const text = await passwordRes.text().catch(() => "");
+          throw new Error(text || "Failed to save password.");
+        }
+      }
       clearStoredLoginState();
       let requestedNext = "";
       if (typeof window !== "undefined") {
@@ -281,7 +310,7 @@ export default function LoginPage() {
         requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
           ? requestedNext
           : "";
-      if (data.setup_required) {
+      if (data.setup_required && mode !== "create") {
         const setupNext = safeNext || "/";
         window.location.href = `/setup-security?next=${encodeURIComponent(setupNext)}`;
       } else {
@@ -455,6 +484,32 @@ export default function LoginPage() {
               />
             </div>
             <p className="text-[16px] leading-6 text-[var(--text-secondary)]">Use the code sent to your mobile number.</p>
+            {mode === "create" ? (
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>Create password</label>
+                  <input
+                    className={inputClass}
+                    type="password"
+                    autoComplete="new-password"
+                    value={createPassword}
+                    onChange={(e) => setCreatePassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Confirm password</label>
+                  <input
+                    className={inputClass}
+                    type="password"
+                    autoComplete="new-password"
+                    value={createConfirmPassword}
+                    onChange={(e) => setCreateConfirmPassword(e.target.value)}
+                    placeholder="Re-enter password"
+                  />
+                </div>
+              </div>
+            ) : null}
             {setupRequired && mode === "signin" ? (
               <p className="text-[16px] leading-6 text-[var(--text-secondary)]">First time login - you’ll be prompted to set your security after this step.</p>
             ) : null}
