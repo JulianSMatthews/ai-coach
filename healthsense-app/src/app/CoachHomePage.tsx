@@ -8,7 +8,7 @@ import AppNav from "@/components/AppNav";
 import TextScale from "@/components/TextScale";
 import { Card, PageShell } from "@/components/ui";
 import AssessmentChatBox from "./assessment/[userId]/chat/AssessmentChatBox";
-import LatestAssessmentPanel from "./assessment/[userId]/chat/LatestAssessmentPanel";
+import CoachHomeTrackerPanel from "./CoachHomeTrackerPanel";
 
 function parseApiErrorMessage(error: unknown): { status?: number; message: string } {
   const raw = error instanceof Error ? error.message : String(error || "");
@@ -99,13 +99,11 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
           modernHomeOnly
           initialTrackerSummary={pillarTrackerSummary}
         />
-        {pillarTrackerSummary ? (
-          <LatestAssessmentPanel
-            userId={userId}
-            initialSummary={pillarTrackerSummary}
-            initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
-          />
-        ) : null}
+        <CoachHomeTrackerPanel
+          userId={userId}
+          initialSummary={pillarTrackerSummary}
+          initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
+        />
       </section>
     </PageShell>
   );
