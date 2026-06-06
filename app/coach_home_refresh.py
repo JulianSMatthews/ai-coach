@@ -108,6 +108,12 @@ def run_coach_home_tracker_refresh(
                 anchor=tracker_today(),
                 skip_quote_generation=False,
             )
+            pillar_payload = (pillar_quote_result or {}).get("pillar") if isinstance(pillar_quote_result, dict) else None
+            pillar_quote_generated = bool((pillar_payload or {}).get("daily_quote_generated"))
+            if not pillar_quote_generated:
+                raise RuntimeError(
+                    f"pillar cue quote was not generated user_id={int(user_id)} pillar={normalized_pillar_key}"
+                )
             completed_at = datetime.utcnow().replace(microsecond=0).isoformat()
             result = {
                 "ok": True,
@@ -121,7 +127,9 @@ def run_coach_home_tracker_refresh(
                 "habits_ready": None,
                 "gia_ready": None,
                 "insight_ready": None,
-                "pillar_quotes_ready": bool((pillar_quote_result or {}).get("pillar")),
+                "pillar_quotes_ready": pillar_quote_generated,
+                "daily_quote_generated": pillar_quote_generated,
+                "daily_quote": str((pillar_payload or {}).get("daily_quote") or "").strip() or None,
                 "completed_at": completed_at,
             }
             _update_refresh_state(
