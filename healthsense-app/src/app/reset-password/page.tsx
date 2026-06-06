@@ -140,7 +140,7 @@ export default function ResetPasswordPage() {
         } catch {}
       }
       clearStoredResetState();
-      window.location.href = `/assessment/${userId}/chat`;
+      window.location.href = "/";
     } catch (error) {
       setStatus(friendlyAuthError(error));
     } finally {

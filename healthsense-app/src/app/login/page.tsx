@@ -102,7 +102,7 @@ export default function LoginPage() {
             process.env.NEXT_PUBLIC_DEFAULT_USER_ID ||
             "1",
         ).trim() || "1";
-      window.location.replace(safeNext || `/assessment/${resolvedUserId}/chat`);
+      window.location.replace(safeNext || "/");
     };
 
     const hasSessionCookie = document.cookie.includes("hs_session=");
@@ -282,10 +282,10 @@ export default function LoginPage() {
           ? requestedNext
           : "";
       if (data.setup_required) {
-        const setupNext = safeNext || `/assessment/${userId}/chat`;
+        const setupNext = safeNext || "/";
         window.location.href = `/setup-security?next=${encodeURIComponent(setupNext)}`;
       } else {
-        window.location.href = safeNext || `/assessment/${userId}/chat`;
+        window.location.href = safeNext || "/";
       }
     } catch (error) {
       setStatus(friendlyAuthError(error));

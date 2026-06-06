@@ -2442,7 +2442,7 @@ export default function LatestAssessmentPanel({
         const redirectPath =
           typeof window !== "undefined"
             ? `${window.location.pathname}${window.location.search || ""}`
-            : `/assessment/${userId}/chat`;
+            : "/";
         const res = await fetch(`/api/wearables/${key}/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

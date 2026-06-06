@@ -41,14 +41,8 @@ export function middleware(request: NextRequest) {
   const pathParts = pathname.split("/").filter(Boolean);
   const isDashboard = pathParts[0] === "dashboard";
   if (isDashboard) {
-    const rawUserId =
-      pathParts[1] ||
-      request.cookies.get("hs_user_id")?.value ||
-      process.env.NEXT_PUBLIC_DEFAULT_USER_ID ||
-      "1";
-    const userId = String(rawUserId).replace(/[^0-9]/g, "") || "1";
     const url = request.nextUrl.clone();
-    url.pathname = `/assessment/${userId}/chat`;
+    url.pathname = "/";
     return NextResponse.redirect(url);
   }
   return NextResponse.next();

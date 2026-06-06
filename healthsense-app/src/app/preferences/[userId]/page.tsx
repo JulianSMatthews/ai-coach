@@ -54,7 +54,7 @@ export default async function PreferencesPage(props: PageProps) {
 
       <section className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto">
         <Link
-          href={`/assessment/${encodeURIComponent(userId)}/chat`}
+          href="/"
           className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
           aria-label="Back to home"
         >

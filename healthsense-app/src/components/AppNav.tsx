@@ -82,7 +82,7 @@ export default function AppNav({
   const resolvedFirstName = String(userFirstName || "").trim();
   const greetingLabel = resolvedFirstName ? `Hi ${resolvedFirstName}` : "";
   const links: Array<{ label: string; href: string }> = [
-    { label: "Home", href: resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login" },
+    { label: "Home", href: resolvedUserId ? "/" : "/login" },
     ...(resolvedUserId
       ? [
           { label: "Preferences", href: `/preferences/${resolvedUserId}` },
@@ -151,11 +151,11 @@ export default function AppNav({
             </button>
           </div>
           <Link
-            href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
+            href={resolvedUserId ? "/" : "/login"}
             className="sr-only"
-            aria-label="HealthSense home"
+            aria-label="CoachSense home"
           >
-            HealthSense home
+            CoachSense home
           </Link>
         </div>
         <div className="hidden flex-wrap items-center gap-2 md:flex">
@@ -189,11 +189,11 @@ export default function AppNav({
         >
           <div className="flex items-center justify-between">
             <Link
-              href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
+              href={resolvedUserId ? "/" : "/login"}
               className="sr-only"
-              aria-label="HealthSense home"
+              aria-label="CoachSense home"
             >
-              HealthSense home
+              CoachSense home
             </Link>
             <button
               type="button"

@@ -298,7 +298,7 @@ export default async function AssessmentChatPage(props: PageProps) {
       ? ""
       : "";
   let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
-  if (!leadFlow && !leadGuest && assessmentCompleted && !assessmentInProgress) {
+  if (!leadFlow && !leadGuest && !assessmentInProgress) {
     try {
       pillarTrackerSummary = await getPillarTrackerSummary(userId);
     } catch {
@@ -336,6 +336,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   }
 
   const useAppSurface = Boolean(pillarTrackerSummary) && !leadFlow && !leadGuest;
+  const useModernHome = useAppSurface || assessmentCompleted;
   const resolvedPageShellClassName = useAppSurface
     ? "h-[100dvh] overflow-hidden px-0 py-0 pt-[env(safe-area-inset-top)]"
     : pageShellClassName;
@@ -362,7 +363,7 @@ export default async function AssessmentChatPage(props: PageProps) {
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}
-          assessmentCompleted={assessmentCompleted}
+          assessmentCompleted={useModernHome}
           isLeadGuest={leadGuest}
           leadToken={leadToken || leadTokenParam || undefined}
           showLeadBranding={leadFlow}

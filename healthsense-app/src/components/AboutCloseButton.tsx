@@ -15,7 +15,7 @@ function fallbackAppPath(): string {
       .find((item) => item.startsWith("hs_user_id="))
       ?.split("=")[1];
     const userId = cookieUserId || window.localStorage.getItem("hs_user_id_local") || "";
-    return userId ? `/assessment/${encodeURIComponent(userId)}/chat` : "/login";
+    return userId ? "/" : "/login";
   } catch {
     return "/login";
   }
