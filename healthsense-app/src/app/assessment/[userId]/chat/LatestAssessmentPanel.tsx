@@ -24,7 +24,7 @@ import {
 } from "@/lib/appleHealth";
 import { Capacitor } from "@capacitor/core";
 import { readStoredThemePreference } from "@/lib/theme";
-import { getPillarPalette } from "@/lib/pillars";
+import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
 
 type LatestAssessmentPanelProps = {
@@ -1095,6 +1095,32 @@ function resolveHomePillarQuote(pillar: PillarTrackerPillar, pillarKey: string):
   const quote = String(pillar.daily_quote || "").trim();
   if (quote) return quote;
   return HOME_PILLAR_QUOTE_FALLBACKS[pillarKey] || "Take one small step today that supports your wellbeing.";
+}
+
+function hasRecordedPillarCheckin(
+  pillar: PillarTrackerPillar,
+  checkinOptions: NonNullable<PillarTrackerPillar["checkin_options"]>,
+): boolean {
+  const completedDaysCount = Number(pillar.completed_days_count ?? 0);
+  if (Number.isFinite(completedDaysCount) && completedDaysCount > 0) return true;
+  return checkinOptions.some((option) => option?.complete === true);
+}
+
+function resolveEmptyPillarCheckinMessage(
+  pillar: PillarTrackerPillar,
+  pillarKey: string,
+  checkinOptions: NonNullable<PillarTrackerPillar["checkin_options"]>,
+): string {
+  const label = String(pillar.label || getPillarPalette(pillarKey).label || "This pillar").trim();
+  const note = String(getPillarMeta(pillarKey)?.note || "").trim();
+  const availableLabels = checkinOptions
+    .filter((option) => option?.is_yesterday || option?.is_today)
+    .map((option) => String(option?.label || (option?.is_yesterday ? "Yesterday" : "Today")).trim())
+    .filter(Boolean);
+  const actionLabel = availableLabels.length
+    ? availableLabels.join(" or ")
+    : "Today";
+  return `${label} focuses on ${note ? note.toLowerCase() : "one part of your wellbeing"}. Tap ${actionLabel} below to complete your first check-in.`;
 }
 
 function InsightIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
@@ -2982,7 +3008,6 @@ export default function LatestAssessmentPanel({
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                   const palette = getPillarPalette(pillarKey);
                   const score = resolvePillarDisplayScore(pillar);
-                  const quote = resolveHomePillarQuote(pillar, pillarKey);
                   const journalDate = formatJournalDate(summary.today || summary.week?.anchor_date || "");
                   const checkinOptions = Array.isArray(pillar.checkin_options)
                     ? pillar.checkin_options.filter((option) => String(option?.date || "").trim())
@@ -2999,6 +3024,9 @@ export default function LatestAssessmentPanel({
                     };
                     return rank(a) - rank(b);
                   });
+                  const quote = hasRecordedPillarCheckin(pillar, orderedCheckinOptions)
+                    ? resolveHomePillarQuote(pillar, pillarKey)
+                    : resolveEmptyPillarCheckinMessage(pillar, pillarKey, orderedCheckinOptions);
                   return (
                     <article
                       key={pillarKey}
