@@ -260,6 +260,10 @@ export default function LoginPage() {
     if (!otpId) return;
     const normalizedPhone = normalizePhoneForAuth(phone);
     if (mode === "create") {
+      if (!codeReadyForPassword) {
+        setStatus("Enter the code from your SMS first.");
+        return;
+      }
       if (createPassword.length < 8) {
         setStatus("Password must be at least 8 characters.");
         return;
@@ -346,6 +350,7 @@ export default function LoginPage() {
     "min-h-13 w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-[17px] font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
   const secondaryButtonClass =
     "min-h-13 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-[17px] font-semibold text-[var(--text-primary)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
+  const codeReadyForPassword = code.trim().length >= 6;
 
   return (
     <main className="flex min-h-[100dvh] items-center overflow-x-hidden bg-[var(--background)] px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[var(--foreground)] sm:px-6">
@@ -518,7 +523,7 @@ export default function LoginPage() {
           </form>
         ) : (
           <div className="space-y-5">
-            <form onSubmit={verifyOtp} className="space-y-5" autoComplete="one-time-code">
+            <form onSubmit={verifyOtp} className="space-y-5" autoComplete="on">
               <div>
                 <label className={labelClass}>
                   {mode === "create" ? "Account code" : "Login code"}
@@ -528,9 +533,10 @@ export default function LoginPage() {
                   id="auth-code"
                   name="one-time-code"
                   className={`${inputClass} text-center tracking-[0.3em]`}
-                  type="text"
+                  type="tel"
                   inputMode="numeric"
                   pattern="[0-9]*"
+                  maxLength={8}
                   autoComplete="one-time-code"
                   enterKeyHint="next"
                   value={code}
@@ -540,7 +546,7 @@ export default function LoginPage() {
               </div>
               <p className="text-[16px] leading-6 text-[var(--text-secondary)]">Use the code sent to your mobile number.</p>
             </form>
-            {mode === "create" ? (
+            {mode === "create" && codeReadyForPassword ? (
               <div className="space-y-4">
                 <div>
                   <label className={labelClass}>Create password</label>
@@ -567,6 +573,10 @@ export default function LoginPage() {
                   />
                 </div>
               </div>
+            ) : mode === "create" ? (
+              <p className="text-[16px] leading-6 text-[var(--text-secondary)]">
+                Enter the SMS code first, then set your password.
+              </p>
             ) : null}
             {setupRequired && mode === "signin" ? (
               <p className="text-[16px] leading-6 text-[var(--text-secondary)]">First time login - you’ll be prompted to set your security after this step.</p>
