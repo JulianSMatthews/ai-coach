@@ -5,6 +5,8 @@ import { friendlyAuthError } from "@/lib/authErrors";
 import { looksLikePhone, normalizePhoneForAuth } from "@/lib/phone";
 import HealthSenseMark from "@/components/HealthSenseMark";
 
+const LAST_LOGIN_PHONE_KEY = "hs_last_login_phone";
+
 export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "create">("signin");
   const [firstName, setFirstName] = useState("");
@@ -73,7 +75,8 @@ export default function LoginPage() {
       const savedFirstName = window.sessionStorage.getItem("hs_login_first_name");
       const savedSurname = window.sessionStorage.getItem("hs_login_surname");
       const savedTerms = window.sessionStorage.getItem("hs_login_terms");
-      if (savedPhone) setPhone(savedPhone);
+      const savedLastPhone = window.localStorage.getItem(LAST_LOGIN_PHONE_KEY);
+      if (savedPhone || savedLastPhone) setPhone(savedPhone || savedLastPhone || "");
       if (savedFirstName) setFirstName(savedFirstName);
       if (savedSurname) setSurname(savedSurname);
       if (savedMode === "create") setMode("create");
@@ -195,6 +198,9 @@ export default function LoginPage() {
     if (normalizedPhone !== phone) {
       setPhone(normalizedPhone);
     }
+    try {
+      window.localStorage.setItem(LAST_LOGIN_PHONE_KEY, normalizedPhone);
+    } catch {}
 
     setLoading(true);
     setStatus(null);
@@ -293,6 +299,7 @@ export default function LoginPage() {
         try {
           window.localStorage.setItem("hs_session_local", token);
           window.localStorage.setItem("hs_user_id_local", String(userId));
+          window.localStorage.setItem(LAST_LOGIN_PHONE_KEY, normalizedPhone);
         } catch {}
       }
       if (mode === "create") {
