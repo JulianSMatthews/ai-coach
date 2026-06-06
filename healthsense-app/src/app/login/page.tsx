@@ -410,12 +410,17 @@ export default function LoginPage() {
               </div>
             ) : null}
             <div>
-              <label className={labelClass}>Mobile number</label>
+              <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
               <input
+                id="mobile-number"
+                name="tel"
                 className={inputClass}
-                type="text"
+                type="tel"
                 autoComplete="tel"
                 inputMode="tel"
+                enterKeyHint="next"
+                autoCapitalize="none"
+                autoCorrect="off"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+44 7700 900000"
