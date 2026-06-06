@@ -420,10 +420,10 @@ export default function LoginPage() {
               <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
               <input
                 id="mobile-number"
-                name={mode === "signin" ? "username" : "tel"}
+                name="tel"
                 className={inputClass}
                 type="tel"
-                autoComplete={mode === "signin" ? "username" : "tel"}
+                autoComplete="tel"
                 inputMode="tel"
                 enterKeyHint="next"
                 autoFocus
@@ -492,18 +492,6 @@ export default function LoginPage() {
           </form>
         ) : (
           <form onSubmit={verifyOtp} className="space-y-5" autoComplete="on">
-            {mode === "create" ? (
-              <input
-                className="sr-only"
-                type="text"
-                name="username"
-                autoComplete="username"
-                value={phone}
-                readOnly
-                tabIndex={-1}
-                aria-hidden="true"
-              />
-            ) : null}
             <div>
               <label className={labelClass}>
                 {mode === "create" ? "Account code" : "Login code"}
