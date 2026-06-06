@@ -77,6 +77,7 @@ type AssessmentResultSummary = {
 type AssessmentChatBoxProps = {
   userId: string;
   assessmentCompleted?: boolean;
+  modernHomeOnly?: boolean;
   isLeadGuest?: boolean;
   leadToken?: string;
   showLeadBranding?: boolean;
@@ -762,6 +763,7 @@ function resolveJourneyCompleted(options: {
 export default function AssessmentChatBox({
   userId,
   assessmentCompleted = false,
+  modernHomeOnly = false,
   isLeadGuest = false,
   leadToken,
   showLeadBranding = false,
@@ -800,7 +802,7 @@ export default function AssessmentChatBox({
   const [realtimeSummaryPhase, setRealtimeSummaryPhase] = useState<
     "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
   >("idle");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !modernHomeOnly);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<HomeSurface>("blank");
@@ -1949,6 +1951,10 @@ export default function AssessmentChatBox({
   }, [morningSequenceDay, refreshChatState, showGuidedHomeChatPanel, loadDailyHabitPlan, stopFinalGiaListening, userId]);
 
   useEffect(() => {
+    if (modernHomeOnly) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     const run = async () => {
       try {
@@ -1975,7 +1981,7 @@ export default function AssessmentChatBox({
     return () => {
       cancelled = true;
     };
-  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, refreshChatState, isLeadGuest]);
+  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, refreshChatState, isLeadGuest, modernHomeOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1991,6 +1997,7 @@ export default function AssessmentChatBox({
 
     const interval = window.setInterval(() => {
       if (document.visibilityState && document.visibilityState !== "visible") return;
+      if (modernHomeOnly) return;
       if (showGuidedHomeChatPanel) return;
       void poll();
     }, 8000);
@@ -1999,7 +2006,7 @@ export default function AssessmentChatBox({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [refreshChatState, showGuidedHomeChatPanel]);
+  }, [refreshChatState, showGuidedHomeChatPanel, modernHomeOnly]);
 
   useEffect(() => {
     setShowCoachingPlan(false);

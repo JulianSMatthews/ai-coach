@@ -216,6 +216,10 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type CoachAppPageProps = PageProps & {
+  forceModernHome?: boolean;
+};
+
 function firstSearchValue(value: string | string[] | undefined): string {
   return String(Array.isArray(value) ? value[0] : value || "").trim();
 }
@@ -228,8 +232,9 @@ function resolveIntroAvatarOverride(value: string | string[] | undefined): boole
   return null;
 }
 
-export default async function AssessmentChatPage(props: PageProps) {
+export async function renderCoachAppPage(props: CoachAppPageProps) {
   const { userId } = await props.params;
+  const forceModernHome = Boolean(props.forceModernHome);
   const resolvedSearchParams = (await props.searchParams) || {};
   const pageShellClassName = "px-3 py-4 sm:px-5 sm:py-6";
   const pageContentClassName = "mx-auto max-w-4xl space-y-4 sm:space-y-5";
@@ -248,7 +253,9 @@ export default async function AssessmentChatPage(props: PageProps) {
   const assessmentIntroAvatar = shouldLoadAssessmentIntroAvatar
     ? await getAssessmentIntroAvatar(introAvatarOverride === true)
     : null;
-  const introLibraryMedia = await getAppIntroLibraryMedia();
+  const introLibraryMedia = forceModernHome
+    ? { appIntroAvatar: null, coachProductAvatar: null, helpVideos: {} }
+    : await getAppIntroLibraryMedia();
   const coachProductAvatar = introLibraryMedia.coachProductAvatar;
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
@@ -298,7 +305,7 @@ export default async function AssessmentChatPage(props: PageProps) {
       ? ""
       : "";
   let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
-  if (!leadFlow && !leadGuest && !assessmentInProgress) {
+  if (!leadFlow && !leadGuest && (forceModernHome || !assessmentInProgress)) {
     try {
       pillarTrackerSummary = await getPillarTrackerSummary(userId);
     } catch {
@@ -335,7 +342,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     );
   }
 
-  const useAppSurface = Boolean(pillarTrackerSummary) && !leadFlow && !leadGuest;
+  const useAppSurface = (forceModernHome || Boolean(pillarTrackerSummary)) && !leadFlow && !leadGuest;
   const useModernHome = useAppSurface || assessmentCompleted;
   const resolvedPageShellClassName = useAppSurface
     ? "h-[100dvh] overflow-hidden px-0 py-0 pt-[env(safe-area-inset-top)]"
@@ -364,6 +371,7 @@ export default async function AssessmentChatPage(props: PageProps) {
         <AssessmentChatBox
           userId={userId}
           assessmentCompleted={useModernHome}
+          modernHomeOnly={forceModernHome}
           isLeadGuest={leadGuest}
           leadToken={leadToken || leadTokenParam || undefined}
           showLeadBranding={leadFlow}
@@ -382,4 +390,8 @@ export default async function AssessmentChatPage(props: PageProps) {
       </section>
     </PageShell>
   );
+}
+
+export default async function AssessmentChatPage(props: PageProps) {
+  return renderCoachAppPage(props);
 }
