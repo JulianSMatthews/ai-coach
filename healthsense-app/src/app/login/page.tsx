@@ -281,10 +281,9 @@ export default function LoginPage() {
         requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
           ? requestedNext
           : "";
-      if (data.setup_required && mode === "signin") {
-        window.location.href = safeNext
-          ? `/setup-security?next=${encodeURIComponent(safeNext)}`
-          : "/setup-security";
+      if (data.setup_required) {
+        const setupNext = safeNext || `/assessment/${userId}/chat`;
+        window.location.href = `/setup-security?next=${encodeURIComponent(setupNext)}`;
       } else {
         window.location.href = safeNext || `/assessment/${userId}/chat`;
       }
