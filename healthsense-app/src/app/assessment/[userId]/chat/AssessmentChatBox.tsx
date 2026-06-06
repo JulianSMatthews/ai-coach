@@ -1689,11 +1689,11 @@ export default function AssessmentChatBox({
     window.dispatchEvent(
       new CustomEvent("healthsense-score-panel-visibility", {
         detail: {
-          visible: journeyCompleted || (showGuidedHomeChatPanel && homeSurface === "blank"),
+          visible: modernHomeOnly || journeyCompleted || (showGuidedHomeChatPanel && homeSurface === "blank"),
         },
       }),
     );
-  }, [homeSurface, journeyCompleted, showGuidedHomeChatPanel]);
+  }, [homeSurface, journeyCompleted, modernHomeOnly, showGuidedHomeChatPanel]);
 
   useEffect(() => {
     const storedSequenceState =

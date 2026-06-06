@@ -1002,6 +1002,7 @@ function resolveSummaryPanelVisible(
   summary: PillarTrackerSummaryResponse,
   sequenceState: MorningSequenceState,
 ): boolean {
+  if (Array.isArray(summary.pillars) && summary.pillars.length > 0) return true;
   if (sequenceState === "completed") return true;
   if (sequenceState === "in_progress") return true;
   return isDailyCheckInComplete(summary);
