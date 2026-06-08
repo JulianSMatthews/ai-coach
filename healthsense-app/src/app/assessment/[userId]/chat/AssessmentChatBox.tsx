@@ -782,7 +782,9 @@ function buildStreakCalendarDays(monthDate: Date, todayIso: string): StreakCalen
   const startOffset = (start.getDay() + 6) % 7;
   const gridStart = addLocalDays(start, -startOffset);
   const todayDate = parseLocalIsoDate(todayIso) || parseLocalIsoDate(fallbackLocalIsoDate()) || new Date();
-  return Array.from({ length: 42 }, (_, index) => {
+  const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  const cellCount = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  return Array.from({ length: cellCount }, (_, index) => {
     const date = addLocalDays(gridStart, index);
     const iso = formatLocalIsoDate(date);
     return {
@@ -2837,86 +2839,86 @@ export default function AssessmentChatBox({
 
   const streakPanel = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-4 pb-3 sm:px-5">
+      <div className="shrink-0 px-4 pb-1 sm:px-5">
         <button
           type="button"
           onClick={closeStreakSurface}
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
           aria-label="Back"
         >
           <span className="text-3xl leading-none">‹</span>
         </button>
       </div>
-      <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
-        <div className="space-y-7">
-          <div className="pt-2">
+      <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-28 sm:px-5 sm:pb-40">
+        <div className="space-y-4">
+          <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
               CoachSense streak
             </p>
-            <h2 className="mt-4 max-w-[8ch] text-[3.25rem] font-semibold leading-[0.98] tracking-normal text-[var(--text-primary)] sm:text-[4rem]">
+            <h2 className="mt-2 text-[2.2rem] font-semibold leading-[1] tracking-normal text-[var(--text-primary)] sm:text-[2.7rem]">
               {streakHeadline}
             </h2>
-            <p className="mt-5 max-w-[21rem] text-[1.35rem] leading-8 text-[var(--text-secondary)]">
+            <p className="mt-2 max-w-[21rem] text-[1rem] leading-6 text-[var(--text-secondary)]">
               {streakDetail}
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-[18px] bg-[var(--surface-muted)] px-3 py-2.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
                 Current
               </p>
-              <p className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">
+              <p className="mt-1 text-2xl font-semibold leading-none text-[var(--text-primary)]">
                 {currentStreakDays}
               </p>
             </div>
-            <div className="rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
+            <div className="rounded-[18px] bg-[var(--surface-muted)] px-3 py-2.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
                 Best
               </p>
-              <p className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">
+              <p className="mt-1 text-2xl font-semibold leading-none text-[var(--text-primary)]">
                 {bestStreakDays}
               </p>
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2.5">
             <div className="flex items-center justify-between gap-4">
-              <h3 className="text-[1.55rem] font-semibold leading-none text-[var(--text-primary)]">
+              <h3 className="text-[1.25rem] font-semibold leading-none text-[var(--text-primary)]">
                 {streakMonthLabel}
               </h3>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={showPreviousStreakMonth}
-                  className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-primary)] transition active:scale-[0.98]"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--text-primary)] transition active:scale-[0.98]"
                   aria-label="Previous month"
                 >
-                  <span className="text-4xl leading-none">‹</span>
+                  <span className="text-3xl leading-none">‹</span>
                 </button>
                 <button
                   type="button"
                   onClick={showNextStreakMonth}
-                  className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-secondary)] transition active:scale-[0.98]"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--text-secondary)] transition active:scale-[0.98]"
                   aria-label="Next month"
                 >
-                  <span className="text-4xl leading-none">›</span>
+                  <span className="text-3xl leading-none">›</span>
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-7 gap-2 text-center text-sm font-semibold text-[var(--text-primary)]">
+            <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-[var(--text-primary)]">
               {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
-                <div key={`${label}-${index}`} className="py-1">
+                <div key={`${label}-${index}`} className="py-0.5">
                   {label}
                 </div>
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-x-2 gap-y-3">
+            <div className="grid grid-cols-7 gap-x-1.5 gap-y-1.5">
               {streakCalendarDays.map((day) => {
                 if (!day.inMonth) {
-                  return <div key={day.key} className="h-16" aria-hidden="true" />;
+                  return <div key={day.key} className="h-10" aria-hidden="true" />;
                 }
                 const completed = streakCompletedDateSet.has(day.iso);
                 const dayStyle = completed
@@ -2939,15 +2941,15 @@ export default function AssessmentChatBox({
                 return (
                   <div
                     key={day.key}
-                    className="flex h-16 flex-col items-center justify-center rounded-2xl border text-center transition"
+                    className="flex h-10 flex-col items-center justify-center rounded-xl border text-center transition"
                     style={dayStyle}
                   >
-                    <span className="text-lg font-semibold leading-none">
+                    <span className="text-sm font-semibold leading-none">
                       {day.dayNumber}
                     </span>
                     <svg
                       viewBox="0 0 24 24"
-                      className={`mt-2 h-5 w-5 ${completed ? "" : "opacity-55"}`}
+                      className={`mt-1 h-3.5 w-3.5 ${completed ? "" : "opacity-55"}`}
                       aria-hidden="true"
                     >
                       <path
@@ -2965,8 +2967,8 @@ export default function AssessmentChatBox({
             </div>
           </div>
 
-          <div className="rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
-            <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+          <div className="hidden rounded-[18px] bg-[var(--surface-muted)] px-3 py-2.5 sm:block">
+            <p className="text-[0.95rem] leading-5 text-[var(--text-secondary)]">
               {streakEncouragement}
             </p>
           </div>
