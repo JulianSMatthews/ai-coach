@@ -1260,6 +1260,8 @@ export default function LatestAssessmentPanel({
   const urinePhotoCameraInputRef = useRef<HTMLInputElement | null>(null);
   const urinePhotoLibraryInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
+  const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
+  const [returnToPillarKey, setReturnToPillarKey] = useState<string | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
@@ -2096,9 +2098,23 @@ export default function LatestAssessmentPanel({
     return pillars.some((pillar) => pillarNeedsGeneratedCue(pillar));
   }, [pillarNeedsGeneratedCue]);
 
-  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null) => {
+  const scrollToPillarCueCard = useCallback((pillarKey?: string | null, behavior: ScrollBehavior = "smooth") => {
     if (typeof window === "undefined") return;
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
+    if (!normalizedPillarKey) return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const card = pillarCueCardRefs.current[normalizedPillarKey];
+        if (!card || typeof card.scrollIntoView !== "function") return;
+        card.scrollIntoView({ behavior, block: "nearest", inline: "center" });
+      });
+    });
+  }, []);
+
+  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null, options?: { waitForFresh?: boolean }) => {
+    if (typeof window === "undefined") return;
+    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
+    const waitForFresh = Boolean(options?.waitForFresh && normalizedPillarKey);
     const delays = [1400, 2400, 3600, 5200, 7600, 10400, 14000, 18000];
     let resolved = false;
     delays.forEach((delay) => {
@@ -2110,6 +2126,12 @@ export default function LatestAssessmentPanel({
             const targetPillar = normalizedPillarKey
               ? pillars.find((pillar) => String(pillar.pillar_key || "").trim().toLowerCase() === normalizedPillarKey)
               : null;
+            if (normalizedPillarKey) {
+              scrollToPillarCueCard(normalizedPillarKey);
+            }
+            if (waitForFresh) {
+              return;
+            }
             if (targetPillar && !pillarNeedsGeneratedCue(targetPillar)) {
               resolved = true;
               return;
@@ -2121,7 +2143,7 @@ export default function LatestAssessmentPanel({
           .catch(() => undefined);
       }, delay);
     });
-  }, [pillarNeedsGeneratedCue, refreshSummary, summaryHasFallbackCueMessages]);
+  }, [pillarNeedsGeneratedCue, refreshSummary, scrollToPillarCueCard, summaryHasFallbackCueMessages]);
 
   useEffect(() => {
     void refreshSummary().catch(() => undefined);
@@ -2747,6 +2769,11 @@ export default function LatestAssessmentPanel({
   }, [summaryPanelVisible]);
 
   useEffect(() => {
+    if (!summaryPanelVisible || selectedPillarKey || !returnToPillarKey) return;
+    scrollToPillarCueCard(returnToPillarKey);
+  }, [returnToPillarKey, scrollToPillarCueCard, selectedPillarKey, summary, summaryPanelVisible]);
+
+  useEffect(() => {
     if (!summaryPanelVisible || assessmentReviewed || assessmentReviewSyncStarted) return;
     let cancelled = false;
     setAssessmentReviewSyncStarted(true);
@@ -2882,6 +2909,7 @@ export default function LatestAssessmentPanel({
     setSaving(true);
     setSaveError(null);
     try {
+      const completedPillarKey = String(detail.pillar.pillar_key || "").trim().toLowerCase();
       const entries = concepts.map((concept) => ({
         concept_key: concept.concept_key,
         value: draft[String(concept.concept_key || "").trim()],
@@ -2904,7 +2932,7 @@ export default function LatestAssessmentPanel({
         window.dispatchEvent(
           new CustomEvent("healthsense-tracker-updated", {
             detail: {
-              pillarKey: String(detail.pillar.pillar_key || "").trim().toLowerCase(),
+              pillarKey: completedPillarKey,
               scoreDate: activeDate || detail.pillar.today || null,
               guided: guidedTrackingActive,
             },
@@ -2941,10 +2969,13 @@ export default function LatestAssessmentPanel({
           }),
         );
       }
+      setReturnToPillarKey(completedPillarKey || null);
       closeTracker();
       setSaving(false);
-      void refreshSummary({ skipQuoteGeneration: true }).catch(() => undefined);
-      refreshSummaryFromWorkerCache(String(detail.pillar.pillar_key || "").trim().toLowerCase());
+      void refreshSummary({ skipQuoteGeneration: true })
+        .then(() => scrollToPillarCueCard(completedPillarKey))
+        .catch(() => undefined);
+      refreshSummaryFromWorkerCache(completedPillarKey, { waitForFresh: true });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
       setSaving(false);
@@ -3031,6 +3062,13 @@ export default function LatestAssessmentPanel({
                   return (
                     <article
                       key={pillarKey}
+                      ref={(node) => {
+                        if (node) {
+                          pillarCueCardRefs.current[pillarKey] = node;
+                        } else {
+                          delete pillarCueCardRefs.current[pillarKey];
+                        }
+                      }}
                       className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
