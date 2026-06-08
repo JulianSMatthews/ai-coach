@@ -2712,7 +2712,7 @@ export default function AssessmentChatBox({
               </div>
               ) : educationPlan?.available ? (
               activeEducationLesson ? (
-                <div className="-mt-[0.5cm] flex min-h-full flex-col">
+                <div className="-mt-[1cm] flex min-h-full flex-col">
                   <div className="shrink-0 px-1 py-4 sm:px-2">
                     <div className="flex items-center justify-between">
                       <button
@@ -2837,7 +2837,7 @@ export default function AssessmentChatBox({
                   </div>
                 </div>
               ) : educationExplorerOpen ? (
-                <div className="-mt-[0.5cm] flex min-h-full flex-col">
+                <div className="-mt-[1cm] flex min-h-full flex-col">
                   <div className="shrink-0 px-1 py-4 sm:px-2">
                     <div className="flex items-center justify-between">
                       <button
