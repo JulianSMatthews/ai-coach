@@ -48,9 +48,14 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-function FlameBadge({ days }: { days: number }) {
+function FlameBadge({ days, onClick }: { days: number; onClick: () => void }) {
   return (
-    <span className="inline-flex h-11 items-center gap-1.5 rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] px-3 text-[var(--chrome-text)]">
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-11 items-center gap-1.5 rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] px-3 text-[var(--chrome-text)] transition active:scale-[0.98]"
+      aria-label={`Open current streak, ${days} day${days === 1 ? "" : "s"}`}
+    >
       <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 shrink-0" aria-hidden="true">
         <path
           d="M12 3.2c.38 1.54-.25 2.55-1.05 3.46C9.86 7.69 8.7 9 8.7 10.8c0 1.76 1.06 3.02 2.05 3.73.24-1.12.24-2.17.1-3.04.94.86 2.05 2.22 2.05 4.02A3.98 3.98 0 0 1 9 19.5a4.12 4.12 0 0 1-4.1-4.1c0-1.98.97-3.62 2.4-5.06 1.03-1.05 2.2-2.08 2.94-3.18.42-.62.74-1.3.85-2.28.27.15.58.55.91 1.3Z"
@@ -62,7 +67,7 @@ function FlameBadge({ days }: { days: number }) {
         />
       </svg>
       <span className="min-w-[0.9rem] text-sm font-semibold leading-none">{days}</span>
-    </span>
+    </button>
   );
 }
 
@@ -131,7 +136,24 @@ export default function AppNav({
                 <ScoreBadge score={resolvedOverallScore} />
               </button>
             ) : null}
-            {resolvedInteractionDaysCount !== null ? <FlameBadge days={resolvedInteractionDaysCount} /> : null}
+            {resolvedInteractionDaysCount !== null ? (
+              <FlameBadge
+                days={resolvedInteractionDaysCount}
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(
+                      new CustomEvent("healthsense-home-surface", {
+                        detail: {
+                          surface: "streak",
+                          source: "summary",
+                        },
+                      }),
+                    );
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }
+                }}
+              />
+            ) : null}
             <button
               type="button"
               className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] text-[var(--chrome-text)] md:hidden"

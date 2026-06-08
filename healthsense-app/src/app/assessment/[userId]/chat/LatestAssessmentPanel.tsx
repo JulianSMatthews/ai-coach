@@ -2748,6 +2748,8 @@ export default function LatestAssessmentPanel({
       if (surface === "insight") {
         setActiveDockKey("learn");
         setSummaryPanelVisible(false);
+      } else if (surface === "streak") {
+        setSummaryPanelVisible(false);
       } else if (surface === "blank" || surface === "tracking") {
         setActiveDockKey("checkin");
       }

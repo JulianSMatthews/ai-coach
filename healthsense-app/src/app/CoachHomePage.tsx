@@ -98,6 +98,7 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
           assessmentCompleted
           modernHomeOnly
           initialTrackerSummary={pillarTrackerSummary}
+          initialInteractionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
         />
         <CoachHomeTrackerPanel
           userId={userId}

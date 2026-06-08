@@ -85,6 +85,7 @@ type AssessmentChatBoxProps = {
   coachProductAvatar?: AssessmentIntroAvatar | null;
   introAvatarEnabledOverride?: boolean | null;
   initialTrackerSummary?: PillarTrackerSummaryResponse | null;
+  initialInteractionDaysCount?: number | null;
 };
 
 type AssessmentCompletionSummaryMedia = {
@@ -99,7 +100,7 @@ type AssessmentCompletionSummaryMedia = {
   realtimeMaxReplays: number | null;
 };
 
-type HomeSurface = "blank" | "tracking" | "habits" | "insight" | "ask";
+type HomeSurface = "blank" | "tracking" | "habits" | "insight" | "ask" | "streak";
 type HomeSurfaceEntryMode = "guided" | "summary";
 type EducationExplorerConcept = {
   concept_key: string;
@@ -158,6 +159,11 @@ const HOME_SURFACE_COPY: Record<
     eyebrow: "Coach",
     title: "Gia's message",
     description: "Get Gia's support.",
+  },
+  streak: {
+    eyebrow: "Streak",
+    title: "Current streak",
+    description: "Review your current app streak.",
   },
 };
 
@@ -707,6 +713,89 @@ function fallbackLocalIsoDate(): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseLocalIsoDate(value: string | null | undefined): Date | null {
+  const token = String(value || "").trim();
+  const match = token.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const year = Number.parseInt(match[1] || "", 10);
+  const month = Number.parseInt(match[2] || "", 10) - 1;
+  const day = Number.parseInt(match[3] || "", 10);
+  const parsed = new Date(year, month, day, 12, 0, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function formatLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function monthStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function formatStreakMonthLabel(date: Date): string {
+  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+function collectTrackerCompletionDates(summary?: PillarTrackerSummaryResponse | null): string[] {
+  const dates = new Set<string>();
+  const today = String(summary?.today || "").trim();
+  if (summary?.today_complete && today) {
+    dates.add(today);
+  }
+  const pillars = Array.isArray(summary?.pillars) ? summary.pillars : [];
+  for (const pillar of pillars) {
+    if (pillar?.today_complete && today) {
+      dates.add(today);
+    }
+    const options = Array.isArray(pillar?.checkin_options) ? pillar.checkin_options : [];
+    for (const option of options) {
+      const optionDate = String(option?.date || "").trim();
+      if (option?.complete && optionDate) {
+        dates.add(optionDate);
+      }
+    }
+  }
+  return Array.from(dates);
+}
+
+type StreakCalendarDay = {
+  key: string;
+  iso: string;
+  dayNumber: number;
+  inMonth: boolean;
+  isToday: boolean;
+  isFuture: boolean;
+};
+
+function buildStreakCalendarDays(monthDate: Date, todayIso: string): StreakCalendarDay[] {
+  const start = monthStart(monthDate);
+  const startOffset = (start.getDay() + 6) % 7;
+  const gridStart = addLocalDays(start, -startOffset);
+  const todayDate = parseLocalIsoDate(todayIso) || parseLocalIsoDate(fallbackLocalIsoDate()) || new Date();
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = addLocalDays(gridStart, index);
+    const iso = formatLocalIsoDate(date);
+    return {
+      key: iso,
+      iso,
+      dayNumber: date.getDate(),
+      inMonth: date.getMonth() === start.getMonth(),
+      isToday: iso === formatLocalIsoDate(todayDate),
+      isFuture: date.getTime() > todayDate.getTime(),
+    };
+  });
+}
+
 function resolveMorningSequenceDay(summary?: PillarTrackerSummaryResponse | null): string {
   const token = String(summary?.today || "").trim();
   return token || fallbackLocalIsoDate();
@@ -771,6 +860,7 @@ export default function AssessmentChatBox({
   coachProductAvatar = null,
   introAvatarEnabledOverride = null,
   initialTrackerSummary = null,
+  initialInteractionDaysCount = null,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -837,6 +927,11 @@ export default function AssessmentChatBox({
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
   const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "concepts" | "lessons">("pillars");
   const [educationExplorerConceptKey, setEducationExplorerConceptKey] = useState<string | null>(null);
+  const [streakCalendarMonth, setStreakCalendarMonth] = useState(() => {
+    const baseDate = parseLocalIsoDate(resolveMorningSequenceDay(initialTrackerSummary));
+    return monthStart(baseDate || new Date());
+  });
+  const [extraStreakCompletionDates, setExtraStreakCompletionDates] = useState<string[]>([]);
   const educationPlanRequestIdRef = useRef(0);
   const educationExplorePrefetchStartedRef = useRef(false);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
@@ -1282,6 +1377,49 @@ export default function AssessmentChatBox({
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
     return mergeDailyPlanItems(selected, fallback);
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
+  const currentStreakDays = useMemo(() => {
+    const headerValue = Number(initialInteractionDaysCount);
+    const educationValue = Number(educationPlan?.streak_days);
+    const resolved = Number.isFinite(headerValue) ? headerValue : educationValue;
+    return Number.isFinite(resolved) ? Math.max(0, Math.round(resolved)) : 0;
+  }, [educationPlan?.streak_days, initialInteractionDaysCount]);
+  const bestStreakDays = useMemo(() => {
+    const bestValue = Number(educationPlan?.best_streak_days);
+    if (Number.isFinite(bestValue)) return Math.max(currentStreakDays, Math.round(bestValue));
+    return currentStreakDays;
+  }, [currentStreakDays, educationPlan?.best_streak_days]);
+  const streakTodayIso = firstNonEmptyString(
+    initialTrackerSummary?.today,
+    morningSequenceDay,
+    educationPlan?.lesson_date,
+    fallbackLocalIsoDate(),
+  );
+  const streakCompletedDateSet = useMemo(() => {
+    const dates = new Set<string>(collectTrackerCompletionDates(initialTrackerSummary));
+    for (const extraDate of extraStreakCompletionDates) {
+      const token = String(extraDate || "").trim();
+      if (token) dates.add(token);
+    }
+    const anchor = parseLocalIsoDate(streakTodayIso);
+    if (anchor && currentStreakDays > 0) {
+      for (let index = 0; index < currentStreakDays; index += 1) {
+        dates.add(formatLocalIsoDate(addLocalDays(anchor, -index)));
+      }
+    }
+    return dates;
+  }, [currentStreakDays, extraStreakCompletionDates, initialTrackerSummary, streakTodayIso]);
+  const streakCalendarDays = useMemo(
+    () => buildStreakCalendarDays(streakCalendarMonth, streakTodayIso),
+    [streakCalendarMonth, streakTodayIso],
+  );
+  const streakMonthLabel = formatStreakMonthLabel(streakCalendarMonth);
+  const streakHeadline = currentStreakDays > 0 ? "Your current streak" : "Start a new streak";
+  const streakDetail = currentStreakDays > 0
+    ? `${currentStreakDays} day${currentStreakDays === 1 ? "" : "s"} of showing up for yourself.`
+    : "Check in or complete a lesson today to begin.";
+  const streakEncouragement = currentStreakDays > 0
+    ? "Keep the rhythm simple: one useful check-in or lesson at a time."
+    : "A streak starts with one honest entry, not a perfect week.";
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
   const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
   const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
@@ -1292,11 +1430,33 @@ export default function AssessmentChatBox({
     homeSurface === "blank"
       ? "h-auto"
       : "h-full";
-  const learnContentScrollsBelowHeader =
-    homeSurface === "insight" && Boolean(activeEducationLesson || educationExplorerOpen);
+  const contentControlsOwnScroll =
+    homeSurface === "streak" || (homeSurface === "insight" && Boolean(activeEducationLesson || educationExplorerOpen));
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
+  const closeStreakSurface = useCallback(() => {
+    setHomeSurfaceEntryMode("summary");
+    setHomeSurface("blank");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("healthsense-home-surface", {
+          detail: {
+            surface: "blank",
+            source: "summary",
+          },
+        }),
+      );
+      window.dispatchEvent(new CustomEvent("healthsense-show-score-panel"));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+  const showPreviousStreakMonth = useCallback(() => {
+    setStreakCalendarMonth((current) => monthStart(new Date(current.getFullYear(), current.getMonth() - 1, 1, 12, 0, 0, 0)));
+  }, []);
+  const showNextStreakMonth = useCallback(() => {
+    setStreakCalendarMonth((current) => monthStart(new Date(current.getFullYear(), current.getMonth() + 1, 1, 12, 0, 0, 0)));
+  }, []);
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
       return;
@@ -1809,6 +1969,11 @@ export default function AssessmentChatBox({
       if (surface === "ask") {
         setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("ask");
+        return;
+      }
+      if (surface === "streak") {
+        setHomeSurfaceEntryMode(entryMode);
+        setHomeSurface("streak");
       }
     };
     window.addEventListener("healthsense-home-surface", onSurfaceChange as EventListener);
@@ -1927,7 +2092,7 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onTrackerUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ guided?: boolean }>).detail;
+      const detail = (event as CustomEvent<{ guided?: boolean; scoreDate?: string | null }>).detail;
       setDailyHabitPlan(null);
       setDailyHabitPlanError(null);
       setEducationPlan(null);
@@ -1936,6 +2101,10 @@ export default function AssessmentChatBox({
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
       setFinalGiaListenError(null);
+      const scoreDate = String(detail?.scoreDate || "").trim();
+      if (scoreDate) {
+        setExtraStreakCompletionDates((current) => (current.includes(scoreDate) ? current : [...current, scoreDate]));
+      }
       stopFinalGiaListening();
       if (detail?.guided !== true) {
         return;
@@ -2666,12 +2835,152 @@ export default function AssessmentChatBox({
     </form>
   ) : null;
 
+  const streakPanel = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-4 pb-3 sm:px-5">
+        <button
+          type="button"
+          onClick={closeStreakSurface}
+          className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
+          aria-label="Back"
+        >
+          <span className="text-3xl leading-none">‹</span>
+        </button>
+      </div>
+      <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
+        <div className="space-y-7">
+          <div className="pt-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+              CoachSense streak
+            </p>
+            <h2 className="mt-4 max-w-[8ch] text-[3.25rem] font-semibold leading-[0.98] tracking-normal text-[var(--text-primary)] sm:text-[4rem]">
+              {streakHeadline}
+            </h2>
+            <p className="mt-5 max-w-[21rem] text-[1.35rem] leading-8 text-[var(--text-secondary)]">
+              {streakDetail}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+                Current
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">
+                {currentStreakDays}
+              </p>
+            </div>
+            <div className="rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+                Best
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">
+                {bestStreakDays}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="text-[1.55rem] font-semibold leading-none text-[var(--text-primary)]">
+                {streakMonthLabel}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={showPreviousStreakMonth}
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-primary)] transition active:scale-[0.98]"
+                  aria-label="Previous month"
+                >
+                  <span className="text-4xl leading-none">‹</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={showNextStreakMonth}
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-secondary)] transition active:scale-[0.98]"
+                  aria-label="Next month"
+                >
+                  <span className="text-4xl leading-none">›</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-2 text-center text-sm font-semibold text-[var(--text-primary)]">
+              {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
+                <div key={`${label}-${index}`} className="py-1">
+                  {label}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-x-2 gap-y-3">
+              {streakCalendarDays.map((day) => {
+                if (!day.inMonth) {
+                  return <div key={day.key} className="h-16" aria-hidden="true" />;
+                }
+                const completed = streakCompletedDateSet.has(day.iso);
+                const dayStyle = completed
+                  ? {
+                      backgroundColor: "color-mix(in srgb, var(--accent) 16%, var(--surface))",
+                      borderColor: "transparent",
+                      color: "var(--accent)",
+                    }
+                  : day.isToday
+                    ? {
+                        backgroundColor: "var(--surface)",
+                        borderColor: "var(--border-strong)",
+                        color: "var(--text-primary)",
+                      }
+                    : {
+                        backgroundColor: "transparent",
+                        borderColor: "transparent",
+                        color: day.isFuture ? "var(--text-tertiary)" : "var(--text-secondary)",
+                      };
+                return (
+                  <div
+                    key={day.key}
+                    className="flex h-16 flex-col items-center justify-center rounded-2xl border text-center transition"
+                    style={dayStyle}
+                  >
+                    <span className="text-lg font-semibold leading-none">
+                      {day.dayNumber}
+                    </span>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`mt-2 h-5 w-5 ${completed ? "" : "opacity-55"}`}
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M12 3.2c.38 1.54-.25 2.55-1.05 3.46C9.86 7.69 8.7 9 8.7 10.8c0 1.76 1.06 3.02 2.05 3.73.24-1.12.24-2.17.1-3.04.94.86 2.05 2.22 2.05 4.02A3.98 3.98 0 0 1 9 19.5a4.12 4.12 0 0 1-4.1-4.1c0-1.98.97-3.62 2.4-5.06 1.03-1.05 2.2-2.08 2.94-3.18.42-.62.74-1.3.85-2.28.27.15.58.55.91 1.3Z"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.55"
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
+            <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+              {streakEncouragement}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const homeChatPanel = showGuidedHomeChatPanel ? (
     <section className={`${homeSurface === "blank" ? "overflow-hidden" : "h-full min-h-0 overflow-hidden"} bg-transparent`}>
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         {homeSurface === "blank" ? null : (
           <>
-            {homeSurface === "insight" ? null : (
+            {homeSurface === "insight" || homeSurface === "streak" ? null : (
               <div className="shrink-0 px-4 py-4 sm:px-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
                   {homeSurfaceEyebrow}
@@ -2685,12 +2994,14 @@ export default function AssessmentChatBox({
             <div
               ref={homePanelScrollerRef}
               className={`hs-home-panel-scroll min-h-0 flex-1 overscroll-contain ${
-                learnContentScrollsBelowHeader
+                contentControlsOwnScroll
                   ? "overflow-hidden px-0 pt-4 pb-0"
                   : `overflow-y-auto py-4 pb-44 sm:pb-52 ${homeSurface === "insight" ? "px-0" : "px-4 sm:px-5"}`
               }`}
             >
-              {homeSurface === "tracking" ? (
+              {homeSurface === "streak" ? (
+                streakPanel
+              ) : homeSurface === "tracking" ? (
             <div className="flex min-h-full flex-col gap-4">
               <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
                 <p className="text-sm text-[#6b6257]">
