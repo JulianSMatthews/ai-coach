@@ -2970,7 +2970,7 @@ export default function AssessmentChatBox({
                 </div>
               ) : (
                 <div className="flex min-h-full flex-col">
-                  <div className="flex-1 py-4">
+                  <div className="-mt-[0.5cm] flex-none py-4">
                     <div className="overflow-x-auto pb-2">
                       <div className="flex gap-3">
                         {educationLessonRail.map((lesson, index) => {
@@ -2985,7 +2985,7 @@ export default function AssessmentChatBox({
                       </div>
                     </div>
                   </div>
-                  <div className="mt-16 pb-2 sm:mt-20">
+                  <div className="mt-3 pb-2 sm:mt-4">
                     <button
                       type="button"
                       onClick={() => void openEducationExplorer()}
