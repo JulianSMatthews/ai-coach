@@ -1267,7 +1267,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("checkin");
-  const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
+  const modalOverlayOpen = biometricsModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockButtonStyleInactive =
@@ -3028,7 +3028,7 @@ export default function LatestAssessmentPanel({
 
   return (
     <>
-      {summaryPanelVisible && !selectedPillarKey ? (
+      {summaryPanelVisible && !selectedPillarKey && !objectivesModalOpen ? (
         <section
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
@@ -3128,7 +3128,7 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
-      {!biometricsModalOpen && !objectivesModalOpen ? (
+      {!biometricsModalOpen ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
@@ -3138,6 +3138,9 @@ export default function LatestAssessmentPanel({
                   onClick={() => {
                     if (selectedPillarKey) {
                       closeTracker();
+                    }
+                    if (objectivesModalOpen) {
+                      closeObjectivesModal();
                     }
                     setActiveDockKey("checkin");
                     setSummaryPanelVisible(true);
@@ -3168,6 +3171,9 @@ export default function LatestAssessmentPanel({
                   onClick={() => {
                     if (selectedPillarKey) {
                       closeTracker();
+                    }
+                    if (objectivesModalOpen) {
+                      closeObjectivesModal();
                     }
                     setActiveDockKey("learn");
                     setSummaryPanelVisible(false);
@@ -3866,45 +3872,44 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {objectivesModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--surface)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
-            <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-4 sm:px-5">
-              <div className="flex items-start gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedObjectivesSection) {
-                      setSelectedObjectivesSection(null);
-                      setWeeklyObjectivesError(null);
-                    } else {
-                      closeObjectivesModal();
-                    }
-                  }}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
-                  aria-label={selectedObjectivesSection ? "Back to objectives" : "Close objectives"}
-                >
-                  <span className="text-3xl leading-none">‹</span>
-                </button>
-                <div className="min-w-0 space-y-1.5">
-                  <h2 className="text-[1.65rem] font-semibold leading-[1.05] tracking-normal text-[var(--text-primary)] sm:text-3xl">
-                    {selectedObjectivesSection
-                      ? selectedObjectivesSection === "wellbeing"
-                        ? "General options"
-                        : selectedObjectivesPillar?.label || "Weekly objectives"
-                      : "Weekly objectives"}
-                  </h2>
-                  <p className="text-base leading-snug text-[var(--text-secondary)]">
-                    {selectedObjectivesSection
-                      ? selectedObjectivesSection === "wellbeing"
-                        ? "Set optional general tracking preferences."
-                        : "Choose your target for each concept this week."
-                      : "Select a pillar to set or adjust this week's targets."}
-                  </p>
-                </div>
-              </div>
+        <section className="flex h-full min-h-0 flex-col pb-28 pt-4 sm:pb-32 sm:pt-6">
+          <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 px-4 pb-3 sm:px-5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedObjectivesSection) {
+                    setSelectedObjectivesSection(null);
+                    setWeeklyObjectivesError(null);
+                  } else {
+                    closeObjectivesModal();
+                  }
+                }}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+                aria-label={selectedObjectivesSection ? "Back to objectives" : "Close objectives"}
+              >
+                <span className="text-3xl leading-none">‹</span>
+              </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+            <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
+              <div className="mb-4 space-y-1.5">
+                <h2 className="text-[1.65rem] font-semibold leading-[1.05] tracking-normal text-[var(--text-primary)] sm:text-3xl">
+                  {selectedObjectivesSection
+                    ? selectedObjectivesSection === "wellbeing"
+                      ? "General options"
+                      : selectedObjectivesPillar?.label || "Weekly objectives"
+                    : "Weekly objectives"}
+                </h2>
+                <p className="text-base leading-snug text-[var(--text-secondary)]">
+                  {selectedObjectivesSection
+                    ? selectedObjectivesSection === "wellbeing"
+                      ? "Set optional general tracking preferences."
+                      : "Choose your target for each concept this week."
+                    : "Select a pillar to set or adjust this week's targets."}
+                </p>
+              </div>
+
               {weeklyObjectivesLoading ? <p className="text-sm text-[var(--text-secondary)]">Loading weekly objectives…</p> : null}
               {weeklyObjectivesError ? <p className="text-sm text-[#8a3e1a]">{weeklyObjectivesError}</p> : null}
 
@@ -4183,7 +4188,7 @@ export default function LatestAssessmentPanel({
               </div>
             ) : null}
           </div>
-        </div>
+        </section>
       ) : null}
 
       {selectedPillarKey ? (
