@@ -2669,21 +2669,17 @@ export default function AssessmentChatBox({
       <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         {homeSurface === "blank" ? null : (
           <>
-            <div className="shrink-0 px-4 py-4 sm:px-5">
-              {homeSurface === "insight" ? (
-                <div className="min-w-0" />
-              ) : (
-                <>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
-                    {homeSurfaceEyebrow}
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
-                  {homeSurfaceDescription ? (
-                    <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
-                  ) : null}
-                </>
-              )}
-            </div>
+            {homeSurface === "insight" ? null : (
+              <div className="shrink-0 px-4 py-4 sm:px-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+                  {homeSurfaceEyebrow}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
+                {homeSurfaceDescription ? (
+                  <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
+                ) : null}
+              </div>
+            )}
             <div
               ref={homePanelScrollerRef}
               className={`hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain py-4 pb-44 sm:pb-52 ${
@@ -2712,8 +2708,8 @@ export default function AssessmentChatBox({
               </div>
               ) : educationPlan?.available ? (
               activeEducationLesson ? (
-                <div className="-mt-[1cm] flex min-h-full flex-col">
-                  <div className="shrink-0 px-1 py-4 sm:px-2">
+                <div className="flex min-h-full flex-col">
+                  <div className="shrink-0 px-4 pb-3 sm:px-5">
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
@@ -2726,7 +2722,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="px-4 py-4 sm:px-6">
+                  <div className="px-4 pb-4 sm:px-6">
                     <article className="w-full bg-transparent px-0 py-0 text-left">
                       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-secondary)]">
                         {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
@@ -2837,8 +2833,8 @@ export default function AssessmentChatBox({
                   </div>
                 </div>
               ) : educationExplorerOpen ? (
-                <div className="-mt-[1cm] flex min-h-full flex-col">
-                  <div className="shrink-0 px-1 py-4 sm:px-2">
+                <div className="flex min-h-full flex-col">
+                  <div className="shrink-0 px-4 pb-3 sm:px-5">
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
@@ -2875,7 +2871,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-44 sm:px-5 sm:pb-52">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-44 sm:px-5 sm:pb-52">
                     {educationExplorerMode === "pillars" ? (
                       <div className="space-y-3">
                         {educationExplorerPillars.map((pillar) => {
