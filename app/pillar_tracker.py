@@ -462,7 +462,7 @@ def _editable_tracker_dates_for_pillar(pillar_key: str, current_day: date | None
 
 
 def _last_week_anchor(current_day: date) -> date:
-    return current_day - timedelta(days=7)
+    return start_of_week(current_day - timedelta(days=7))
 
 
 def _is_last_week_anchor(target_day: date, current_day: date) -> bool:
@@ -1629,6 +1629,12 @@ def _load_week_entries(user_id: int, pillar_key: str, anchor: date) -> dict[date
 def _resolve_tracker_detail_anchor(user_id: int, pillar_key: str, requested_anchor: date | None, current_day: date) -> date:
     viewable_dates = _viewable_tracker_dates_for_pillar(user_id, pillar_key, current_day=current_day)
     editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
+    if requested_anchor == _last_week_anchor(current_day):
+        required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
+        entries_by_day = _load_week_entries(user_id, pillar_key, requested_anchor)
+        completed_days = _completed_days(entries_by_day, required_concepts)
+        if completed_days:
+            return max(completed_days)
     if requested_anchor in viewable_dates:
         return requested_anchor
     if not viewable_dates:
