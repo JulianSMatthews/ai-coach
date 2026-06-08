@@ -2726,7 +2726,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-6 sm:pb-52">
+                  <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-6 sm:pb-52">
                     <article className="w-full bg-transparent px-0 py-0 text-left">
                       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-secondary)]">
                         {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
@@ -2875,7 +2875,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
+                  <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
                     {educationExplorerMode === "pillars" ? (
                       <div className="space-y-3">
                         {educationExplorerPillars.map((pillar) => {

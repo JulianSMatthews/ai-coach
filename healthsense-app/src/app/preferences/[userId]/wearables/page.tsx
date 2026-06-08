@@ -42,7 +42,7 @@ export default async function WearablesPage(props: PageProps) {
         />
       </div>
 
-      <section className="mx-auto min-h-0 w-full max-w-4xl flex-1 overflow-x-hidden overflow-y-auto">
+      <section className="coach-scrollbar mx-auto min-h-0 w-full max-w-4xl flex-1 overflow-x-hidden overflow-y-auto">
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <WearablesPanel
             userId={String(userId)}

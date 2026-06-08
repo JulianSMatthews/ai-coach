@@ -4199,7 +4199,7 @@ export default function LatestAssessmentPanel({
                 <span className="text-3xl leading-none">‹</span>
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
+            <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
               {loadingDetail ? <p className="text-sm text-[var(--text-secondary)]">Loading tracker...</p> : null}
               {detailError ? <p className="text-sm text-[#8a3e1a]">{detailError}</p> : null}
 

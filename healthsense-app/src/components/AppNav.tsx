@@ -182,7 +182,7 @@ export default function AppNav({
           onClick={() => setOpen(false)}
         />
         <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
+          className={`coach-scrollbar absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
           style={{ backgroundColor: "var(--chrome)", color: "var(--chrome-text)" }}

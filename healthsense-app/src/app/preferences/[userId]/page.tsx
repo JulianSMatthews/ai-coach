@@ -52,7 +52,7 @@ export default async function PreferencesPage(props: PageProps) {
         />
       </div>
 
-      <section className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto">
+      <section className="coach-scrollbar mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto">
         <Link
           href="/"
           className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
