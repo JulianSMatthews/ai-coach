@@ -2837,7 +2837,7 @@ export default function AssessmentChatBox({
                   </div>
                 </div>
               ) : educationExplorerOpen ? (
-                <div className="flex min-h-full flex-col">
+                <div className="-mt-[0.5cm] flex min-h-full flex-col">
                   <div className="shrink-0 px-1 py-4 sm:px-2">
                     <div className="flex items-center justify-between">
                       <button
@@ -2985,7 +2985,7 @@ export default function AssessmentChatBox({
                       </div>
                     </div>
                   </div>
-                  <div className="mt-3 pb-2 sm:mt-4">
+                  <div className="mt-[calc(0.75rem-2mm)] pb-2 sm:mt-[calc(1rem-2mm)]">
                     <button
                       type="button"
                       onClick={() => void openEducationExplorer()}
