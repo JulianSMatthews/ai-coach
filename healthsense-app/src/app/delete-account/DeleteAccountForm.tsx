@@ -104,15 +104,18 @@ export default function DeleteAccountForm() {
         </span>
       </label>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="grid gap-3">
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-[19px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-center text-[19px] font-semibold text-[var(--action-primary-text)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Sending..." : "Request deletion"}
         </button>
-        <a className="text-[19px] text-[var(--accent)] underline" href="/login">
+        <a
+          className="inline-flex w-full items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-center text-[19px] font-semibold text-[var(--text-primary)] transition hover:bg-[var(--surface-muted)]"
+          href="/login"
+        >
           Sign in
         </a>
       </div>
