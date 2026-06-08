@@ -706,6 +706,7 @@ export type EducationPlanTodayResponse = {
       }> | null;
     }> | null;
   } | null;
+  explore_catalog_pending?: boolean | null;
   quiz?: {
     id?: number | null;
     pass_score_pct?: number | null;

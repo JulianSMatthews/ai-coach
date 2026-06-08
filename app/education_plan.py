@@ -53,7 +53,8 @@ _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
 _LEVEL_PRIORITY = ("support", "foundation", "build", "perform")
 _LESSON_NUMBER_WORD_PATTERN = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
-EDUCATION_EXPLORE_CATALOG_CACHE_KEY = "education_explore_catalog_cache_v1"
+EDUCATION_EXPLORE_CATALOG_CACHE_VERSION = 2
+EDUCATION_EXPLORE_CATALOG_CACHE_KEY = f"education_explore_catalog_cache_v{EDUCATION_EXPLORE_CATALOG_CACHE_VERSION}"
 EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND = "education_explore_catalog_warmup"
 
 
@@ -2319,6 +2320,60 @@ def _education_explore_catalog_cache_row(session, user_id: int) -> UserPreferenc
     )
 
 
+def _education_explore_catalog_signature(session) -> dict[str, Any]:
+    rows = (
+        session.execute(
+            select(
+                EducationProgramme.id,
+                EducationProgramme.pillar_key,
+                EducationProgramme.concept_key,
+                EducationProgramme.updated_at,
+            )
+            .where(
+                EducationProgramme.is_released.is_(True),
+                EducationProgramme.concept_key.isnot(None),
+                EducationProgramme.concept_key != "",
+            )
+            .order_by(EducationProgramme.id.asc())
+        )
+        .all()
+    )
+    programme_ids = [int(row[0]) for row in rows]
+    lesson_rows = (
+        session.execute(
+            select(
+                EducationProgrammeDay.programme_id,
+                EducationProgrammeDay.id,
+                EducationProgrammeDay.day_index,
+                EducationProgrammeDay.updated_at,
+            )
+            .where(EducationProgrammeDay.programme_id.in_(programme_ids))
+            .order_by(EducationProgrammeDay.programme_id.asc(), EducationProgrammeDay.day_index.asc(), EducationProgrammeDay.id.asc())
+        )
+        .all()
+        if programme_ids
+        else []
+    )
+    lessons_by_programme: dict[int, list[str]] = {}
+    for programme_id, day_id, day_index, updated_at in lesson_rows:
+        updated_token = updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at or "")
+        lessons_by_programme.setdefault(int(programme_id), []).append(f"{int(day_id)}:{int(day_index)}:{updated_token}")
+
+    programmes: list[str] = []
+    for programme_id, pillar_key, concept_key, updated_at in rows:
+        pillar_token = str(pillar_key or "").strip().lower()
+        concept_token = _normalize_concept_key(concept_key)
+        if not pillar_token or not concept_token:
+            continue
+        updated_token = updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at or "")
+        lesson_signature = ",".join(lessons_by_programme.get(int(programme_id), []))
+        programmes.append(f"{int(programme_id)}:{pillar_token}:{concept_token}:{updated_token}:lessons={lesson_signature}")
+    return {
+        "version": EDUCATION_EXPLORE_CATALOG_CACHE_VERSION,
+        "programmes": programmes,
+    }
+
+
 def _cached_education_explore_catalog(session, user_id: int, anchor: date) -> dict[str, Any] | None:
     row = _education_explore_catalog_cache_row(session, int(user_id))
     if row is None:
@@ -2330,6 +2385,11 @@ def _cached_education_explore_catalog(session, user_id: int, anchor: date) -> di
     if not isinstance(cached, dict):
         return None
     if str(cached.get("lesson_date") or "") != anchor.isoformat():
+        return None
+    if int(cached.get("version") or 0) != EDUCATION_EXPLORE_CATALOG_CACHE_VERSION:
+        return None
+    signature = cached.get("signature")
+    if not isinstance(signature, dict) or signature != _education_explore_catalog_signature(session):
         return None
     catalog = cached.get("catalog")
     return catalog if isinstance(catalog, dict) else None
@@ -2344,7 +2404,9 @@ def _store_education_explore_catalog_cache(
 ) -> None:
     row = _education_explore_catalog_cache_row(session, int(user_id))
     payload = {
+        "version": EDUCATION_EXPLORE_CATALOG_CACHE_VERSION,
         "lesson_date": anchor.isoformat(),
+        "signature": _education_explore_catalog_signature(session),
         "catalog": catalog,
         "updated_at": datetime.utcnow().isoformat(),
     }
@@ -2355,6 +2417,7 @@ def _store_education_explore_catalog_cache(
         )
     row.value = json.dumps(payload)
     row.meta = {
+        "version": EDUCATION_EXPLORE_CATALOG_CACHE_VERSION,
         "lesson_date": anchor.isoformat(),
         "pillar_count": len(catalog.get("pillars") or []) if isinstance(catalog, dict) else 0,
     }

@@ -1096,21 +1096,8 @@ export default function AssessmentChatBox({
         })
         .filter((pillar): pillar is EducationExplorerPillar => Boolean(pillar));
     }
-    const seen = new Set<string>();
-    const ordered: EducationExplorerPillar[] = [];
-    for (const lesson of educationLessonRail) {
-      const pillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
-      if (!pillarKey || seen.has(pillarKey)) continue;
-      seen.add(pillarKey);
-      ordered.push({
-        pillar_key: pillarKey,
-        pillar_label: String(lesson?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
-        lesson_count: educationLessonRail.filter((item) => String(item?.pillar_key || "").trim().toLowerCase() === pillarKey).length,
-        concepts: [],
-      });
-    }
-    return ordered;
-  }, [educationLessonRail, educationPlan?.explore_catalog?.pillars]);
+    return [];
+  }, [educationPlan?.explore_catalog?.pillars]);
   const activeEducationExplorerPillarKey =
     educationExplorerPillarKey || educationExplorerPillars[0]?.pillar_key || null;
   const educationExplorerConcepts = useMemo<EducationExplorerConcept[]>(() => {
@@ -1127,28 +1114,8 @@ export default function AssessmentChatBox({
           lessons: concept.lessons,
         }));
     }
-    const groups = new Map<string, EducationExplorerConcept>();
-    for (const lesson of educationLessonRail) {
-      const lessonPillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
-      if (lessonPillarKey !== activeKey) continue;
-      const conceptKey = String(lesson?.concept_key || "").trim().toLowerCase() || `lesson-${String(lesson?.day_index || "")}`;
-      const conceptLabel = String(lesson?.concept_label || lesson?.pillar_label || "").trim() || "Concept";
-      const entry = groups.get(conceptKey);
-      if (entry) {
-        entry.lesson_count += 1;
-      } else {
-        groups.set(conceptKey, {
-          concept_key: conceptKey,
-          concept_label: conceptLabel,
-          lesson_count: 1,
-          lessons: [lesson],
-        });
-        continue;
-      }
-      entry.lessons.push(lesson);
-    }
-    return Array.from(groups.values());
-  }, [activeEducationExplorerPillarKey, educationExplorerPillars, educationLessonRail]);
+    return [];
+  }, [activeEducationExplorerPillarKey, educationExplorerPillars]);
   const activeEducationExplorerConceptKey =
     educationExplorerConceptKey || educationExplorerConcepts[0]?.concept_key || null;
   const educationExplorerLessons = useMemo(() => {
@@ -1158,20 +1125,8 @@ export default function AssessmentChatBox({
     const catalogConcept = educationExplorerConcepts.find((concept) => concept.concept_key === activeConceptKey);
     const catalogLessons = Array.isArray(catalogConcept?.lessons) ? catalogConcept.lessons : [];
     if (catalogLessons.length) return catalogLessons;
-    const seen = new Set<string>();
-    return educationLessonRail
-      .filter((lesson) => String(lesson?.pillar_key || "").trim().toLowerCase() === activePillarKey)
-      .filter((lesson) => {
-        const conceptKey = String(lesson?.concept_key || "").trim().toLowerCase() || `lesson-${String(lesson?.day_index || "")}`;
-        return conceptKey === activeConceptKey;
-      })
-      .filter((lesson) => {
-        const token = String(lesson?.programme_day_id || lesson?.day_index || "").trim().toLowerCase();
-        if (!token || seen.has(token)) return false;
-        seen.add(token);
-        return true;
-      });
-  }, [activeEducationExplorerConceptKey, activeEducationExplorerPillarKey, educationExplorerConcepts, educationLessonRail]);
+    return [];
+  }, [activeEducationExplorerConceptKey, activeEducationExplorerPillarKey, educationExplorerConcepts]);
   const openEducationLesson = useCallback((lesson: any, options?: { closeExplorer?: boolean }) => {
     const lessonDayIndex = Number(lesson?.day_index || 0);
     const lessonTitle = lessonTitleWithIndex(
@@ -1584,7 +1539,7 @@ export default function AssessmentChatBox({
     setEducationExplorerPillarKey(null);
     setEducationExplorerConceptKey(null);
     if (!educationPlan?.explore_catalog) {
-      void loadEducationPlan({ includeExplore: true, exploreCacheOnly: true });
+      void loadEducationPlan({ includeExplore: true });
     }
   }, [educationPlan?.explore_catalog, loadEducationPlan]);
 
@@ -3182,91 +3137,121 @@ export default function AssessmentChatBox({
                   <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
                     {educationExplorerMode === "pillars" ? (
                       <div className="space-y-3">
-                        {educationExplorerPillars.map((pillar) => {
-                          const active = pillar.pillar_key === educationExplorerPillarKey;
-                          const palette = getPillarPalette(pillar.pillar_key);
-                          return (
-                            <button
-                              key={pillar.pillar_key}
-                              type="button"
-                              onClick={() => {
-                                setEducationExplorerPillarKey(pillar.pillar_key);
-                                setEducationExplorerConceptKey(null);
-                                setEducationExplorerMode("concepts");
-                              }}
-                              className="flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
-                              style={{
-                                backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
-                                boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
-                              }}
-                            >
-                              <span className="min-w-0 pr-4">
-                                <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.8rem]">
-                                  {pillar.pillar_label}
-                                </span>
-                                <span className="mt-4 block text-sm text-[var(--text-secondary)]">
-                                  {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
-                                </span>
-                              </span>
-                              <span
-                                className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
-                                style={{ backgroundColor: palette.bg, color: "#1e1b16" }}
+                        {educationExplorerPillars.length ? (
+                          educationExplorerPillars.map((pillar) => {
+                            const active = pillar.pillar_key === educationExplorerPillarKey;
+                            const palette = getPillarPalette(pillar.pillar_key);
+                            return (
+                              <button
+                                key={pillar.pillar_key}
+                                type="button"
+                                onClick={() => {
+                                  setEducationExplorerPillarKey(pillar.pillar_key);
+                                  setEducationExplorerConceptKey(null);
+                                  setEducationExplorerMode("concepts");
+                                }}
+                                className="flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
+                                style={{
+                                  backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
+                                  boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
+                                }}
                               >
-                                {pillar.lesson_count}
-                              </span>
-                            </button>
-                          );
-                        })}
+                                <span className="min-w-0 pr-4">
+                                  <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.8rem]">
+                                    {pillar.pillar_label}
+                                  </span>
+                                  <span className="mt-4 block text-sm text-[var(--text-secondary)]">
+                                    {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
+                                  </span>
+                                </span>
+                                <span
+                                  className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
+                                  style={{ backgroundColor: palette.bg, color: "#1e1b16" }}
+                                >
+                                  {pillar.lesson_count}
+                                </span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="flex min-h-[9rem] items-center rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
+                            <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+                              {educationPlanLoading || educationPlan?.explore_catalog_pending
+                                ? "Loading topics..."
+                                : "Topics are not available right now."}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ) : educationExplorerMode === "concepts" ? (
                       <div className="space-y-3">
-                        {educationExplorerConcepts.map((concept) => {
-                          const active = concept.concept_key === activeEducationExplorerConceptKey;
-                          const activePillar = getPillarPalette(activeEducationExplorerPillarKey || "");
-                          return (
-                            <button
-                              key={concept.concept_key}
-                              type="button"
-                              onClick={() => {
-                                setEducationExplorerConceptKey(concept.concept_key);
-                                setEducationExplorerMode("lessons");
-                              }}
-                              className="flex min-h-[7.5rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
-                              style={{
-                                backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
-                                boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
-                              }}
-                            >
-                              <span className="min-w-0 pr-4">
-                                <span className="block text-[1.85rem] font-semibold leading-[0.98] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.2rem]">
-                                  {concept.concept_label}
-                                </span>
-                                <span className="mt-4 block text-sm text-[var(--text-secondary)]">
-                                  {concept.lesson_count} lesson{concept.lesson_count === 1 ? "" : "s"}
-                                </span>
-                              </span>
-                              <span
-                                className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
-                                style={{ backgroundColor: activePillar.bg, color: "#1e1b16" }}
+                        {educationExplorerConcepts.length ? (
+                          educationExplorerConcepts.map((concept) => {
+                            const active = concept.concept_key === activeEducationExplorerConceptKey;
+                            const activePillar = getPillarPalette(activeEducationExplorerPillarKey || "");
+                            return (
+                              <button
+                                key={concept.concept_key}
+                                type="button"
+                                onClick={() => {
+                                  setEducationExplorerConceptKey(concept.concept_key);
+                                  setEducationExplorerMode("lessons");
+                                }}
+                                className="flex min-h-[7.5rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
+                                style={{
+                                  backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
+                                  boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
+                                }}
                               >
-                                {concept.lesson_count}
-                              </span>
-                            </button>
-                          );
-                        })}
+                                <span className="min-w-0 pr-4">
+                                  <span className="block text-[1.85rem] font-semibold leading-[0.98] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.2rem]">
+                                    {concept.concept_label}
+                                  </span>
+                                  <span className="mt-4 block text-sm text-[var(--text-secondary)]">
+                                    {concept.lesson_count} lesson{concept.lesson_count === 1 ? "" : "s"}
+                                  </span>
+                                </span>
+                                <span
+                                  className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
+                                  style={{ backgroundColor: activePillar.bg, color: "#1e1b16" }}
+                                >
+                                  {concept.lesson_count}
+                                </span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="flex min-h-[7.5rem] items-center rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
+                            <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+                              {educationPlanLoading || educationPlan?.explore_catalog_pending
+                                ? "Loading concepts..."
+                                : "No concepts are available for this pillar yet."}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="overflow-x-auto pb-1">
                         <div className="flex gap-3">
-                          {educationExplorerLessons.map((lesson) => {
-                            const startableToken = firstIncompleteEducationLessonToken(educationExplorerLessons);
-                            const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
-                            return renderEducationLessonCard(lesson, {
-                              selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
-                              pill: "explore",
-                              isStartable: Boolean(startableToken && lessonToken === startableToken),
-                            });
-                          })}
+                          {educationExplorerLessons.length ? (
+                            educationExplorerLessons.map((lesson) => {
+                              const startableToken = firstIncompleteEducationLessonToken(educationExplorerLessons);
+                              const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
+                              return renderEducationLessonCard(lesson, {
+                                selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
+                                pill: "explore",
+                                isStartable: Boolean(startableToken && lessonToken === startableToken),
+                              });
+                            })
+                          ) : (
+                            <div className="flex min-h-[7.5rem] min-w-full items-center rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
+                              <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+                                {educationPlanLoading || educationPlan?.explore_catalog_pending
+                                  ? "Loading lessons..."
+                                  : "No lessons are available for this concept yet."}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
