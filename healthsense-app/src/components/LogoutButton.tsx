@@ -23,9 +23,10 @@ export default function LogoutButton({ className = "", label = "Logout", style }
   };
 
   return (
-    <form onSubmit={handleLogout}>
+    <form onSubmit={handleLogout} className="w-full md:w-auto">
       <button
-        className={`rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-sm text-[var(--text-primary)] ${className}`}
+        type="submit"
+        className={`inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-center text-sm font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto md:px-4 md:py-2 ${className}`}
         style={style}
       >
         {label}

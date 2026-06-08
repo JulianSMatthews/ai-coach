@@ -234,10 +234,7 @@ export default function AppNav({
           ) : null}
 
           <div className="mt-4">
-            <LogoutButton
-              className="w-full rounded-[18px] px-4 py-2.5 text-center"
-              style={{ backgroundColor: "var(--chrome-soft)", borderColor: "var(--chrome-border)", color: "var(--chrome-text)" }}
-            />
+            <LogoutButton />
           </div>
 
         </div>
