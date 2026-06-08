@@ -2712,7 +2712,7 @@ export default function AssessmentChatBox({
               </div>
               ) : educationPlan?.available ? (
               activeEducationLesson ? (
-                <div className="flex min-h-full flex-col">
+                <div className="-mt-[0.5cm] flex min-h-full flex-col">
                   <div className="shrink-0 px-1 py-4 sm:px-2">
                     <div className="flex items-center justify-between">
                       <button
