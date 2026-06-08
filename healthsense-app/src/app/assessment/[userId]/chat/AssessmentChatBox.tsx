@@ -1416,9 +1416,6 @@ export default function AssessmentChatBox({
   );
   const streakMonthLabel = formatStreakMonthLabel(streakCalendarMonth);
   const streakHeadline = currentStreakDays > 0 ? "Your current streak" : "Start a new streak";
-  const streakDetail = currentStreakDays > 0
-    ? `${currentStreakDays} day${currentStreakDays === 1 ? "" : "s"} of showing up for yourself.`
-    : "Check in or complete a lesson today to begin.";
   const streakEncouragement = currentStreakDays > 0
     ? "Keep the rhythm simple: one useful check-in or lesson at a time."
     : "A streak starts with one honest entry, not a perfect week.";
@@ -2852,15 +2849,9 @@ export default function AssessmentChatBox({
       <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-28 sm:px-5 sm:pb-40">
         <div className="space-y-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
-              CoachSense streak
-            </p>
-            <h2 className="mt-2 text-[2.2rem] font-semibold leading-[1] tracking-normal text-[var(--text-primary)] sm:text-[2.7rem]">
+            <h2 className="text-[2.2rem] font-semibold leading-[1] tracking-normal text-[var(--text-primary)] sm:text-[2.7rem]">
               {streakHeadline}
             </h2>
-            <p className="mt-2 max-w-[21rem] text-[1rem] leading-6 text-[var(--text-secondary)]">
-              {streakDetail}
-            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
