@@ -3033,7 +3033,7 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
-          <div className="relative overflow-hidden">
+          <div className="relative -translate-y-[0.5cm] overflow-hidden">
             <div className="overflow-x-auto snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="flex gap-4 sm:gap-5">
                 {visiblePillars.map((pillar) => {
