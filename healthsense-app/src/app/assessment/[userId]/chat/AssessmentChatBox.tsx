@@ -2890,17 +2890,17 @@ export default function AssessmentChatBox({
                                 setEducationExplorerConceptKey(null);
                                 setEducationExplorerMode("concepts");
                               }}
-                              className="flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
+                              className="flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
                               style={{
-                                backgroundColor: active ? "#ece7dc" : "#f8f4eb",
+                                backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
                                 boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
                               }}
                             >
                               <span className="min-w-0 pr-4">
-                                <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.8rem]">
+                                <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.8rem]">
                                   {pillar.pillar_label}
                                 </span>
-                                <span className="mt-4 block text-sm text-[#6b6257]">
+                                <span className="mt-4 block text-sm text-[var(--text-secondary)]">
                                   {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
                                 </span>
                               </span>
@@ -2927,17 +2927,17 @@ export default function AssessmentChatBox({
                                 setEducationExplorerConceptKey(concept.concept_key);
                                 setEducationExplorerMode("lessons");
                               }}
-                              className="flex min-h-[7.5rem] w-full items-center justify-between rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
+                              className="flex min-h-[7.5rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
                               style={{
-                                backgroundColor: active ? "#ece7dc" : "#f8f4eb",
+                                backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
                                 boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
                               }}
                             >
                               <span className="min-w-0 pr-4">
-                                <span className="block text-[1.85rem] font-semibold leading-[0.98] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.2rem]">
+                                <span className="block text-[1.85rem] font-semibold leading-[0.98] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.2rem]">
                                   {concept.concept_label}
                                 </span>
-                                <span className="mt-4 block text-sm text-[#6b6257]">
+                                <span className="mt-4 block text-sm text-[var(--text-secondary)]">
                                   {concept.lesson_count} lesson{concept.lesson_count === 1 ? "" : "s"}
                                 </span>
                               </span>
@@ -2990,7 +2990,11 @@ export default function AssessmentChatBox({
                       type="button"
                       onClick={() => void openEducationExplorer()}
                       className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
-                      style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
+                      style={{
+                        backgroundColor: "var(--surface)",
+                        color: "var(--text-primary)",
+                        borderColor: "var(--border)",
+                      }}
                     >
                       {educationPlanLoading && !educationPlan?.explore_catalog ? "Loading topics..." : "Explore topics"}
                     </button>
