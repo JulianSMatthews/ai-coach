@@ -10,7 +10,7 @@ const config: CapacitorConfig = {
   appendUserAgent: " HealthSenseIOS/1.0",
   backgroundColor: "#f6f1e7",
   ios: {
-    contentInset: "automatic",
+    contentInset: "never",
     scrollEnabled: true,
     preferredContentMode: "mobile",
   },

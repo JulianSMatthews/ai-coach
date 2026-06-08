@@ -4,6 +4,11 @@ export const THEME_COOKIE_KEY = "healthsense_theme";
 export type ThemePreference = "light" | "dark" | "system" | "auto";
 export type ResolvedTheme = "light" | "dark";
 
+const THEME_BACKGROUNDS: Record<ResolvedTheme, string> = {
+  light: "#f6f1e7",
+  dark: "#15110d",
+};
+
 export function normalizeThemePreference(value: unknown): ThemePreference {
   const token = String(value || "").trim().toLowerCase();
   if (token === "light" || token === "dark" || token === "system" || token === "auto") {
@@ -42,6 +47,31 @@ function writeThemeCookie(preference: ThemePreference) {
   document.cookie = `${THEME_COOKIE_KEY}=${encodeURIComponent(preference)}; path=/; max-age=31536000; samesite=lax`;
 }
 
+function syncDocumentThemeColor(resolved: ResolvedTheme) {
+  if (typeof document === "undefined") return;
+  const background = THEME_BACKGROUNDS[resolved];
+  const root = document.documentElement;
+  root.style.colorScheme = resolved;
+  root.style.backgroundColor = background;
+  if (document.body) {
+    document.body.style.backgroundColor = background;
+  }
+  let themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!themeColorMeta) {
+    themeColorMeta = document.createElement("meta");
+    themeColorMeta.name = "theme-color";
+    document.head.appendChild(themeColorMeta);
+  }
+  themeColorMeta.content = background;
+  let statusBarMeta = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-status-bar-style"]');
+  if (!statusBarMeta) {
+    statusBarMeta = document.createElement("meta");
+    statusBarMeta.name = "apple-mobile-web-app-status-bar-style";
+    document.head.appendChild(statusBarMeta);
+  }
+  statusBarMeta.content = resolved === "dark" ? "black-translucent" : "default";
+}
+
 export function applyThemePreference(preferenceInput: unknown, persist = true): ThemePreference {
   const preference = normalizeThemePreference(preferenceInput);
   if (typeof document === "undefined") {
@@ -51,7 +81,7 @@ export function applyThemePreference(preferenceInput: unknown, persist = true): 
   const root = document.documentElement;
   root.dataset.themePreference = preference;
   root.dataset.theme = resolved;
-  root.style.colorScheme = resolved;
+  syncDocumentThemeColor(resolved);
   if (persist && typeof window !== "undefined") {
     window.localStorage.setItem(THEME_STORAGE_KEY, preference);
     writeThemeCookie(preference);
@@ -96,9 +126,34 @@ export function themeBootstrapScript(): string {
             ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
             : preference;
         var root = document.documentElement;
+        var background = resolved === "dark" ? ${JSON.stringify(THEME_BACKGROUNDS.dark)} : ${JSON.stringify(THEME_BACKGROUNDS.light)};
+        function syncThemeColor() {
+          root.style.colorScheme = resolved;
+          root.style.backgroundColor = background;
+          if (document.body) {
+            document.body.style.backgroundColor = background;
+          }
+          var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+          if (!themeColorMeta) {
+            themeColorMeta = document.createElement("meta");
+            themeColorMeta.setAttribute("name", "theme-color");
+            document.head.appendChild(themeColorMeta);
+          }
+          themeColorMeta.setAttribute("content", background);
+          var statusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+          if (!statusBarMeta) {
+            statusBarMeta = document.createElement("meta");
+            statusBarMeta.setAttribute("name", "apple-mobile-web-app-status-bar-style");
+            document.head.appendChild(statusBarMeta);
+          }
+          statusBarMeta.setAttribute("content", resolved === "dark" ? "black-translucent" : "default");
+        }
         root.setAttribute("data-theme-preference", preference);
         root.setAttribute("data-theme", resolved);
-        root.style.colorScheme = resolved;
+        syncThemeColor();
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", syncThemeColor, { once: true });
+        }
       } catch (error) {}
     })();
   `;

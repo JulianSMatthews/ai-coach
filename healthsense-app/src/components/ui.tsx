@@ -15,7 +15,7 @@ export function PageShell({
 }) {
   return (
     <main
-      className={`min-h-[100dvh] overflow-x-hidden bg-[var(--background)] px-4 pb-6 pt-[env(safe-area-inset-top)] text-[var(--foreground)] sm:px-6 sm:pb-10 ${className}`.trim()}
+      className={`min-h-screen min-h-[100dvh] overflow-x-hidden bg-[var(--background)] px-4 pb-6 pt-[env(safe-area-inset-top)] text-[var(--foreground)] sm:px-6 sm:pb-10 ${className}`.trim()}
     >
       <SessionBootstrap />
       <ThemeBootstrap defaultTheme={defaultTheme} />
