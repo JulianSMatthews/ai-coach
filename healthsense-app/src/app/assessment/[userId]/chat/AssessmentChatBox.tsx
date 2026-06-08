@@ -1292,6 +1292,8 @@ export default function AssessmentChatBox({
     homeSurface === "blank"
       ? "h-auto"
       : "h-full";
+  const learnContentScrollsBelowHeader =
+    homeSurface === "insight" && Boolean(activeEducationLesson || educationExplorerOpen);
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
@@ -2682,8 +2684,10 @@ export default function AssessmentChatBox({
             )}
             <div
               ref={homePanelScrollerRef}
-              className={`hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain py-4 pb-44 sm:pb-52 ${
-                homeSurface === "insight" ? "px-0" : "px-4 sm:px-5"
+              className={`hs-home-panel-scroll min-h-0 flex-1 overscroll-contain ${
+                learnContentScrollsBelowHeader
+                  ? "overflow-hidden px-0 pt-4 pb-0"
+                  : `overflow-y-auto py-4 pb-44 sm:pb-52 ${homeSurface === "insight" ? "px-0" : "px-4 sm:px-5"}`
               }`}
             >
               {homeSurface === "tracking" ? (
@@ -2708,7 +2712,7 @@ export default function AssessmentChatBox({
               </div>
               ) : educationPlan?.available ? (
               activeEducationLesson ? (
-                <div className="flex min-h-full flex-col">
+                <div className="flex h-full min-h-0 flex-col">
                   <div className="shrink-0 px-4 pb-3 sm:px-5">
                     <div className="flex items-center justify-between">
                       <button
@@ -2722,7 +2726,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="px-4 pb-4 sm:px-6">
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-6 sm:pb-52">
                     <article className="w-full bg-transparent px-0 py-0 text-left">
                       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-secondary)]">
                         {String(activeEducationLesson?.concept_label || activeEducationLesson?.concept_key || activeEducationLesson?.pillar_label || "Lesson").trim()}
@@ -2833,7 +2837,7 @@ export default function AssessmentChatBox({
                   </div>
                 </div>
               ) : educationExplorerOpen ? (
-                <div className="flex min-h-full flex-col">
+                <div className="flex h-full min-h-0 flex-col">
                   <div className="shrink-0 px-4 pb-3 sm:px-5">
                     <div className="flex items-center justify-between">
                       <button
@@ -2871,7 +2875,7 @@ export default function AssessmentChatBox({
                       <div className="h-12 w-12" />
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-44 sm:px-5 sm:pb-52">
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
                     {educationExplorerMode === "pillars" ? (
                       <div className="space-y-3">
                         {educationExplorerPillars.map((pillar) => {
