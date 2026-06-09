@@ -1284,6 +1284,7 @@ class EducationProgramme(Base):
     code = Column(String(64), nullable=False, unique=True, index=True)
     name = Column(String(200), nullable=False)
     duration_days = Column(Integer, nullable=False, server_default=text("21"))
+    journey_order = Column(Integer, nullable=False, server_default=text("0"), index=True)
     llm_task_description = Column(Text, nullable=True)
     llm_video_duration = Column(String(120), nullable=True)
     is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
@@ -1295,6 +1296,7 @@ class EducationProgramme(Base):
         Index("ix_education_programmes_pillar_active", "pillar_key", "is_active"),
         Index("ix_education_programmes_pillar_concept_active", "pillar_key", "concept_key", "is_active"),
         Index("ix_education_programmes_released_active", "is_released", "is_active"),
+        Index("ix_education_programmes_journey_order", "journey_order", "id"),
     )
 
 
@@ -1351,6 +1353,30 @@ class EducationLessonVariant(Base):
     __table_args__ = (
         UniqueConstraint("programme_day_id", "level", name="uq_education_lesson_variants_day_level"),
         Index("ix_education_lesson_variants_day_active", "programme_day_id", "is_active"),
+    )
+
+
+class EducationConceptInsight(Base):
+    __tablename__ = "education_concept_insights"
+
+    id = Column(Integer, primary_key=True)
+    programme_id = Column(Integer, ForeignKey("education_programmes.id", ondelete="CASCADE"), nullable=False, index=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    concept_key = Column(String(64), nullable=False, index=True)
+    concept_label = Column(String(160), nullable=True)
+    insight_index = Column(Integer, nullable=False)
+    angle = Column(String(64), nullable=True)
+    message = Column(Text, nullable=False)
+    source_hash = Column(String(64), nullable=True, index=True)
+    source_summary = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    meta = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("programme_id", "insight_index", name="uq_education_concept_insights_programme_index"),
+        Index("ix_education_concept_insights_pillar_concept", "pillar_key", "concept_key", "is_active"),
     )
 
 

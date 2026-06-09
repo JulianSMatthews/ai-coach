@@ -607,6 +607,8 @@ export type EducationPlanTodayResponse = {
     id?: number;
     code?: string | null;
     name?: string | null;
+    concept_key?: string | null;
+    concept_label?: string | null;
     duration_days?: number | null;
   } | null;
   pillar_key?: string | null;
@@ -665,6 +667,33 @@ export type EducationPlanTodayResponse = {
     quiz_question_count?: number | null;
     content?: EducationLessonContent | null;
   }> | null;
+  journey?: {
+    title?: string | null;
+    total_programmes?: number | null;
+    completed_programmes?: number | null;
+    current_programme_id?: number | null;
+    current_sequence_index?: number | null;
+    programmes?: Array<{
+      sequence_index?: number | null;
+      programme_id?: number | null;
+      code?: string | null;
+      name?: string | null;
+      pillar_key?: string | null;
+      pillar_label?: string | null;
+      concept_key?: string | null;
+      concept_label?: string | null;
+      journey_order?: number | null;
+      lesson_count?: number | null;
+      completed_lesson_count?: number | null;
+      current_lesson_index?: number | null;
+      status?: string | null;
+      status_label?: string | null;
+      is_current?: boolean | null;
+      is_completed?: boolean | null;
+      can_open?: boolean | null;
+      plan_count?: number | null;
+    }> | null;
+  } | null;
   explore_catalog?: {
     pillars?: Array<{
       pillar_key?: string | null;

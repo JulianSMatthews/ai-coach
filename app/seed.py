@@ -77,6 +77,8 @@ PILLARS = [
     ("recovery",   "Recovery"),
 ]
 
+EDUCATION_JOURNEY_PILLAR_ORDER = ("reflection", "purpose", "resilience", "recovery", "nutrition", "training")
+
 CONCEPTS: Dict[str, Dict[str, str]] = {
     "nutrition": {
         "protein_intake":   "Protein intake",
@@ -3283,6 +3285,7 @@ def _upsert_education_programme_doc(
     level: str = "build",
     pass_score_pct: float = 66.67,
     is_active: bool = True,
+    journey_order: int | None = None,
     overwrite_existing: bool = True,
 ) -> dict[str, Any]:
     pillar_token = str(pillar_key or "").strip().lower()
@@ -3302,6 +3305,7 @@ def _upsert_education_programme_doc(
     resolved_label = str(concept_label or getattr(concept, "name", "") or concept_token).strip()
     resolved_name = str(name or "").strip() or str(doc.get("title") or "").strip() or resolved_label
     days = list(doc.get("days") or [])
+    resolved_journey_order = int(journey_order or 0) if journey_order is not None else 0
 
     programme = session.query(EducationProgramme).filter(EducationProgramme.code == code_token).one_or_none()
     created_programme = False
@@ -3313,6 +3317,7 @@ def _upsert_education_programme_doc(
             code=code_token,
             name=resolved_name,
             duration_days=len(days),
+            journey_order=resolved_journey_order,
             is_active=bool(is_active),
         )
         session.add(programme)
@@ -3320,6 +3325,16 @@ def _upsert_education_programme_doc(
         created_programme = True
     else:
         if not overwrite_existing:
+            if journey_order is not None:
+                programme.journey_order = resolved_journey_order
+                session.add(programme)
+                session.flush()
+            try:
+                from .education_plan import refresh_programme_insight_bank
+
+                refresh_result = refresh_programme_insight_bank(session, int(programme.id), source="seed")
+            except Exception as exc:
+                refresh_result = {"ok": False, "error": str(exc)}
             return {
                 "created_programme": False,
                 "skipped_existing": True,
@@ -3328,16 +3343,20 @@ def _upsert_education_programme_doc(
                 "name": str(getattr(programme, "name", "") or resolved_name),
                 "pillar_key": str(getattr(programme, "pillar_key", "") or pillar_token),
                 "concept_key": str(getattr(programme, "concept_key", "") or concept_token),
+                "journey_order": int(getattr(programme, "journey_order", 0) or 0),
                 "days": len(days),
                 "variant_ids": [],
                 "quiz_ids": [],
                 "questions": sum(len(day.get("questions") or []) for day in days),
+                "insight_bank": refresh_result,
             }
         programme.pillar_key = pillar_token
         programme.concept_key = concept_token
         programme.concept_label = resolved_label
         programme.name = resolved_name
         programme.duration_days = len(days)
+        if journey_order is not None:
+            programme.journey_order = resolved_journey_order
         programme.is_active = bool(is_active)
         session.add(programme)
         session.flush()
@@ -3459,6 +3478,12 @@ def _upsert_education_programme_doc(
             session.delete(old_day)
 
     session.flush()
+    try:
+        from .education_plan import refresh_programme_insight_bank
+
+        refresh_result = refresh_programme_insight_bank(session, int(programme.id), source="seed")
+    except Exception as exc:
+        refresh_result = {"ok": False, "error": str(exc)}
     return {
         "created_programme": created_programme,
         "programme_id": int(programme.id),
@@ -3466,10 +3491,12 @@ def _upsert_education_programme_doc(
         "name": resolved_name,
         "pillar_key": pillar_token,
         "concept_key": concept_token,
+        "journey_order": int(getattr(programme, "journey_order", 0) or 0),
         "days": len(days),
         "variant_ids": variant_ids,
         "quiz_ids": quiz_ids,
         "questions": question_count,
+        "insight_bank": refresh_result,
     }
 
 
@@ -3485,6 +3512,7 @@ def upsert_education_programme_from_docx(
     level: str = "build",
     pass_score_pct: float = 66.67,
     is_active: bool = True,
+    journey_order: int | None = None,
     overwrite_existing: bool = True,
 ) -> dict[str, Any]:
     from .education_plan import ensure_education_plan_schema
@@ -3501,6 +3529,7 @@ def upsert_education_programme_from_docx(
         level=level,
         pass_score_pct=pass_score_pct,
         is_active=is_active,
+        journey_order=journey_order,
         overwrite_existing=overwrite_existing,
     )
 
@@ -3526,6 +3555,7 @@ def upsert_education_programme_from_definition(
         level=str(definition.get("level") or "build").strip() or "build",
         pass_score_pct=float(definition.get("pass_score_pct") or 66.67),
         is_active=bool(definition.get("is_active", True)),
+        journey_order=int(definition.get("journey_order") or 0) if definition.get("journey_order") is not None else None,
         overwrite_existing=overwrite_existing,
     )
 
@@ -3541,6 +3571,7 @@ def seed_education_programme_from_docx(
     level: str = "build",
     pass_score_pct: float = 66.67,
     is_active: bool = True,
+    journey_order: int | None = None,
 ) -> dict[str, Any]:
     with SessionLocal() as session:
         result = upsert_education_programme_from_docx(
@@ -3554,6 +3585,7 @@ def seed_education_programme_from_docx(
             level=level,
             pass_score_pct=pass_score_pct,
             is_active=is_active,
+            journey_order=journey_order,
         )
         session.commit()
         return result
@@ -3582,6 +3614,7 @@ def seed_education_programmes_from_manifest(
                 level=str(entry.get("level") or "build").strip() or "build",
                 pass_score_pct=float(entry.get("pass_score_pct") or 66.67),
                 is_active=bool(entry.get("is_active", True)),
+                journey_order=int(entry.get("journey_order") or 0) if entry.get("journey_order") is not None else None,
             )
         )
     return results
@@ -3600,6 +3633,40 @@ def seed_education_programmes_from_env(session: Session) -> list[dict[str, Any]]
     return seed_education_programmes_from_manifest(session, manifest)
 
 
+def _education_programme_definitions_with_journey_order(
+    definitions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {pillar: [] for pillar in EDUCATION_JOURNEY_PILLAR_ORDER}
+    other: list[dict[str, Any]] = []
+    for definition in definitions:
+        if not isinstance(definition, dict):
+            continue
+        item = dict(definition)
+        pillar_key = str(item.get("pillar_key") or "").strip().lower()
+        if pillar_key in grouped:
+            grouped[pillar_key].append(item)
+        else:
+            other.append(item)
+
+    ordered: list[dict[str, Any]] = []
+    max_group_size = max((len(items) for items in grouped.values()), default=0)
+    for index in range(max_group_size):
+        for pillar_key in EDUCATION_JOURNEY_PILLAR_ORDER:
+            items = grouped.get(pillar_key) or []
+            if index < len(items):
+                ordered.append(items[index])
+    ordered.extend(other)
+
+    for sequence_index, item in enumerate(ordered, start=1):
+        try:
+            existing_order = int(item.get("journey_order") or 0)
+        except Exception:
+            existing_order = 0
+        if existing_order <= 0:
+            item["journey_order"] = sequence_index * 10
+    return ordered
+
+
 def _sync_education_seed_definitions(
     session: Session,
     *,
@@ -3608,13 +3675,14 @@ def _sync_education_seed_definitions(
     upsert_pillars(session)
     upsert_concepts(session)
     overwrite_builtin_programmes = os.getenv("EDUCATION_PROGRAMME_SEED_OVERWRITE_EXISTING") == "1"
+    builtin_definitions = _education_programme_definitions_with_journey_order(BUILTIN_EDUCATION_PROGRAMMES)
     results = [
         upsert_education_programme_from_definition(
             session,
             definition,
             overwrite_existing=overwrite_builtin_programmes,
         )
-        for definition in BUILTIN_EDUCATION_PROGRAMMES
+        for definition in builtin_definitions
     ]
     if include_env:
         results.extend(seed_education_programmes_from_env(session))

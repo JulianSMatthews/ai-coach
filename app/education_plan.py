@@ -30,6 +30,7 @@ from .models import (
     AssessmentRun,
     Concept,
     ContentLibraryItem,
+    EducationConceptInsight,
     EducationLessonVariant,
     EducationProgramme,
     EducationProgrammeDay,
@@ -53,7 +54,9 @@ _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
 _LEVEL_PRIORITY = ("support", "foundation", "build", "perform")
 _LESSON_NUMBER_WORD_PATTERN = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
-EDUCATION_EXPLORE_CATALOG_CACHE_VERSION = 2
+_PILLAR_JOURNEY_ORDER = ("reflection", "purpose", "resilience", "recovery", "nutrition", "training")
+_CONCEPT_INSIGHT_COUNT = 12
+EDUCATION_EXPLORE_CATALOG_CACHE_VERSION = 3
 EDUCATION_EXPLORE_CATALOG_CACHE_KEY = f"education_explore_catalog_cache_v{EDUCATION_EXPLORE_CATALOG_CACHE_VERSION}"
 EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND = "education_explore_catalog_warmup"
 
@@ -97,6 +100,7 @@ _EDUCATION_SCHEMA_TABLES = (
     EducationProgramme.__table__,
     EducationProgrammeDay.__table__,
     EducationLessonVariant.__table__,
+    EducationConceptInsight.__table__,
     EducationQuiz.__table__,
     EducationQuizQuestion.__table__,
     UserEducationPlan.__table__,
@@ -109,6 +113,7 @@ _EDUCATION_SCHEMA_COLUMNS = {
     "education_programmes": {
         "concept_key": "varchar(64)",
         "concept_label": "varchar(160)",
+        "journey_order": "integer DEFAULT 0 NOT NULL",
         "llm_task_description": "text",
         "llm_video_duration": "varchar(120)",
         "is_released": "boolean DEFAULT false NOT NULL",
@@ -138,6 +143,11 @@ _EDUCATION_SCHEMA_COLUMNS = {
         "avatar_summary_url": "varchar(512)",
         "avatar_payload_json": "jsonb",
     },
+    "education_concept_insights": {
+        "concept_label": "varchar(160)",
+        "source_summary": "text",
+        "meta": "jsonb",
+    },
     "user_education_plans": {
         "entry_concept_key": "varchar(64)",
         "entry_concept_label": "varchar(160)",
@@ -150,10 +160,13 @@ _EDUCATION_SCHEMA_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_active ON education_programmes(pillar_key, is_active);",
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_concept_active ON education_programmes(pillar_key, concept_key, is_active);",
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_released_active ON education_programmes(is_released, is_active);",
+    "CREATE INDEX IF NOT EXISTS ix_education_programmes_journey_order ON education_programmes(journey_order, id);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programme_days_programme_day ON education_programme_days(programme_id, day_index);",
     "CREATE INDEX IF NOT EXISTS ix_education_programme_days_programme_concept ON education_programme_days(programme_id, concept_key);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_lesson_variants_day_level ON education_lesson_variants(programme_day_id, level);",
     "CREATE INDEX IF NOT EXISTS ix_education_lesson_variants_day_active ON education_lesson_variants(programme_day_id, is_active);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_concept_insights_programme_index ON education_concept_insights(programme_id, insight_index);",
+    "CREATE INDEX IF NOT EXISTS ix_education_concept_insights_pillar_concept ON education_concept_insights(pillar_key, concept_key, is_active);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_quiz_questions_quiz_order ON education_quiz_questions(quiz_id, question_order);",
     "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_status ON user_education_plans(user_id, status);",
     "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_entry_concept ON user_education_plans(user_id, entry_concept_key);",
@@ -404,6 +417,295 @@ def _programme_duration_days(
     except Exception:
         stored_days = 0
     return stored_days if stored_days > 0 else 1
+
+
+def _programme_journey_order_value(programme: EducationProgramme | None) -> int:
+    if programme is None:
+        return 9_999_999
+    stored = _safe_int(getattr(programme, "journey_order", None)) or 0
+    if stored > 0:
+        return stored
+    pillar = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+    try:
+        pillar_index = _PILLAR_JOURNEY_ORDER.index(pillar)
+    except ValueError:
+        pillar_index = len(_PILLAR_JOURNEY_ORDER)
+    return 1_000_000 + (pillar_index * 10_000) + int(getattr(programme, "id", 0) or 0)
+
+
+def _programme_journey_sort_key(programme: EducationProgramme | None) -> tuple[int, str, int]:
+    if programme is None:
+        return (9_999_999, "", 0)
+    return (
+        _programme_journey_order_value(programme),
+        str(getattr(programme, "name", "") or "").strip().lower(),
+        int(getattr(programme, "id", 0) or 0),
+    )
+
+
+def _released_concept_programmes(session) -> list[EducationProgramme]:
+    rows = (
+        session.execute(
+            select(EducationProgramme)
+            .where(
+                EducationProgramme.is_released.is_(True),
+                EducationProgramme.is_active.is_(True),
+                EducationProgramme.concept_key.isnot(None),
+                EducationProgramme.concept_key != "",
+            )
+            .order_by(
+                EducationProgramme.journey_order.asc(),
+                EducationProgramme.id.asc(),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return sorted(rows, key=_programme_journey_sort_key)
+
+
+def _education_insight_source_hash(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _short_insight_phrase(value: Any, *, max_words: int = 14) -> str:
+    token = _normalize_lesson_text(str(value or "").strip()) or ""
+    token = re.sub(r"\s+", " ", token).strip()
+    token = re.sub(r"^(lesson\s+\d+\s*[:\-]\s*)", "", token, flags=re.IGNORECASE).strip()
+    token = re.sub(r"^(in this lesson,?\s*)", "", token, flags=re.IGNORECASE).strip()
+    token = token.strip(" .")
+    words = token.split()
+    if len(words) > max_words:
+        token = " ".join(words[:max_words]).rstrip(" ,;:")
+    if token:
+        token = token[:1].lower() + token[1:]
+    return token
+
+
+def _programme_insight_source_payload(
+    session,
+    programme: EducationProgramme,
+) -> dict[str, Any]:
+    days = (
+        session.execute(
+            select(EducationProgrammeDay)
+            .where(EducationProgrammeDay.programme_id == int(programme.id))
+            .order_by(EducationProgrammeDay.day_index.asc(), EducationProgrammeDay.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    day_ids = [int(getattr(day, "id", 0) or 0) for day in days if getattr(day, "id", None)]
+    variants_by_day: dict[int, list[EducationLessonVariant]] = {}
+    if day_ids:
+        variants = (
+            session.execute(
+                select(EducationLessonVariant)
+                .where(
+                    EducationLessonVariant.programme_day_id.in_(day_ids),
+                    EducationLessonVariant.is_active.is_(True),
+                )
+                .order_by(
+                    EducationLessonVariant.programme_day_id.asc(),
+                    EducationLessonVariant.level.asc(),
+                    EducationLessonVariant.id.asc(),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for variant in variants:
+            variants_by_day.setdefault(int(getattr(variant, "programme_day_id", 0) or 0), []).append(variant)
+
+    source_days: list[dict[str, Any]] = []
+    for day in days:
+        day_variants = variants_by_day.get(int(day.id), [])
+        variant_payload = [
+            {
+                "level": str(getattr(variant, "level", "") or "").strip(),
+                "title": str(getattr(variant, "title", "") or "").strip(),
+                "summary": str(getattr(variant, "summary", "") or "").strip(),
+                "script": str(getattr(variant, "script", "") or "").strip(),
+                "action_prompt": str(getattr(variant, "action_prompt", "") or "").strip(),
+                "takeaway_default": str(getattr(variant, "takeaway_default", "") or "").strip(),
+                "takeaway_if_low_score": str(getattr(variant, "takeaway_if_low_score", "") or "").strip(),
+                "takeaway_if_high_score": str(getattr(variant, "takeaway_if_high_score", "") or "").strip(),
+            }
+            for variant in day_variants
+        ]
+        source_days.append(
+            {
+                "day_index": int(getattr(day, "day_index", 0) or 0),
+                "title": str(getattr(day, "default_title", "") or "").strip(),
+                "summary": str(getattr(day, "default_summary", "") or "").strip(),
+                "goal": str(getattr(day, "lesson_goal", "") or "").strip(),
+                "variants": variant_payload,
+            }
+        )
+    return {
+        "programme": {
+            "id": int(programme.id),
+            "code": str(getattr(programme, "code", "") or "").strip(),
+            "name": str(getattr(programme, "name", "") or "").strip(),
+            "pillar_key": str(getattr(programme, "pillar_key", "") or "").strip().lower(),
+            "concept_key": _normalize_concept_key(getattr(programme, "concept_key", None)),
+            "concept_label": str(getattr(programme, "concept_label", "") or "").strip(),
+            "journey_order": _safe_int(getattr(programme, "journey_order", None)) or 0,
+        },
+        "days": source_days,
+    }
+
+
+def _programme_insight_themes(source_payload: dict[str, Any], concept_label: str) -> list[str]:
+    themes: list[str] = []
+    for day in source_payload.get("days") or []:
+        if not isinstance(day, dict):
+            continue
+        candidates = [
+            day.get("summary"),
+            day.get("goal"),
+            day.get("title"),
+        ]
+        for variant in day.get("variants") or []:
+            if not isinstance(variant, dict):
+                continue
+            candidates.extend(
+                [
+                    variant.get("summary"),
+                    variant.get("takeaway_default"),
+                    variant.get("takeaway_if_low_score"),
+                    variant.get("takeaway_if_high_score"),
+                    variant.get("title"),
+                ]
+            )
+        for candidate in candidates:
+            phrase = _short_insight_phrase(candidate)
+            if not phrase:
+                continue
+            if phrase.lower() in {item.lower() for item in themes}:
+                continue
+            themes.append(phrase)
+            break
+    fallback = _short_insight_phrase(concept_label) or "this concept"
+    return themes or [fallback]
+
+
+def _normalise_insight_message(message: str) -> str:
+    token = re.sub(r"\s+", " ", str(message or "").strip())
+    token = token.replace("..", ".")
+    if token and token[-1] not in ".!?":
+        token += "."
+    return token
+
+
+def refresh_programme_insight_bank(
+    session,
+    programme_id: int,
+    *,
+    source: str = "programme_save",
+) -> dict[str, Any]:
+    programme = session.get(EducationProgramme, int(programme_id))
+    if programme is None:
+        return {"ok": False, "programme_id": int(programme_id), "reason": "programme_not_found"}
+    concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+    pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+    if not concept_key or not pillar_key:
+        return {"ok": False, "programme_id": int(programme_id), "reason": "missing_concept"}
+
+    concept_label = (
+        str(getattr(programme, "concept_label", "") or "").strip()
+        or concept_key.replace("_", " ").title()
+    )
+    source_payload = _programme_insight_source_payload(session, programme)
+    source_hash = _education_insight_source_hash(source_payload)
+    existing_rows = (
+        session.execute(
+            select(EducationConceptInsight)
+            .where(EducationConceptInsight.programme_id == int(programme.id))
+            .order_by(EducationConceptInsight.insight_index.asc(), EducationConceptInsight.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    active_matching = [
+        row
+        for row in existing_rows
+        if bool(getattr(row, "is_active", False))
+        and str(getattr(row, "source_hash", "") or "") == source_hash
+    ]
+    if len(active_matching) >= _CONCEPT_INSIGHT_COUNT:
+        return {
+            "ok": True,
+            "programme_id": int(programme.id),
+            "source_hash": source_hash,
+            "refreshed": False,
+            "count": len(active_matching),
+        }
+
+    themes = _programme_insight_themes(source_payload, concept_label)
+    templates: list[tuple[str, str]] = [
+        ("pattern", "{concept} can reveal how {theme} shapes the way a moment feels before any decision is made."),
+        ("beneath", "A quiet thread in {concept} is {theme}; it may point to a need or belief sitting beneath the surface."),
+        ("signal", "When {theme} keeps returning, {concept} may be showing a signal that deserves understanding before response."),
+        ("contrast", "{concept} becomes more useful when {theme} is seen as information, not as proof that something has gone wrong."),
+        ("context", "The deeper lesson in {concept} is often contextual: {theme} can explain why the same situation lands differently on different days."),
+        ("meaning", "{theme} may be less about the event itself and more about the meaning attached to it through {concept}."),
+        ("rhythm", "{concept} can help separate the rhythm of the day from the story built around {theme}."),
+        ("threshold", "There is often a threshold inside {concept}; {theme} may show where pressure starts to narrow the available choices."),
+        ("relationship", "{theme} can reveal a relationship between body, thought, and expectation that {concept} makes easier to understand."),
+        ("identity", "In {concept}, {theme} may expose an old assumption about what should be easy, acceptable, or already solved."),
+        ("balance", "{concept} is not only about improvement; {theme} can show where steadiness and honesty need more room."),
+        ("integration", "As {concept} develops, {theme} may become a way to understand the whole pattern rather than chase a single answer."),
+    ]
+    existing_by_index = {
+        int(getattr(row, "insight_index", 0) or 0): row
+        for row in existing_rows
+        if int(getattr(row, "insight_index", 0) or 0) > 0
+    }
+    source_summary = "; ".join(themes[:4])
+    now = _now_utc()
+    used_indexes: set[int] = set()
+    for offset, (angle, template) in enumerate(templates[:_CONCEPT_INSIGHT_COUNT], start=1):
+        theme = themes[(offset - 1) % len(themes)]
+        row = existing_by_index.get(offset)
+        if row is None:
+            row = EducationConceptInsight(programme_id=int(programme.id), insight_index=offset)
+        row.programme_id = int(programme.id)
+        row.pillar_key = pillar_key
+        row.concept_key = concept_key
+        row.concept_label = concept_label
+        row.insight_index = offset
+        row.angle = angle
+        row.message = _normalise_insight_message(
+            template.format(concept=concept_label, theme=theme)
+        )
+        row.source_hash = source_hash
+        row.source_summary = source_summary or None
+        row.is_active = True
+        row.meta = {
+            "source": source,
+            "theme": theme,
+            "generated_from": "education_programme",
+        }
+        row.updated_at = now
+        session.add(row)
+        used_indexes.add(offset)
+
+    for row in existing_rows:
+        if int(getattr(row, "insight_index", 0) or 0) not in used_indexes:
+            row.is_active = False
+            row.updated_at = now
+            session.add(row)
+    session.flush()
+    return {
+        "ok": True,
+        "programme_id": int(programme.id),
+        "source_hash": source_hash,
+        "refreshed": True,
+        "count": len(used_indexes),
+    }
 
 
 def _weakest_assessment_concept_key(
@@ -1968,6 +2270,29 @@ def _select_programme(
     return _select_with_filters()
 
 
+def _select_next_journey_programme(
+    session,
+    *,
+    exclude_programme_ids: set[int] | None = None,
+    exclude_concept_keys: set[str] | None = None,
+) -> EducationProgramme | None:
+    excluded_ids = {int(item) for item in (exclude_programme_ids or set()) if item}
+    excluded_concepts = {
+        token
+        for token in (_normalize_concept_key(item) for item in (exclude_concept_keys or set()))
+        if token
+    }
+    for programme in _released_concept_programmes(session):
+        programme_id = int(getattr(programme, "id", 0) or 0)
+        concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+        if programme_id in excluded_ids:
+            continue
+        if concept_key and concept_key in excluded_concepts:
+            continue
+        return programme
+    return None
+
+
 def _resolve_programme_day(session, programme_id: int, day_index: int) -> EducationProgrammeDay | None:
     row = (
         session.execute(
@@ -2227,25 +2552,7 @@ def _education_explore_catalog_payload(
     progress_by_day_id: dict[int, UserEducationDayProgress],
     concept_level_by_key: dict[tuple[str, str], UserEducationConceptLevel],
 ) -> dict[str, Any]:
-    programmes = (
-        session.execute(
-            select(EducationProgramme)
-            .where(
-                EducationProgramme.is_released.is_(True),
-                EducationProgramme.concept_key.isnot(None),
-                EducationProgramme.concept_key != "",
-            )
-            .order_by(
-                EducationProgramme.pillar_key.asc(),
-                EducationProgramme.concept_label.asc(),
-                EducationProgramme.concept_key.asc(),
-                desc(EducationProgramme.updated_at),
-                desc(EducationProgramme.id),
-            )
-        )
-        .scalars()
-        .all()
-    )
+    programmes = _released_concept_programmes(session)
     pillars: dict[str, dict[str, Any]] = {}
     seen_concepts: set[tuple[str, str]] = set()
     for programme in programmes:
@@ -2307,6 +2614,147 @@ def _education_explore_catalog_payload(
     return {"pillars": list(pillars.values())}
 
 
+def _education_journey_payload(
+    session,
+    *,
+    user_id: int,
+    active_plan: UserEducationPlan,
+    active_programme: EducationProgramme,
+) -> dict[str, Any]:
+    programmes = _released_concept_programmes(session)
+    if not programmes:
+        return {
+            "title": "Education journey",
+            "total_programmes": 0,
+            "completed_programmes": 0,
+            "current_programme_id": None,
+            "current_sequence_index": None,
+            "programmes": [],
+        }
+
+    user_plans = (
+        session.execute(
+            select(UserEducationPlan)
+            .where(UserEducationPlan.user_id == int(user_id))
+            .order_by(UserEducationPlan.created_at.asc(), UserEducationPlan.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    plan_ids = [int(getattr(plan, "id", 0) or 0) for plan in user_plans if getattr(plan, "id", None)]
+    plans_by_programme: dict[int, list[UserEducationPlan]] = {}
+    for plan in user_plans:
+        programme_id = int(getattr(plan, "programme_id", 0) or 0)
+        if programme_id:
+            plans_by_programme.setdefault(programme_id, []).append(plan)
+
+    completed_day_indexes_by_programme: dict[int, set[int]] = {}
+    if plan_ids:
+        rows = (
+            session.execute(
+                select(UserEducationDayProgress, EducationProgrammeDay)
+                .join(
+                    EducationProgrammeDay,
+                    EducationProgrammeDay.id == UserEducationDayProgress.programme_day_id,
+                )
+                .where(UserEducationDayProgress.user_plan_id.in_(plan_ids))
+            )
+            .all()
+        )
+        for progress_row, day_row in rows:
+            programme_id = int(getattr(day_row, "programme_id", 0) or 0)
+            day_index = int(getattr(day_row, "day_index", 0) or 0)
+            if not programme_id or not day_index:
+                continue
+            status = str(getattr(progress_row, "completion_status", "") or "").strip().lower()
+            if getattr(progress_row, "completed_at", None) or status == "completed":
+                completed_day_indexes_by_programme.setdefault(programme_id, set()).add(day_index)
+
+    completed_programme_ids = _completed_programme_ids_for_user(session, int(user_id))
+    active_programme_id = int(getattr(active_programme, "id", 0) or 0)
+    cards: list[dict[str, Any]] = []
+    current_sequence_index: int | None = None
+    for sequence_index, programme in enumerate(programmes, start=1):
+        programme_id = int(getattr(programme, "id", 0) or 0)
+        concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+        pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+        lesson_count = _programme_duration_days(session, programme)
+        completed_day_indexes = completed_day_indexes_by_programme.get(programme_id, set())
+        completed_lesson_count = min(len(completed_day_indexes), lesson_count)
+        programme_completed = programme_id in completed_programme_ids or (
+            lesson_count > 0 and completed_lesson_count >= lesson_count
+        )
+        is_current = programme_id == active_programme_id and not programme_completed
+        if is_current:
+            current_sequence_index = sequence_index
+            status = "current"
+        elif programme_completed:
+            status = "completed"
+        elif completed_lesson_count > 0:
+            status = "in_progress"
+        else:
+            status = "not_started"
+        first_incomplete = next(
+            (index for index in range(1, lesson_count + 1) if index not in completed_day_indexes),
+            lesson_count if programme_completed else 1,
+        )
+        if is_current:
+            current_lesson_index = int(getattr(active_plan, "current_day_index", 0) or first_incomplete or 1)
+        else:
+            current_lesson_index = first_incomplete
+        concept_label = (
+            str(getattr(programme, "concept_label", "") or "").strip()
+            or (concept_key.replace("_", " ").title() if concept_key else "Concept")
+        )
+        cards.append(
+            {
+                "sequence_index": sequence_index,
+                "programme_id": programme_id,
+                "code": str(getattr(programme, "code", "") or "").strip() or None,
+                "name": str(getattr(programme, "name", "") or "").strip() or concept_label,
+                "pillar_key": pillar_key or None,
+                "pillar_label": _pillar_label(pillar_key),
+                "concept_key": concept_key,
+                "concept_label": concept_label,
+                "journey_order": _programme_journey_order_value(programme),
+                "lesson_count": lesson_count,
+                "completed_lesson_count": completed_lesson_count,
+                "current_lesson_index": current_lesson_index,
+                "status": status,
+                "status_label": status.replace("_", " ").title(),
+                "is_current": is_current,
+                "is_completed": programme_completed,
+                "can_open": is_current,
+                "plan_count": len(plans_by_programme.get(programme_id, [])),
+            }
+        )
+
+    if current_sequence_index is not None:
+        up_next_card = next(
+            (
+                item
+                for item in cards
+                if int(item.get("sequence_index") or 0) > current_sequence_index
+                and item.get("status") == "not_started"
+            ),
+            None,
+        )
+    else:
+        up_next_card = next((item for item in cards if item["status"] == "not_started"), None)
+    if up_next_card is not None:
+        up_next_card["status"] = "up_next"
+        up_next_card["status_label"] = "Up Next"
+
+    return {
+        "title": "Education journey",
+        "total_programmes": len(cards),
+        "completed_programmes": sum(1 for item in cards if item.get("is_completed")),
+        "current_programme_id": active_programme_id or None,
+        "current_sequence_index": current_sequence_index,
+        "programmes": cards,
+    }
+
+
 def _education_explore_catalog_cache_row(session, user_id: int) -> UserPreference | None:
     return (
         session.execute(
@@ -2327,10 +2775,13 @@ def _education_explore_catalog_signature(session) -> dict[str, Any]:
                 EducationProgramme.id,
                 EducationProgramme.pillar_key,
                 EducationProgramme.concept_key,
+                EducationProgramme.journey_order,
+                EducationProgramme.is_active,
                 EducationProgramme.updated_at,
             )
             .where(
                 EducationProgramme.is_released.is_(True),
+                EducationProgramme.is_active.is_(True),
                 EducationProgramme.concept_key.isnot(None),
                 EducationProgramme.concept_key != "",
             )
@@ -2360,14 +2811,17 @@ def _education_explore_catalog_signature(session) -> dict[str, Any]:
         lessons_by_programme.setdefault(int(programme_id), []).append(f"{int(day_id)}:{int(day_index)}:{updated_token}")
 
     programmes: list[str] = []
-    for programme_id, pillar_key, concept_key, updated_at in rows:
+    for programme_id, pillar_key, concept_key, journey_order, is_active, updated_at in rows:
         pillar_token = str(pillar_key or "").strip().lower()
         concept_token = _normalize_concept_key(concept_key)
         if not pillar_token or not concept_token:
             continue
         updated_token = updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at or "")
         lesson_signature = ",".join(lessons_by_programme.get(int(programme_id), []))
-        programmes.append(f"{int(programme_id)}:{pillar_token}:{concept_token}:{updated_token}:lessons={lesson_signature}")
+        programmes.append(
+            f"{int(programme_id)}:{pillar_token}:{concept_token}:order={int(journey_order or 0)}:"
+            f"active={1 if is_active else 0}:{updated_token}:lessons={lesson_signature}"
+        )
     return {
         "version": EDUCATION_EXPLORE_CATALOG_CACHE_VERSION,
         "programmes": programmes,
@@ -2722,7 +3176,12 @@ def _get_or_create_active_plan(
         session.flush()
         existing = None
         existing_programme_for_rollover = None
-    preferred_programme = _select_programme(
+    journey_programme = _select_next_journey_programme(
+        session,
+        exclude_programme_ids=completed_programme_ids,
+        exclude_concept_keys=completed_concept_keys,
+    )
+    preferred_programme = journey_programme or _select_programme(
         session,
         preferred_pillar or None,
         preferred_concept,
@@ -3236,6 +3695,12 @@ def _lesson_state(
         "tracker_day_label": str(tracker_pillar.get("active_label") or "").strip() or None,
         "previous_lesson": previous_lesson,
         "lessons": lessons,
+        "journey": _education_journey_payload(
+            session,
+            user_id=int(user_id),
+            active_plan=plan,
+            active_programme=programme,
+        ),
         "lesson": {
             "programme_day_id": int(programme_day.id),
             "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,

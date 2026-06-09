@@ -925,6 +925,7 @@ export default function AssessmentChatBox({
   const [educationQuizSubmitting, setEducationQuizSubmitting] = useState(false);
   const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
   const [educationQuizError, setEducationQuizError] = useState<string | null>(null);
+  const [educationProgrammeOpen, setEducationProgrammeOpen] = useState(false);
   const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
   const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "concepts" | "lessons">("pillars");
@@ -1061,6 +1062,10 @@ export default function AssessmentChatBox({
       });
     return ordered;
   }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson]);
+  const educationJourneyProgrammes = useMemo(
+    () => (Array.isArray(educationPlan?.journey?.programmes) ? educationPlan.journey.programmes.filter(Boolean) : []),
+    [educationPlan?.journey?.programmes],
+  );
   const educationExplorerPillars = useMemo<EducationExplorerPillar[]>(() => {
     const catalogPillars = Array.isArray(educationPlan?.explore_catalog?.pillars)
       ? educationPlan.explore_catalog.pillars
@@ -1170,6 +1175,13 @@ export default function AssessmentChatBox({
     setEducationQuizAnswers({});
     setEducationQuizMessage(null);
     setEducationQuizError(null);
+  }, []);
+  const openCurrentEducationProgramme = useCallback(() => {
+    setEducationProgrammeOpen(true);
+    setEducationExplorerOpen(false);
+    setEducationExplorerMode("pillars");
+    setEducationExplorerPillarKey(null);
+    setEducationExplorerConceptKey(null);
   }, []);
   const activeEducationLessonContent = activeEducationLesson?.content || null;
   const activeEducationLessonAvatar = activeEducationLessonContent?.avatar || null;
@@ -1329,6 +1341,90 @@ export default function AssessmentChatBox({
     },
     [openEducationLesson],
   );
+  const renderEducationProgrammeCard = useCallback(
+    (programme: any, index: number) => {
+      const pillarKey = String(programme?.pillar_key || "").trim().toLowerCase();
+      const palette = getPillarPalette(pillarKey);
+      const status = String(programme?.status || "").trim().toLowerCase();
+      const canOpen = Boolean(programme?.can_open);
+      const lessonCount = Number(programme?.lesson_count || 0);
+      const completedCount = Number(programme?.completed_lesson_count || 0);
+      const currentLessonIndex = Number(programme?.current_lesson_index || 0);
+      const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
+      const statusLabel =
+        status === "current"
+          ? "Current"
+          : status === "up_next"
+            ? "Up next"
+            : status === "completed"
+              ? "Completed"
+              : status === "in_progress"
+                ? "In progress"
+                : "Not started";
+      const progressLabel = status === "completed"
+        ? `${lessonCount || completedCount || 0} of ${lessonCount || completedCount || 0} lessons complete`
+        : currentLessonIndex > 0 && lessonCount > 0
+          ? `Lesson ${Math.min(currentLessonIndex, lessonCount)} of ${lessonCount}`
+          : `${lessonCount || 0} lesson${lessonCount === 1 ? "" : "s"}`;
+      return (
+        <button
+          key={`programme-${String(programme?.programme_id || index)}`}
+          type="button"
+          onClick={() => {
+            if (canOpen) {
+              openCurrentEducationProgramme();
+            }
+          }}
+          aria-disabled={!canOpen}
+          className={`flex min-h-[16.5rem] w-full flex-col justify-between rounded-[30px] border px-5 py-5 text-left shadow-[0_18px_50px_-44px_rgba(30,27,22,0.5)] transition ${
+            canOpen ? "active:scale-[0.99]" : "cursor-default"
+          }`}
+          style={{
+            backgroundColor: status === "completed" ? "var(--surface-muted)" : palette.bg,
+            borderColor: status === "completed" ? "var(--border)" : palette.border,
+            color: status === "completed" ? "var(--text-primary)" : "#17120f",
+          }}
+        >
+          <span>
+            <span className="flex items-start justify-between gap-4">
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
+                  {String(programme?.pillar_label || palette.label || "Programme").trim()}
+                </span>
+                <span className="mt-3 block text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
+                  {conceptLabel}
+                </span>
+              </span>
+              <span
+                className="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold"
+                style={{
+                  backgroundColor: status === "current" ? "#17120f" : "rgba(255,255,255,0.64)",
+                  borderColor: status === "current" ? "#17120f" : "rgba(23,18,15,0.16)",
+                  color: status === "current" ? "#fff" : "#17120f",
+                }}
+              >
+                {statusLabel}
+              </span>
+            </span>
+            <span className="mt-5 block text-[1.05rem] leading-7 opacity-75">
+              {progressLabel}
+            </span>
+          </span>
+          <span className="mt-6 flex items-center justify-between gap-4">
+            <span className="text-sm font-semibold opacity-70">
+              Programme {Number(programme?.sequence_index || index + 1)}
+            </span>
+            {canOpen ? (
+              <span className="rounded-full bg-[#17120f] px-5 py-3 text-sm font-semibold text-white">
+                Open lessons
+              </span>
+            ) : null}
+          </span>
+        </button>
+      );
+    },
+    [openCurrentEducationProgramme],
+  );
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -1385,7 +1481,8 @@ export default function AssessmentChatBox({
       ? "h-auto"
       : "h-full";
   const contentControlsOwnScroll =
-    homeSurface === "streak" || (homeSurface === "insight" && Boolean(activeEducationLesson || educationExplorerOpen));
+    homeSurface === "streak" ||
+    (homeSurface === "insight" && Boolean(activeEducationLesson || educationProgrammeOpen || educationExplorerOpen));
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
@@ -1534,6 +1631,7 @@ export default function AssessmentChatBox({
   }, [userId]);
 
   const openEducationExplorer = useCallback(() => {
+    setEducationProgrammeOpen(false);
     setEducationExplorerOpen(true);
     setEducationExplorerMode("pillars");
     setEducationExplorerPillarKey(null);
@@ -3257,21 +3355,64 @@ export default function AssessmentChatBox({
                     )}
                   </div>
                 </div>
+              ) : educationProgrammeOpen ? (
+                <div className="flex h-full min-h-0 flex-col">
+                  <div className="shrink-0 px-4 pb-3 sm:px-5">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setEducationProgrammeOpen(false)}
+                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
+                        aria-label="Back"
+                      >
+                        <span className="text-3xl leading-none">‹</span>
+                      </button>
+                      <div className="h-12 w-12" />
+                    </div>
+                  </div>
+                  <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
+                    <div className="overflow-x-auto pb-2">
+                      <div className="flex gap-3">
+                        {educationLessonRail.length ? (
+                          educationLessonRail.map((lesson, index) => {
+                            const startableToken = firstIncompleteEducationLessonToken(educationLessonRail);
+                            const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
+                            return renderEducationLessonCard(lesson, {
+                              featured: index === 0,
+                              selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
+                              isStartable: Boolean(startableToken && lessonToken === startableToken),
+                            });
+                          })
+                        ) : (
+                          <div className="flex min-h-[9rem] min-w-full items-center rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
+                            <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+                              Lessons are not available for this concept yet.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="flex min-h-full flex-col">
                   <div className="-mt-[0.5cm] flex-none py-4">
-                    <div className="overflow-x-auto pb-2">
-                      <div className="flex gap-3">
-                        {educationLessonRail.map((lesson, index) => {
-                          const startableToken = firstIncompleteEducationLessonToken(educationLessonRail);
-                          const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
-                          return renderEducationLessonCard(lesson, {
-                            featured: index === 0,
-                            selected: Number(lesson?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
-                            isStartable: Boolean(startableToken && lessonToken === startableToken),
-                          });
-                        })}
-                      </div>
+                    <div className="space-y-3">
+                      {educationJourneyProgrammes.length ? (
+                        educationJourneyProgrammes.map((programme, index) => renderEducationProgrammeCard(programme, index))
+                      ) : educationLessonRail.length ? (
+                        renderEducationLessonCard(educationLessonRail[0], {
+                          featured: true,
+                          selected: Number(educationLessonRail[0]?.day_index || 0) === Number(selectedEducationLessonDayIndex || 0),
+                          isStartable: true,
+                        })
+                      ) : (
+                        <div className="flex min-h-[9rem] items-center rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
+                          <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
+                            Your education journey is not available right now.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="mt-[calc(0.75rem-2mm)] pb-2 sm:mt-[calc(1rem-2mm)]">

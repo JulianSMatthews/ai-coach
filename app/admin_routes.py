@@ -49,6 +49,7 @@ from .education_plan import (
     generate_all_education_programme_avatar_videos,
     generate_education_lesson_avatar,
     generate_education_programme_avatar_videos,
+    refresh_programme_insight_bank,
     refresh_all_education_programme_avatar_videos,
     refresh_education_lesson_avatar,
     refresh_education_programme_avatar_videos,
@@ -528,6 +529,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "code": "",
             "name": "",
             "duration_days": 0,
+            "journey_order": 0,
             "llm_task_description": "",
             "llm_video_duration": "",
             "is_active": True,
@@ -649,6 +651,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         "code": str(row.code or ""),
         "name": str(row.name or ""),
         "duration_days": derived_duration or int(row.duration_days or 0) or 0,
+        "journey_order": int(getattr(row, "journey_order", 0) or 0),
         "llm_task_description": str(getattr(row, "llm_task_description", "") or ""),
         "llm_video_duration": str(getattr(row, "llm_video_duration", "") or ""),
         "is_active": bool(row.is_active),
@@ -5255,6 +5258,11 @@ def edit_education_programme(id: int | None = None):
               <input type="text" name="programme_concept_label" id="programme_concept_label" value="{html.escape(str(programme_payload.get('programme_concept_label') or ''))}" />
             </label>
           </div>
+          <div class='field'>
+            <label>Journey order<br/>
+              <input type="number" name="journey_order" min="0" step="1" value="{html.escape(str(programme_payload.get('journey_order') or 0))}" />
+            </label>
+          </div>
         </div>
         <div class='field'>
           <label><input type="checkbox" name="is_released" {"checked" if bool(programme_payload.get("is_released", False)) else ""} /> Released to app</label>
@@ -6731,6 +6739,7 @@ async def save_education_programme(
     programme_concept_label: str | None = Form(default=None),
     code: str = Form(...),
     name: str = Form(...),
+    journey_order: str | None = Form(default=None),
     llm_task_description: str | None = Form(default=None),
     llm_video_duration: str | None = Form(default=None),
     is_released: str | None = Form(default=None),
@@ -6748,6 +6757,10 @@ async def save_education_programme(
     programme_concept_text = str(programme_concept_label or "").strip()
     code_token = str(code or "").strip()
     name_text = str(name or "").strip()
+    try:
+        journey_order_value = max(int(journey_order or 0), 0)
+    except Exception:
+        journey_order_value = 0
     llm_task_description_text = str(llm_task_description or "").strip()
     llm_video_duration_text = str(llm_video_duration or "").strip()
     if not programme_concept_token:
@@ -6827,6 +6840,7 @@ async def save_education_programme(
             row.code = code_token
             row.name = name_text
             row.duration_days = resolved_duration
+            row.journey_order = journey_order_value
             row.llm_task_description = llm_task_description_text or None
             row.llm_video_duration = llm_video_duration_text or None
             row.is_active = True
@@ -6840,6 +6854,7 @@ async def save_education_programme(
             row.code = code_token
             row.name = name_text
             row.duration_days = resolved_duration
+            row.journey_order = journey_order_value
             row.llm_task_description = llm_task_description_text or None
             row.llm_video_duration = llm_video_duration_text or None
             row.is_active = True
@@ -7076,6 +7091,8 @@ async def save_education_programme(
             if day_id not in keep_day_ids:
                 s.delete(day_row)
 
+        s.flush()
+        refresh_programme_insight_bank(s, int(row.id), source="admin_save")
         s.commit()
         redirect_id = int(row.id)
     return RedirectResponse(url=f"/admin/education-programmes/edit?id={redirect_id}", status_code=303)
