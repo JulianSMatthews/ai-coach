@@ -1351,6 +1351,7 @@ export default function AssessmentChatBox({
       const completedCount = Number(programme?.completed_lesson_count || 0);
       const currentLessonIndex = Number(programme?.current_lesson_index || 0);
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
+      const programmeSummary = String(programme?.summary || "").trim();
       const statusLabel =
         status === "current"
           ? "Current"
@@ -1406,16 +1407,18 @@ export default function AssessmentChatBox({
                 {statusLabel}
               </span>
             </span>
-            <span className="mt-5 block text-[1.05rem] leading-7 opacity-75">
-              {progressLabel}
-            </span>
+            {programmeSummary ? (
+              <span className="mt-5 block text-[1.05rem] leading-7 opacity-75">
+                {programmeSummary}
+              </span>
+            ) : null}
           </span>
           <span className="mt-6 flex items-center justify-between gap-4">
-            <span className="text-sm font-semibold opacity-70">
-              Programme {Number(programme?.sequence_index || index + 1)}
+            <span className="min-w-0 text-sm font-semibold leading-5 opacity-70">
+              Programme {Number(programme?.sequence_index || index + 1)} · {progressLabel}
             </span>
             {canOpen ? (
-              <span className="rounded-full bg-[#17120f] px-5 py-3 text-sm font-semibold text-white">
+              <span className="shrink-0 rounded-full bg-[#17120f] px-5 py-3 text-sm font-semibold text-white">
                 Open lessons
               </span>
             ) : null}

@@ -678,6 +678,7 @@ export type EducationPlanTodayResponse = {
       programme_id?: number | null;
       code?: string | null;
       name?: string | null;
+      summary?: string | null;
       pillar_key?: string | null;
       pillar_label?: string | null;
       concept_key?: string | null;

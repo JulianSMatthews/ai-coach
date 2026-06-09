@@ -2672,10 +2672,59 @@ def _education_journey_payload(
 
     completed_programme_ids = _completed_programme_ids_for_user(session, int(user_id))
     active_programme_id = int(getattr(active_programme, "id", 0) or 0)
+    programme_ids = [int(getattr(programme, "id", 0) or 0) for programme in programmes if getattr(programme, "id", None)]
+    first_day_by_programme: dict[int, EducationProgrammeDay] = {}
+    if programme_ids:
+        first_days = (
+            session.execute(
+                select(EducationProgrammeDay)
+                .where(EducationProgrammeDay.programme_id.in_(programme_ids))
+                .order_by(
+                    EducationProgrammeDay.programme_id.asc(),
+                    EducationProgrammeDay.day_index.asc(),
+                    EducationProgrammeDay.id.asc(),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for day in first_days:
+            programme_id = int(getattr(day, "programme_id", 0) or 0)
+            if programme_id and programme_id not in first_day_by_programme:
+                first_day_by_programme[programme_id] = day
+    first_day_ids = [int(getattr(day, "id", 0) or 0) for day in first_day_by_programme.values() if getattr(day, "id", None)]
+    first_variant_by_day: dict[int, EducationLessonVariant] = {}
+    if first_day_ids:
+        first_variants = (
+            session.execute(
+                select(EducationLessonVariant)
+                .where(
+                    EducationLessonVariant.programme_day_id.in_(first_day_ids),
+                    EducationLessonVariant.is_active.is_(True),
+                )
+                .order_by(
+                    EducationLessonVariant.programme_day_id.asc(),
+                    EducationLessonVariant.level.asc(),
+                    EducationLessonVariant.id.asc(),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for variant in first_variants:
+            day_id = int(getattr(variant, "programme_day_id", 0) or 0)
+            if day_id and day_id not in first_variant_by_day:
+                first_variant_by_day[day_id] = variant
     cards: list[dict[str, Any]] = []
     current_sequence_index: int | None = None
     for sequence_index, programme in enumerate(programmes, start=1):
         programme_id = int(getattr(programme, "id", 0) or 0)
+        first_day = first_day_by_programme.get(programme_id)
+        first_variant = (
+            first_variant_by_day.get(int(first_day.id))
+            if first_day is not None and getattr(first_day, "id", None)
+            else None
+        )
         concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
         pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
         lesson_count = _programme_duration_days(session, programme)
@@ -2712,6 +2761,12 @@ def _education_journey_payload(
                 "programme_id": programme_id,
                 "code": str(getattr(programme, "code", "") or "").strip() or None,
                 "name": str(getattr(programme, "name", "") or "").strip() or concept_label,
+                "summary": (
+                    _normalize_lesson_text(getattr(first_day, "default_summary", "") or "")
+                    or _normalize_lesson_text(getattr(first_variant, "summary", "") or "")
+                    or _normalize_lesson_text(getattr(first_day, "lesson_goal", "") or "")
+                    or None
+                ),
                 "pillar_key": pillar_key or None,
                 "pillar_label": _pillar_label(pillar_key),
                 "concept_key": concept_key,
