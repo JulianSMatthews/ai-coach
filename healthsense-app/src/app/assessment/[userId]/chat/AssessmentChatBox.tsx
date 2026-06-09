@@ -1381,9 +1381,9 @@ export default function AssessmentChatBox({
             canOpen ? "active:scale-[0.99]" : "cursor-default"
           }`}
           style={{
-            backgroundColor: status === "completed" ? "var(--surface-muted)" : palette.bg,
-            borderColor: status === "completed" ? "var(--border)" : palette.border,
-            color: status === "completed" ? "var(--text-primary)" : "#17120f",
+            backgroundColor: palette.accent,
+            borderColor: "rgba(23,18,15,0.16)",
+            color: "#17120f",
           }}
         >
           <span>
