@@ -721,6 +721,65 @@ def _education_editor_options(session) -> list[dict[str, object]]:
     return concepts
 
 
+_EDUCATION_ADMIN_JOURNEY_PILLAR_ORDER = ("reflection", "purpose", "resilience", "recovery", "nutrition", "training")
+
+
+def _education_admin_journey_sort_key(row: EducationProgramme) -> tuple[int, str, int]:
+    try:
+        stored_order = int(getattr(row, "journey_order", 0) or 0)
+    except Exception:
+        stored_order = 0
+    if stored_order > 0:
+        order_value = stored_order
+    else:
+        pillar_key = str(getattr(row, "pillar_key", "") or "").strip().lower()
+        try:
+            pillar_index = _EDUCATION_ADMIN_JOURNEY_PILLAR_ORDER.index(pillar_key)
+        except ValueError:
+            pillar_index = len(_EDUCATION_ADMIN_JOURNEY_PILLAR_ORDER)
+        order_value = 1_000_000 + (pillar_index * 10_000) + int(getattr(row, "id", 0) or 0)
+    return (
+        order_value,
+        str(getattr(row, "name", "") or "").strip().lower(),
+        int(getattr(row, "id", 0) or 0),
+    )
+
+
+def _released_education_order_programmes(session) -> list[EducationProgramme]:
+    rows = (
+        session.query(EducationProgramme)
+        .filter(
+            EducationProgramme.is_released.is_(True),
+            EducationProgramme.is_active.is_(True),
+            EducationProgramme.concept_key.isnot(None),
+            EducationProgramme.concept_key != "",
+        )
+        .order_by(EducationProgramme.journey_order.asc(), EducationProgramme.id.asc())
+        .all()
+    )
+    return sorted(rows, key=_education_admin_journey_sort_key)
+
+
+def _interleaved_released_education_programmes(rows: list[EducationProgramme]) -> list[EducationProgramme]:
+    grouped: dict[str, list[EducationProgramme]] = {pillar: [] for pillar in _EDUCATION_ADMIN_JOURNEY_PILLAR_ORDER}
+    other: list[EducationProgramme] = []
+    for row in rows:
+        pillar_key = str(getattr(row, "pillar_key", "") or "").strip().lower()
+        if pillar_key in grouped:
+            grouped[pillar_key].append(row)
+        else:
+            other.append(row)
+    ordered: list[EducationProgramme] = []
+    max_group_size = max((len(items) for items in grouped.values()), default=0)
+    for index in range(max_group_size):
+        for pillar_key in _EDUCATION_ADMIN_JOURNEY_PILLAR_ORDER:
+            items = grouped.get(pillar_key) or []
+            if index < len(items):
+                ordered.append(items[index])
+    ordered.extend(other)
+    return ordered
+
+
 def _json_script_content(value: object) -> str:
     return (
         json.dumps(value, ensure_ascii=False)
@@ -3547,6 +3606,7 @@ def list_education_programmes():
             f"<td>{row_id}</td>"
             f"<td>{html.escape(str(getattr(row, 'concept_label', None) or getattr(row, 'concept_key', None) or ''))}</td>"
             f"<td>{html.escape(str(row.pillar_key or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'journey_order', 0) or 0))}</td>"
             f"<td>{html.escape(row_code)}</td>"
             f"<td>{html.escape(row_name)}</td>"
             f"<td>{duration_days}</td>"
@@ -3578,7 +3638,10 @@ def list_education_programmes():
     body = (
         "<h2>Education Programmes</h2>"
         f"{_build_version_label()}"
-        "<div class='nav'><a href='/admin/education-programmes/edit'>Create new programme</a></div>"
+        "<div class='nav'>"
+        "<a href='/admin/education-programmes/edit'>Create new programme</a> "
+        "<a href='/admin/education-programmes/order'>Set released programme order</a>"
+        "</div>"
         "<div class='card'>"
         "<h3 class='section-title'>Avatar video batch</h3>"
         "<p class='help'>Run avatar video jobs across released education programmes. The safe batch completes one video before starting the next.</p>"
@@ -3605,12 +3668,94 @@ def list_education_programmes():
         "</div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Lessons</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
-        + ("".join(items) if items else "<tr><td colspan='9'><em>No education programmes configured yet.</em></td></tr>")
+        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Order</th><th>Code</th><th>Name</th><th>Lessons</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
+        + ("".join(items) if items else "<tr><td colspan='10'><em>No education programmes configured yet.</em></td></tr>")
         + "</table>"
         "</div>"
     )
     return _wrap_page("Education Programmes", body)
+
+
+@admin.get("/education-programmes/order", response_class=HTMLResponse)
+def edit_released_education_programme_order():
+    ensure_education_plan_schema()
+    with SessionLocal() as s:
+        rows = _released_education_order_programmes(s)
+        day_lengths = {
+            int(programme_id): int(max_day or 0)
+            for programme_id, max_day in (
+                s.query(EducationProgrammeDay.programme_id, func.max(EducationProgrammeDay.day_index))
+                .group_by(EducationProgrammeDay.programme_id)
+                .all()
+            )
+        }
+    table_rows: list[str] = []
+    for position, row in enumerate(rows, start=1):
+        row_id = int(row.id)
+        current_order = int(getattr(row, "journey_order", 0) or 0)
+        suggested_order = current_order if current_order > 0 else position * 10
+        table_rows.append(
+            "<tr>"
+            f"<td>{position}</td>"
+            f"<td><input type='number' name='order_{row_id}' min='0' step='1' value='{suggested_order}' style='width:7rem;' /></td>"
+            f"<td>{html.escape(str(getattr(row, 'concept_label', None) or getattr(row, 'concept_key', None) or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'pillar_key', '') or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'code', '') or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'name', '') or ''))}</td>"
+            f"<td>{int(day_lengths.get(row_id, 0) or 0)}</td>"
+            f"<td><a href='/admin/education-programmes/edit?id={row_id}'>Edit</a></td>"
+            "</tr>"
+        )
+    body = (
+        "<h2>Released Education Programme Order</h2>"
+        f"{_build_version_label()}"
+        "<div class='card'>"
+        "<p class='help'>This controls the member education journey order. Only released, active concept programmes are shown here.</p>"
+        "<p class='help'>Use manual values for a specific sequence, or renumber the displayed order to clean 10, 20, 30 steps. Interleave rebuilds the released journey by pillar: Reflection, Purpose, Resilience, Recovery, Nutrition, Training.</p>"
+        "<form method='post' action='/admin/education-programmes/order'>"
+        "<table>"
+        "<tr><th>Current position</th><th>Journey order</th><th>Concept</th><th>Pillar</th><th>Code</th><th>Name</th><th>Lessons</th><th>Action</th></tr>"
+        + ("".join(table_rows) if table_rows else "<tr><td colspan='8'><em>No released concept programmes found.</em></td></tr>")
+        + "</table>"
+        "<div class='actions stack' style='margin-top:16px;'>"
+        "<button type='submit' name='action' value='save'>Save manual order</button>"
+        "<button type='submit' name='action' value='normalize' class='secondary'>Renumber displayed order</button>"
+        "<button type='submit' name='action' value='interleave' class='secondary'>Interleave released pillars</button>"
+        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        "</div>"
+        "</form>"
+        "</div>"
+    )
+    return _wrap_page("Released Education Programme Order", body)
+
+
+@admin.post("/education-programmes/order")
+async def save_released_education_programme_order(request: Request):
+    ensure_education_plan_schema()
+    form = await request.form()
+    action = str(form.get("action") or "save").strip().lower()
+    with SessionLocal() as s:
+        rows = _released_education_order_programmes(s)
+        if action == "interleave":
+            rows_to_apply = _interleaved_released_education_programmes(rows)
+            for position, row in enumerate(rows_to_apply, start=1):
+                row.journey_order = position * 10
+                s.add(row)
+        elif action == "normalize":
+            for position, row in enumerate(rows, start=1):
+                row.journey_order = position * 10
+                s.add(row)
+        else:
+            for position, row in enumerate(rows, start=1):
+                raw_order = str(form.get(f"order_{int(row.id)}") or "").strip()
+                try:
+                    order_value = max(int(raw_order), 0)
+                except Exception:
+                    order_value = position * 10
+                row.journey_order = order_value
+                s.add(row)
+        s.commit()
+    return RedirectResponse(url="/admin/education-programmes/order", status_code=303)
 
 
 @admin.get("/education-programmes/simulate", response_class=HTMLResponse)
