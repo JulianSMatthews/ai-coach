@@ -1350,6 +1350,7 @@ export default function AssessmentChatBox({
       const unitNumber = Number(programme?.sequence_index || index + 1);
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
       const programmeSummary = String(programme?.summary || "").trim();
+      const darkStatusTag = status === "current" || status === "up_next" || status === "not_started";
       const statusLabel =
         status === "current"
           ? "Current"
@@ -1392,9 +1393,9 @@ export default function AssessmentChatBox({
               <span
                 className="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold"
                 style={{
-                  backgroundColor: status === "current" ? "#17120f" : "rgba(255,255,255,0.64)",
-                  borderColor: status === "current" ? "#17120f" : "rgba(23,18,15,0.16)",
-                  color: status === "current" ? "#fff" : "#17120f",
+                  backgroundColor: darkStatusTag ? "#17120f" : "rgba(255,255,255,0.64)",
+                  borderColor: darkStatusTag ? "#17120f" : "rgba(23,18,15,0.16)",
+                  color: darkStatusTag ? "#fff" : "#17120f",
                 }}
               >
                 {statusLabel}
