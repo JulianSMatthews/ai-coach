@@ -44,8 +44,8 @@ from .models import (
     UserPreference,
 )
 from .okr import _normalize_concept_key
-from .pillar_tracker import tracker_today
-from .pillar_config import pillar_label
+from .pillar_config import active_pillar_keys, pillar_label
+from .pillar_tracker import tracker_concepts_for_pillar, tracker_today
 from .usage import log_azure_batch_avatar_usage_once
 
 _EDUCATION_PLAN_SCHEMA_READY = False
@@ -462,6 +462,113 @@ def _released_concept_programmes(session) -> list[EducationProgramme]:
         .all()
     )
     return sorted(rows, key=_programme_journey_sort_key)
+
+
+def _checkin_pillar_journey_order(user_id: int | None = None) -> tuple[str, ...]:
+    try:
+        resolved_user_id = int(user_id) if user_id is not None else None
+    except Exception:
+        resolved_user_id = None
+    pillars = active_pillar_keys(resolved_user_id)
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw_pillar in pillars:
+        pillar_key = str(raw_pillar or "").strip().lower()
+        if not pillar_key or pillar_key in seen:
+            continue
+        ordered.append(pillar_key)
+        seen.add(pillar_key)
+    return tuple(ordered)
+
+
+def _checkin_concept_journey_order(pillar_key: str, user_id: int | None = None) -> tuple[str, ...]:
+    key = str(pillar_key or "").strip().lower()
+    if not key:
+        return ()
+    try:
+        resolved_user_id = int(user_id) if user_id is not None else None
+    except Exception:
+        resolved_user_id = None
+    try:
+        concepts = tracker_concepts_for_pillar(key, resolved_user_id)
+    except Exception:
+        return ()
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for concept in concepts:
+        concept_key = _normalize_concept_key(getattr(concept, "concept_key", None))
+        if not concept_key or concept_key in seen:
+            continue
+        ordered.append(concept_key)
+        seen.add(concept_key)
+    return tuple(ordered)
+
+
+def _released_concept_programmes_for_checkin_journey(
+    session,
+    user_id: int | None = None,
+) -> list[EducationProgramme]:
+    programmes = _released_concept_programmes(session)
+    if not programmes:
+        return []
+
+    pillar_order = _checkin_pillar_journey_order(user_id)
+    selected_pillars = set(pillar_order)
+    if not selected_pillars:
+        return programmes
+
+    programme_by_concept: dict[tuple[str, str], EducationProgramme] = {}
+    for programme in programmes:
+        pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+        concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+        if not pillar_key or not concept_key or pillar_key not in selected_pillars:
+            continue
+        token = (pillar_key, concept_key)
+        current = programme_by_concept.get(token)
+        if current is None or _programme_journey_sort_key(programme) < _programme_journey_sort_key(current):
+            programme_by_concept[token] = programme
+
+    concept_order_by_pillar = {
+        pillar_key: _checkin_concept_journey_order(pillar_key, user_id)
+        for pillar_key in pillar_order
+    }
+    max_concept_count = max((len(concepts) for concepts in concept_order_by_pillar.values()), default=0)
+    ordered: list[EducationProgramme] = []
+    used_ids: set[int] = set()
+    used_concepts: set[tuple[str, str]] = set()
+
+    for concept_index in range(max_concept_count):
+        for pillar_key in pillar_order:
+            concept_order = concept_order_by_pillar.get(pillar_key) or ()
+            if concept_index >= len(concept_order):
+                continue
+            concept_key = concept_order[concept_index]
+            programme = programme_by_concept.get((pillar_key, concept_key))
+            programme_id = int(getattr(programme, "id", 0) or 0) if programme is not None else 0
+            if programme is None or not programme_id or programme_id in used_ids:
+                continue
+            ordered.append(programme)
+            used_ids.add(programme_id)
+            used_concepts.add((pillar_key, concept_key))
+
+    for programme in programmes:
+        programme_id = int(getattr(programme, "id", 0) or 0)
+        pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+        concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+        if (
+            not programme_id
+            or not pillar_key
+            or not concept_key
+            or pillar_key not in selected_pillars
+            or programme_id in used_ids
+            or (pillar_key, concept_key) in used_concepts
+        ):
+            continue
+        ordered.append(programme)
+        used_ids.add(programme_id)
+        used_concepts.add((pillar_key, concept_key))
+
+    return ordered or programmes
 
 
 def _education_insight_source_hash(payload: dict[str, Any]) -> str:
@@ -2378,6 +2485,7 @@ def _select_programme(
 def _select_next_journey_programme(
     session,
     *,
+    user_id: int | None = None,
     exclude_programme_ids: set[int] | None = None,
     exclude_concept_keys: set[str] | None = None,
 ) -> EducationProgramme | None:
@@ -2387,7 +2495,7 @@ def _select_next_journey_programme(
         for token in (_normalize_concept_key(item) for item in (exclude_concept_keys or set()))
         if token
     }
-    for programme in _released_concept_programmes(session):
+    for programme in _released_concept_programmes_for_checkin_journey(session, user_id):
         programme_id = int(getattr(programme, "id", 0) or 0)
         concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
         if programme_id in excluded_ids:
@@ -2726,7 +2834,7 @@ def _education_journey_payload(
     active_plan: UserEducationPlan,
     active_programme: EducationProgramme,
 ) -> dict[str, Any]:
-    programmes = _released_concept_programmes(session)
+    programmes = _released_concept_programmes_for_checkin_journey(session, int(user_id))
     if not programmes:
         return {
             "title": "Education journey",
@@ -3338,6 +3446,7 @@ def _get_or_create_active_plan(
         existing_programme_for_rollover = None
     journey_programme = _select_next_journey_programme(
         session,
+        user_id=int(user_id),
         exclude_programme_ids=completed_programme_ids,
         exclude_concept_keys=completed_concept_keys,
     )
