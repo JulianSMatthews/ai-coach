@@ -600,6 +600,111 @@ def _normalise_insight_message(message: str) -> str:
     return token
 
 
+def save_programme_insight_bank(
+    session,
+    programme_id: int,
+    insights: list[Any],
+    *,
+    source: str = "admin_save",
+) -> dict[str, Any]:
+    programme = session.get(EducationProgramme, int(programme_id))
+    if programme is None:
+        return {"ok": False, "programme_id": int(programme_id), "reason": "programme_not_found"}
+    concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+    pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
+    if not concept_key or not pillar_key:
+        return {"ok": False, "programme_id": int(programme_id), "reason": "missing_concept"}
+    concept_label = (
+        str(getattr(programme, "concept_label", "") or "").strip()
+        or concept_key.replace("_", " ").title()
+    )
+    normalised: list[dict[str, Any]] = []
+    for index, raw_item in enumerate(insights or [], start=1):
+        item = raw_item if isinstance(raw_item, dict) else {"message": raw_item}
+        message = _normalise_insight_message(str(item.get("message") or item.get("quote") or "").strip())
+        if not message:
+            continue
+        try:
+            insight_index = int(item.get("insight_index") or item.get("index") or len(normalised) + 1)
+        except Exception:
+            insight_index = len(normalised) + 1
+        insight_index = max(1, insight_index)
+        angle = str(item.get("angle") or "").strip()[:64] or None
+        normalised.append(
+            {
+                "insight_index": insight_index,
+                "angle": angle,
+                "message": message,
+            }
+        )
+        if len(normalised) >= _CONCEPT_INSIGHT_COUNT:
+            break
+    if not normalised:
+        return {"ok": False, "programme_id": int(programme_id), "reason": "no_usable_insights"}
+
+    for fallback_index, item in enumerate(normalised, start=1):
+        item["insight_index"] = fallback_index
+    source_hash = _education_insight_source_hash(
+        {
+            "programme_id": int(programme.id),
+            "source": source,
+            "insights": normalised,
+        }
+    )
+    existing_rows = (
+        session.execute(
+            select(EducationConceptInsight)
+            .where(EducationConceptInsight.programme_id == int(programme.id))
+            .order_by(EducationConceptInsight.insight_index.asc(), EducationConceptInsight.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    existing_by_index = {
+        int(getattr(row, "insight_index", 0) or 0): row
+        for row in existing_rows
+        if int(getattr(row, "insight_index", 0) or 0) > 0
+    }
+    source_summary = "; ".join(item["message"][:120] for item in normalised[:3])
+    now = _now_utc()
+    used_indexes: set[int] = set()
+    for item in normalised:
+        insight_index = int(item["insight_index"])
+        row = existing_by_index.get(insight_index)
+        if row is None:
+            row = EducationConceptInsight(programme_id=int(programme.id), insight_index=insight_index)
+        row.programme_id = int(programme.id)
+        row.pillar_key = pillar_key
+        row.concept_key = concept_key
+        row.concept_label = concept_label
+        row.insight_index = insight_index
+        row.angle = item.get("angle")
+        row.message = item["message"]
+        row.source_hash = source_hash
+        row.source_summary = source_summary or None
+        row.is_active = True
+        row.meta = {
+            "source": source,
+            "generated_from": "education_programme_llm",
+        }
+        row.updated_at = now
+        session.add(row)
+        used_indexes.add(insight_index)
+    for row in existing_rows:
+        if int(getattr(row, "insight_index", 0) or 0) not in used_indexes:
+            row.is_active = False
+            row.updated_at = now
+            session.add(row)
+    session.flush()
+    return {
+        "ok": True,
+        "programme_id": int(programme.id),
+        "source_hash": source_hash,
+        "refreshed": True,
+        "count": len(normalised),
+    }
+
+
 def refresh_programme_insight_bank(
     session,
     programme_id: int,

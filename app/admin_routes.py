@@ -20,6 +20,7 @@ from .models import (
     AssessmentRun,
     AssessmentTurn,
     Concept,
+    EducationConceptInsight,
     EducationLessonVariant,
     EducationProgramme,
     EducationProgrammeDay,
@@ -50,6 +51,7 @@ from .education_plan import (
     generate_education_lesson_avatar,
     generate_education_programme_avatar_videos,
     refresh_programme_insight_bank,
+    save_programme_insight_bank,
     refresh_all_education_programme_avatar_videos,
     refresh_education_lesson_avatar,
     refresh_education_programme_avatar_videos,
@@ -535,6 +537,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "is_active": True,
             "is_released": False,
             "days": [],
+            "insights": [],
         }
     day_rows = (
         session.query(EducationProgrammeDay)
@@ -543,6 +546,12 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         .all()
     )
     day_ids = [int(item.id) for item in day_rows]
+    insight_rows = (
+        session.query(EducationConceptInsight)
+        .filter(EducationConceptInsight.programme_id == int(row.id))
+        .order_by(EducationConceptInsight.insight_index.asc(), EducationConceptInsight.id.asc())
+        .all()
+    )
     variant_rows = []
     if day_ids:
         variant_rows = (
@@ -657,6 +666,19 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         "is_active": bool(row.is_active),
         "is_released": bool(getattr(row, "is_released", False)),
         "days": payload_days,
+        "insights": [
+            {
+                "id": int(item.id),
+                "insight_index": int(getattr(item, "insight_index", 0) or 0),
+                "angle": str(getattr(item, "angle", "") or ""),
+                "message": str(getattr(item, "message", "") or ""),
+                "source_hash": str(getattr(item, "source_hash", "") or ""),
+                "source_summary": str(getattr(item, "source_summary", "") or ""),
+                "is_active": bool(getattr(item, "is_active", True)),
+            }
+            for item in insight_rows
+            if bool(getattr(item, "is_active", True))
+        ],
     }
 
 
@@ -1260,11 +1282,33 @@ def _normalise_generated_education_programme(
         duration_days = int(generated.get("duration_days") or len(normalised_days))
     except Exception:
         duration_days = len(normalised_days)
+    raw_insights = generated.get("insights") if isinstance(generated.get("insights"), list) else []
+    normalised_insights: list[dict[str, object]] = []
+    for index, raw_insight in enumerate(raw_insights[:12], start=1):
+        item = raw_insight if isinstance(raw_insight, dict) else {"message": raw_insight}
+        message = str(item.get("message") or item.get("quote") or "").strip()
+        if not message:
+            continue
+        try:
+            insight_index = int(item.get("insight_index") or item.get("index") or len(normalised_insights) + 1)
+        except Exception:
+            insight_index = len(normalised_insights) + 1
+        normalised_insights.append(
+            {
+                "id": None,
+                "insight_index": max(1, insight_index),
+                "angle": str(item.get("angle") or "").strip()[:64],
+                "message": message,
+            }
+        )
+    for insight_index, item in enumerate(normalised_insights, start=1):
+        item["insight_index"] = insight_index
     return {
         "programme_name": str(generated.get("programme_name") or generated.get("name") or "").strip(),
         "programme_code": str(generated.get("programme_code") or generated.get("code") or "").strip(),
         "duration_days": duration_days,
         "days": sorted(normalised_days, key=lambda item: int(item.get("day_index") or 0)),
+        "insights": normalised_insights,
     }
 
 
@@ -1357,6 +1401,13 @@ def _build_education_programme_generation_prompt(
             "programme_name": "string",
             "programme_code": "string",
             "duration_days": requested_days,
+            "insights": [
+                {
+                    "insight_index": 1,
+                    "angle": "pattern",
+                    "message": "string",
+                }
+            ],
             "days": [
                 {
                     "day_index": 1,
@@ -1405,6 +1456,9 @@ def _build_education_programme_generation_prompt(
         "- Use the existing programme only for context and continuity; replace the day plan, lesson goals, lesson scripts, daily actions, takeaways, and quizzes.\n"
         f"- Return exactly {requested_days} programme lessons, numbered 1 to {requested_days}.\n"
         "- Keep every lesson on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
+        "- Include exactly 12 programme-level insights in programme.insights.\n"
+        "- The insights are used on pillar cue cards and journal-style prompts. They must be insight-led, based on the concept and lesson transcript themes, and not tracking, performance, or action instructions.\n"
+        "- Each insight message should be 20-34 words, varied in language, and should not all start with the same word.\n"
         "- Generate one active variant per lesson unless the task_description explicitly asks for multiple variants.\n"
         "- Use level='build' unless the task_description asks for another level or a clear level progression.\n"
         f"{duration_instruction}"
@@ -5175,7 +5229,10 @@ def edit_education_programme(id: int | None = None):
         if current_pillar and current_programme_concept
         else current_programme_concept
     )
-    structure_seed = {"days": programme_payload.get("days") or []}
+    structure_seed = {
+        "days": programme_payload.get("days") or [],
+        "insights": programme_payload.get("insights") or [],
+    }
     delete_form_html = ""
     avatar_bulk_html = ""
     if row is not None:
@@ -5303,6 +5360,17 @@ def edit_education_programme(id: int | None = None):
         </div>
       </details>
 
+      <div class="card" style="margin-bottom:12px;">
+        <div class="stack" style="justify-content:space-between; margin-bottom:12px;">
+          <div>
+            <h3 class="section-title">Concept insights</h3>
+            <div class="subtle">These messages are generated with the concept programme and stored for pillar cue-card guidance.</div>
+          </div>
+          <button type="button" class="secondary" id="add-insight-button">Add insight</button>
+        </div>
+        <div id="programme-insights-root"></div>
+      </div>
+
       <div class="programme-days-shell">
         <div class="card">
           <div class='stack' style='justify-content:space-between; margin-bottom:12px;'>
@@ -5418,6 +5486,8 @@ def edit_education_programme(id: int | None = None):
         const programmeLlmVideoDuration = document.getElementById('programme-llm-video-duration');
         const programmeLlmButton = document.getElementById('generate-programme-llm');
         const programmeLlmStatus = document.getElementById('programme-llm-status');
+        const insightsRoot = document.getElementById('programme-insights-root');
+        const addInsightButton = document.getElementById('add-insight-button');
         const form = document.getElementById('education-programme-form');
         const structureField = document.getElementById('structure_json');
         const programmeConceptInput = document.getElementById('programme_concept_key');
@@ -5512,6 +5582,79 @@ def edit_education_programme(id: int | None = None):
             default_summary: '',
             variants: [emptyVariant()],
           }};
+        }}
+
+        function emptyInsight(index) {{
+          return {{
+            id: null,
+            insight_index: index,
+            angle: '',
+            message: '',
+          }};
+        }}
+
+        function normaliseGeneratedInsights(generatedProgramme) {{
+          const generated = generatedProgramme && typeof generatedProgramme === 'object'
+            ? (generatedProgramme.programme && typeof generatedProgramme.programme === 'object' ? generatedProgramme.programme : generatedProgramme)
+            : {{}};
+          const rawInsights = Array.isArray(generated.insights) ? generated.insights : [];
+          return rawInsights.map((rawInsight, index) => {{
+            const item = rawInsight && typeof rawInsight === 'object' ? rawInsight : {{ message: rawInsight }};
+            return {{
+              id: item.id || null,
+              insight_index: Number(item.insight_index || item.index || index + 1),
+              angle: String(item.angle || '').trim(),
+              message: String(item.message || item.quote || '').trim(),
+            }};
+          }}).filter((item) => item.message).slice(0, 12).map((item, index) => ({{
+            ...item,
+            insight_index: index + 1,
+          }}));
+        }}
+
+        function renderInsight(insight) {{
+          const item = insight && typeof insight === 'object' ? insight : emptyInsight(1);
+          return `
+            <div class="card js-insight" style="padding:12px 14px; margin-bottom:10px;">
+              <input type="hidden" class="js-insight-id" value="${{escapeHtml(item.id || '')}}" />
+              <div class="stack" style="justify-content:space-between;">
+                <strong>Insight</strong>
+                <button type="button" class="danger js-remove-insight">Remove</button>
+              </div>
+              <div class="grid-2" style="margin-top:10px;">
+                <div class="field">
+                  <label>Index<br/><input type="number" class="js-insight-index" min="1" max="12" value="${{escapeHtml(item.insight_index || 1)}}" /></label>
+                </div>
+                <div class="field">
+                  <label>Angle<br/><input type="text" class="js-insight-angle" value="${{escapeHtml(item.angle || '')}}" placeholder="pattern, meaning, threshold..." /></label>
+                </div>
+              </div>
+              <div class="field">
+                <label>Message<br/><textarea class="js-insight-message" rows="3">${{escapeHtml(item.message || '')}}</textarea></label>
+              </div>
+            </div>
+          `;
+        }}
+
+        function renderInsights(insights) {{
+          if (!insightsRoot) return;
+          const items = Array.isArray(insights) ? insights : [];
+          insightsRoot.innerHTML = items.length
+            ? items.map((insight, index) => renderInsight({{ ...insight, insight_index: insight.insight_index || index + 1 }})).join('')
+            : '<div class="subtle">No concept insights generated yet. Use the programme LLM generator or add insights manually.</div>';
+        }}
+
+        function collectInsightsFromDom() {{
+          if (!insightsRoot) return [];
+          return Array.from(insightsRoot.querySelectorAll(':scope > .js-insight')).map((insightEl, index) => ({{
+            id: insightEl.querySelector('.js-insight-id')?.value ? Number(insightEl.querySelector('.js-insight-id').value) : null,
+            insight_index: Number(insightEl.querySelector('.js-insight-index')?.value || index + 1),
+            angle: String(insightEl.querySelector('.js-insight-angle')?.value || '').trim(),
+            message: String(insightEl.querySelector('.js-insight-message')?.value || '').trim(),
+          }})).filter((item) => item.message).slice(0, 12).map((item, index) => ({{
+            ...item,
+            insight_index: index + 1,
+          }}));
         }}
 
         function titleCasePillar(value) {{
@@ -5941,7 +6084,7 @@ def edit_education_programme(id: int | None = None):
           const days = dayEls
             .map((dayEl) => collectDayData(dayEl))
             .filter((day) => day.day_index > 0 || day.default_title || day.lesson_goal || day.variants.some((variant) => variant.title || variant.script || variant.action_prompt || variant.video_url || variant.takeaway_default));
-          return {{ days }};
+          return {{ days, insights: collectInsightsFromDom() }};
         }}
 
         function updateVariantAvatarFields(variantEl, avatar) {{
@@ -6320,6 +6463,7 @@ def edit_education_programme(id: int | None = None):
           }}
           selectedDayPosition = 0;
           renderLessons(replacementLessons);
+          renderInsights(normaliseGeneratedInsights(generatedProgramme));
           markProgrammeDraftDirty();
           selectDay(0);
         }}
@@ -6537,6 +6681,7 @@ def edit_education_programme(id: int | None = None):
         function renderInitial() {{
           const days = Array.isArray(seed.days) ? [...seed.days] : [];
           renderLessons(days.length ? days : [emptyDay(1)]);
+          renderInsights(Array.isArray(seed.insights) ? seed.insights : []);
         }}
 
         document.getElementById('add-day-button').addEventListener('click', function() {{
@@ -6550,6 +6695,26 @@ def edit_education_programme(id: int | None = None):
           selectedDayPosition = days.length - 1;
           markProgrammeDraftDirty();
           renderLessons(days);
+        }});
+
+        addInsightButton?.addEventListener('click', function() {{
+          const insights = collectInsightsFromDom();
+          insights.push(emptyInsight(insights.length + 1));
+          renderInsights(insights);
+          markProgrammeDraftDirty();
+        }});
+
+        insightsRoot?.addEventListener('click', function(event) {{
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (!target.classList.contains('js-remove-insight')) return;
+          target.closest('.js-insight')?.remove();
+          renderInsights(collectInsightsFromDom());
+          markProgrammeDraftDirty();
+        }});
+
+        insightsRoot?.addEventListener('input', function() {{
+          markProgrammeDraftDirty();
         }});
 
         summaryRoot?.addEventListener('click', function(event) {{
@@ -6778,6 +6943,11 @@ async def save_education_programme(
         days_payload = []
     if not isinstance(days_payload, list):
         raise HTTPException(400, "structure_json.days must be a list")
+    insights_payload = structure.get("insights") if isinstance(structure, dict) else []
+    if insights_payload is None:
+        insights_payload = []
+    if not isinstance(insights_payload, list):
+        raise HTTPException(400, "structure_json.insights must be a list")
 
     seen_day_indexes: set[int] = set()
     normalised_days: list[dict[str, object]] = []
@@ -6805,6 +6975,29 @@ async def save_education_programme(
             }
         )
     resolved_duration = max(seen_day_indexes, default=0)
+    normalised_insights: list[dict[str, object]] = []
+    for raw_insight in insights_payload:
+        if not isinstance(raw_insight, dict):
+            continue
+        message = str(raw_insight.get("message") or "").strip()
+        if not message:
+            continue
+        try:
+            insight_index = int(raw_insight.get("insight_index") or len(normalised_insights) + 1)
+        except Exception:
+            insight_index = len(normalised_insights) + 1
+        normalised_insights.append(
+            {
+                "id": int(raw_insight.get("id")) if raw_insight.get("id") else None,
+                "insight_index": max(1, insight_index),
+                "angle": str(raw_insight.get("angle") or "").strip(),
+                "message": message,
+            }
+        )
+        if len(normalised_insights) >= 12:
+            break
+    for insight_index, item in enumerate(normalised_insights, start=1):
+        item["insight_index"] = insight_index
 
     with SessionLocal() as s:
         concept_candidates = (
@@ -7092,7 +7285,10 @@ async def save_education_programme(
                 s.delete(day_row)
 
         s.flush()
-        refresh_programme_insight_bank(s, int(row.id), source="admin_save")
+        if normalised_insights:
+            save_programme_insight_bank(s, int(row.id), normalised_insights, source="admin_llm_save")
+        else:
+            refresh_programme_insight_bank(s, int(row.id), source="admin_save")
         s.commit()
         redirect_id = int(row.id)
     return RedirectResponse(url=f"/admin/education-programmes/edit?id={redirect_id}", status_code=303)
