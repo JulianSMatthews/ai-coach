@@ -1347,9 +1347,7 @@ export default function AssessmentChatBox({
       const palette = getPillarPalette(pillarKey);
       const status = String(programme?.status || "").trim().toLowerCase();
       const canOpen = Boolean(programme?.can_open);
-      const lessonCount = Number(programme?.lesson_count || 0);
-      const completedCount = Number(programme?.completed_lesson_count || 0);
-      const currentLessonIndex = Number(programme?.current_lesson_index || 0);
+      const unitNumber = Number(programme?.sequence_index || index + 1);
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
       const programmeSummary = String(programme?.summary || "").trim();
       const statusLabel =
@@ -1362,11 +1360,6 @@ export default function AssessmentChatBox({
               : status === "in_progress"
                 ? "In progress"
                 : "Not started";
-      const progressLabel = status === "completed"
-        ? `${lessonCount || completedCount || 0} of ${lessonCount || completedCount || 0} lessons complete`
-        : currentLessonIndex > 0 && lessonCount > 0
-          ? `Lesson ${Math.min(currentLessonIndex, lessonCount)} of ${lessonCount}`
-          : `${lessonCount || 0} lesson${lessonCount === 1 ? "" : "s"}`;
       return (
         <button
           key={`programme-${String(programme?.programme_id || index)}`}
@@ -1393,7 +1386,7 @@ export default function AssessmentChatBox({
                   {String(programme?.pillar_label || palette.label || "Programme").trim()}
                 </span>
                 <span className="mt-3 block text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
-                  {conceptLabel}
+                  Unit {unitNumber}: {conceptLabel}
                 </span>
               </span>
               <span
@@ -1413,16 +1406,13 @@ export default function AssessmentChatBox({
               </span>
             ) : null}
           </span>
-          <span className="mt-6 flex items-center justify-between gap-4">
-            <span className="min-w-0 text-sm font-semibold leading-5 opacity-70">
-              Programme {Number(programme?.sequence_index || index + 1)} · {progressLabel}
-            </span>
-            {canOpen ? (
+          {canOpen ? (
+            <span className="mt-6 flex items-center justify-end">
               <span className="shrink-0 rounded-full bg-[#17120f] px-5 py-3 text-sm font-semibold text-white">
                 Open lessons
               </span>
-            ) : null}
-          </span>
+            </span>
+          ) : null}
         </button>
       );
     },
