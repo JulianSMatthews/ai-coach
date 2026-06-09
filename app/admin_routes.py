@@ -861,6 +861,7 @@ def _compact_education_programme_for_llm(raw_programme: object) -> dict[str, obj
     if not isinstance(raw_programme, dict):
         return {"days": []}
     raw_days = raw_programme.get("days") if isinstance(raw_programme.get("days"), list) else []
+    raw_insights = raw_programme.get("insights") if isinstance(raw_programme.get("insights"), list) else []
     return {
         "programme_name": _trim_llm_context_text(raw_programme.get("programme_name") or raw_programme.get("name"), 300),
         "programme_code": _trim_llm_context_text(raw_programme.get("programme_code") or raw_programme.get("code"), 160),
@@ -872,6 +873,15 @@ def _compact_education_programme_for_llm(raw_programme: object) -> dict[str, obj
         ),
         "duration_days": raw_programme.get("duration_days"),
         "days": [_compact_education_day_for_llm(day) for day in raw_days[:31] if isinstance(day, dict)],
+        "insights": [
+            {
+                "insight_index": item.get("insight_index") or index + 1,
+                "angle": _trim_llm_context_text(item.get("angle"), 80),
+                "message": _trim_llm_context_text(item.get("message"), 500),
+            }
+            for index, item in enumerate(raw_insights[:12])
+            if isinstance(item, dict) and str(item.get("message") or "").strip()
+        ],
     }
 
 
@@ -1296,6 +1306,32 @@ def _normalise_generated_education_day(
     }
 
 
+def _normalise_generated_education_insights(raw_generated: dict[str, object]) -> list[dict[str, object]]:
+    generated = raw_generated.get("programme") if isinstance(raw_generated.get("programme"), dict) else raw_generated
+    raw_insights = generated.get("insights") if isinstance(generated.get("insights"), list) else []
+    normalised_insights: list[dict[str, object]] = []
+    for raw_insight in raw_insights[:12]:
+        item = raw_insight if isinstance(raw_insight, dict) else {"message": raw_insight}
+        message = str(item.get("message") or item.get("quote") or "").strip()
+        if not message:
+            continue
+        try:
+            insight_index = int(item.get("insight_index") or item.get("index") or len(normalised_insights) + 1)
+        except Exception:
+            insight_index = len(normalised_insights) + 1
+        normalised_insights.append(
+            {
+                "id": None,
+                "insight_index": max(1, insight_index),
+                "angle": str(item.get("angle") or "").strip()[:64],
+                "message": message,
+            }
+        )
+    for insight_index, item in enumerate(normalised_insights, start=1):
+        item["insight_index"] = insight_index
+    return normalised_insights
+
+
 def _normalise_generated_education_programme(
     raw_generated: dict[str, object],
     *,
@@ -1341,33 +1377,12 @@ def _normalise_generated_education_programme(
         duration_days = int(generated.get("duration_days") or len(normalised_days))
     except Exception:
         duration_days = len(normalised_days)
-    raw_insights = generated.get("insights") if isinstance(generated.get("insights"), list) else []
-    normalised_insights: list[dict[str, object]] = []
-    for index, raw_insight in enumerate(raw_insights[:12], start=1):
-        item = raw_insight if isinstance(raw_insight, dict) else {"message": raw_insight}
-        message = str(item.get("message") or item.get("quote") or "").strip()
-        if not message:
-            continue
-        try:
-            insight_index = int(item.get("insight_index") or item.get("index") or len(normalised_insights) + 1)
-        except Exception:
-            insight_index = len(normalised_insights) + 1
-        normalised_insights.append(
-            {
-                "id": None,
-                "insight_index": max(1, insight_index),
-                "angle": str(item.get("angle") or "").strip()[:64],
-                "message": message,
-            }
-        )
-    for insight_index, item in enumerate(normalised_insights, start=1):
-        item["insight_index"] = insight_index
     return {
         "programme_name": str(generated.get("programme_name") or generated.get("name") or "").strip(),
         "programme_code": str(generated.get("programme_code") or generated.get("code") or "").strip(),
         "duration_days": duration_days,
         "days": sorted(normalised_days, key=lambda item: int(item.get("day_index") or 0)),
-        "insights": normalised_insights,
+        "insights": _normalise_generated_education_insights(raw_generated),
     }
 
 
@@ -1528,6 +1543,43 @@ def _build_education_programme_generation_prompt(
         "- Vary the position of the correct answer across quiz questions; do not always put it first.\n"
         "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
         "- Use UK English, clear coaching language, practical daily actions, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+
+def _build_education_programme_insights_prompt(
+    *,
+    brief: str,
+    programme_context: dict[str, object],
+) -> str:
+    output_schema = {
+        "programme": {
+            "insights": [
+                {
+                    "insight_index": 1,
+                    "angle": "pattern",
+                    "message": "string",
+                }
+            ],
+        }
+    }
+    return (
+        "You are creating programme-level insights for a HealthSense concept-based education programme.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Regenerate only the programme-level insights for the selected concept.\n"
+        "- Do not rewrite or return lesson plans, lesson scripts, transcript text, quiz content, daily actions, takeaways, or avatar settings.\n"
+        "- Include exactly 12 insights in programme.insights.\n"
+        "- Base the insights on the selected concept, the programme sequence, and the lesson transcript or script themes supplied in CONTEXT_JSON.\n"
+        "- The insights are used on pillar cue cards and journal-style prompts after a user checks in.\n"
+        "- Make each message reflective and insight-led: it should help the user understand a pattern, signal, belief, need, or tension.\n"
+        "- Do not make the messages about tracking performance, progress, scores, targets, or instructions to take an action.\n"
+        "- Each insight message should be 20-34 words, varied in language, and should not all start with the same word.\n"
+        "- If existing insights are supplied, avoid repeating their wording or angle too closely.\n"
+        "- Use UK English and avoid diagnosis or medical claims.\n\n"
         "CONTEXT_JSON:\n"
         f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
         "OUTPUT_SCHEMA_JSON:\n"
@@ -1848,6 +1900,33 @@ def _generate_education_programme_with_llm(
     )
     return {
         "programme": generated_programme,
+        "model": llm_result["model"],
+        "duration_ms": llm_result["duration_ms"],
+        "content": llm_result["content"],
+        "prompt": prompt,
+        "context": programme_context,
+    }
+
+
+def _generate_education_programme_insights_with_llm(
+    *,
+    brief: str,
+    model_override: str | None,
+    programme_context: dict[str, object],
+) -> dict[str, object]:
+    prompt = _build_education_programme_insights_prompt(
+        brief=brief,
+        programme_context=programme_context,
+    )
+    llm_result = _invoke_education_llm_prompt(
+        prompt=prompt,
+        touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+        model_override=model_override,
+    )
+    raw_generated = _extract_llm_json_object(str(llm_result["content"] or ""))
+    generated_insights = _normalise_generated_education_insights(raw_generated)
+    return {
+        "insights": generated_insights,
         "model": llm_result["model"],
         "duration_ms": llm_result["duration_ms"],
         "content": llm_result["content"],
@@ -5042,6 +5121,54 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
                     },
                     block_order=["context", "task"],
                 )
+        if not isinstance(generated_programme.get("insights"), list) or not generated_programme.get("insights"):
+            insight_existing_programme = dict(existing_programme)
+            insight_existing_programme["programme_name"] = str(generated_programme.get("programme_name") or programme_context["programme_name"] or "").strip()
+            insight_existing_programme["programme_code"] = str(generated_programme.get("programme_code") or programme_context["programme_code"] or "").strip()
+            insight_existing_programme["pillar_key"] = pillar_key
+            insight_existing_programme["programme_concept_key"] = concept_key
+            insight_existing_programme["programme_concept_label"] = concept_label
+            insight_existing_programme["duration_days"] = requested_days
+            insight_existing_programme["days"] = generated_programme.get("days") if isinstance(generated_programme.get("days"), list) else []
+            insight_context = {
+                **programme_context,
+                "task_description": brief or "Generate the concept insight bank for this complete education programme.",
+                "existing_programme": _compact_education_programme_for_llm(insight_existing_programme),
+            }
+            insight_result = _generate_education_programme_insights_with_llm(
+                brief=brief,
+                model_override=model_override,
+                programme_context=insight_context,
+            )
+            generated_insights = insight_result.get("insights") if isinstance(insight_result.get("insights"), list) else []
+            if generated_insights:
+                generated_programme["insights"] = generated_insights
+                _log_education_llm_generation(
+                    touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+                    prompt=str(insight_result.get("prompt") or ""),
+                    model=str(insight_result.get("model") or resolved_model),
+                    duration_ms=int(insight_result.get("duration_ms") or 0),
+                    response_preview=str(insight_result.get("content") or ""),
+                    context_meta={
+                        "programme_name": programme_context["programme_name"],
+                        "programme_code": programme_context["programme_code"],
+                        "pillar_key": pillar_key,
+                        "programme_concept_key": concept_key,
+                        "requested_days": requested_days,
+                        "model_override": model_override,
+                        "strategy": generation_strategy,
+                        "generation_scope": "programme_insights_completion",
+                    },
+                    prompt_variant="admin_programme_editor_insights_completion",
+                    task_label=f"{task_label} insights",
+                    prompt_blocks={
+                        "context": json.dumps(insight_context, ensure_ascii=False, default=str),
+                        "task": brief,
+                    },
+                    block_order=["context", "task"],
+                )
+            else:
+                raise HTTPException(502, "LLM programme insight completion did not return usable insights")
     except HTTPException:
         raise
     except Exception as exc:
@@ -5052,6 +5179,95 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
         "model": resolved_model,
         "programme": generated_programme,
         "strategy": generation_strategy,
+    }
+
+
+@admin.post("/education-programmes/programme/llm-generate-insights")
+async def generate_education_concept_programme_insights_with_llm(request: Request):
+    ensure_education_plan_schema()
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid JSON payload: {exc}")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "JSON payload must be an object")
+
+    try:
+        programme_id = payload.get("programme_id")
+        model_override = _normalize_model_override(str(payload.get("model_override") or ""))
+        brief = str(payload.get("brief") or "").strip()
+        approx_video_duration = str(payload.get("approx_video_duration") or "").strip()
+        existing_programme = payload.get("existing_programme") if isinstance(payload.get("existing_programme"), dict) else {}
+        _store_education_programme_llm_preferences(
+            programme_id,
+            llm_task_description=brief,
+            llm_video_duration=approx_video_duration,
+        )
+        concept_key = str(payload.get("programme_concept_key") or existing_programme.get("programme_concept_key") or "").strip().lower()
+        concept_label = str(payload.get("programme_concept_label") or existing_programme.get("programme_concept_label") or "").strip()
+        pillar_key = str(payload.get("pillar_key") or existing_programme.get("pillar_key") or "").strip().lower()
+        if not concept_key:
+            raise HTTPException(400, "programme_concept_key is required")
+        raw_days = existing_programme.get("days") if isinstance(existing_programme.get("days"), list) else []
+        try:
+            requested_days = int(payload.get("duration_days") or existing_programme.get("duration_days") or len(raw_days) or 0)
+        except Exception:
+            requested_days = len(raw_days)
+        requested_days = max(1, min(31, requested_days or 1))
+
+        programme_context = {
+            "programme_name": str(payload.get("programme_name") or existing_programme.get("programme_name") or "").strip(),
+            "programme_code": str(payload.get("programme_code") or existing_programme.get("programme_code") or "").strip(),
+            "pillar_key": pillar_key,
+            "programme_concept_key": concept_key,
+            "programme_concept_label": concept_label,
+            "requested_days": requested_days,
+            "approx_video_duration": approx_video_duration,
+            "task_description": brief or "Regenerate only the concept insight bank for this education programme.",
+            "existing_programme": _compact_education_programme_for_llm(existing_programme),
+        }
+        task_label = brief or f"Regenerate {concept_label or concept_key} programme insights only"
+        result = _generate_education_programme_insights_with_llm(
+            brief=brief,
+            model_override=model_override,
+            programme_context=programme_context,
+        )
+        generated_insights = result.get("insights") if isinstance(result.get("insights"), list) else []
+        if not generated_insights:
+            raise HTTPException(502, "LLM insight generation did not return usable insights")
+        resolved_model = str(result.get("model") or "")
+        _log_education_llm_generation(
+            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+            prompt=str(result.get("prompt") or ""),
+            model=resolved_model,
+            duration_ms=int(result.get("duration_ms") or 0),
+            response_preview=str(result.get("content") or ""),
+            context_meta={
+                "programme_name": programme_context["programme_name"],
+                "programme_code": programme_context["programme_code"],
+                "pillar_key": pillar_key,
+                "programme_concept_key": concept_key,
+                "requested_days": requested_days,
+                "model_override": model_override,
+                "generation_scope": "insights_only",
+            },
+            prompt_variant="admin_programme_editor_insights_only",
+            task_label=task_label,
+            prompt_blocks={
+                "context": json.dumps(programme_context, ensure_ascii=False, default=str),
+                "task": brief,
+            },
+            block_order=["context", "task"],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"LLM programme insight generation failed: {exc}")
+
+    return {
+        "ok": True,
+        "model": resolved_model,
+        "insights": generated_insights,
     }
 
 
@@ -5511,8 +5727,12 @@ def edit_education_programme(id: int | None = None):
             <h3 class="section-title">Concept insights</h3>
             <div class="subtle">These messages are generated with the concept programme and stored for pillar cue-card guidance.</div>
           </div>
-          <button type="button" class="secondary" id="add-insight-button">Add insight</button>
+          <div class="stack">
+            <button type="button" class="secondary" id="generate-insights-llm-button">Generate insights only</button>
+            <button type="button" class="secondary" id="add-insight-button">Add insight</button>
+          </div>
         </div>
+        <div class="subtle programme-day-llm-status" id="insights-llm-status" style="margin-bottom:10px;"></div>
         <div id="programme-insights-root"></div>
       </div>
 
@@ -5633,6 +5853,8 @@ def edit_education_programme(id: int | None = None):
         const programmeLlmStatus = document.getElementById('programme-llm-status');
         const insightsRoot = document.getElementById('programme-insights-root');
         const addInsightButton = document.getElementById('add-insight-button');
+        const generateInsightsLlmButton = document.getElementById('generate-insights-llm-button');
+        const insightsLlmStatus = document.getElementById('insights-llm-status');
         const form = document.getElementById('education-programme-form');
         const structureField = document.getElementById('structure_json');
         const programmeConceptInput = document.getElementById('programme_concept_key');
@@ -6693,6 +6915,90 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
+        async function requestProgrammeInsightsLlmGeneration() {{
+          if (!selectedProgrammeConceptKey()) {{
+            window.alert('Select a programme concept before generating concept insights.');
+            programmeConceptInput?.focus();
+            return;
+          }}
+          const existingLessons = collectAllLessonsFromDom();
+          const existingInsights = collectInsightsFromDom();
+          const dayCount = Math.max(1, Math.min(31, Number(programmeLlmLessons?.value || existingLessons.length || 1)));
+          const brief = String(programmeLlmBrief?.value || '').trim();
+          if (!window.confirm('Replace the current concept insights with new LLM insights only? Lessons, quizzes, and videos will stay unchanged.')) {{
+            return;
+          }}
+          const payload = {{
+            programme_id: String(form.querySelector('input[name="id"]')?.value || '').trim(),
+            brief,
+            model_override: String(programmeLlmModel?.value || '').trim(),
+            duration_days: dayCount,
+            approx_video_duration: String(programmeLlmVideoDuration?.value || '').trim(),
+            programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
+            programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
+            pillar_key: selectedProgrammePillar(),
+            programme_concept_key: selectedProgrammeConceptKey(),
+            programme_concept_label: resolvedProgrammeConceptLabel(),
+            existing_programme: {{
+              programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
+              programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
+              pillar_key: selectedProgrammePillar(),
+              programme_concept_key: selectedProgrammeConceptKey(),
+              programme_concept_label: resolvedProgrammeConceptLabel(),
+              duration_days: existingLessons.length,
+              days: existingLessons,
+              insights: existingInsights,
+            }},
+          }};
+          const previousText = generateInsightsLlmButton ? generateInsightsLlmButton.textContent : '';
+          if (generateInsightsLlmButton) {{
+            generateInsightsLlmButton.disabled = true;
+            generateInsightsLlmButton.textContent = 'Generating...';
+          }}
+          if (insightsLlmStatus) {{
+            insightsLlmStatus.textContent = 'Generating concept insights only...';
+          }}
+          try {{
+            const response = await fetch('/admin/education-programmes/programme/llm-generate-insights', {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(payload),
+            }});
+            const responseText = await response.text();
+            let result = {{}};
+            if (responseText) {{
+              try {{
+                result = JSON.parse(responseText);
+              }} catch (_err) {{
+                result = {{ raw: responseText }};
+              }}
+            }}
+            if (!response.ok || result.ok === false) {{
+              throw new Error(String(result.error || result.detail || result.raw || `LLM insight generation failed (HTTP ${{response.status}}).`));
+            }}
+            const generatedInsights = Array.isArray(result.insights) ? result.insights : normaliseGeneratedInsights(result);
+            if (!generatedInsights.length) {{
+              throw new Error('LLM response did not include usable concept insights.');
+            }}
+            renderInsights(generatedInsights);
+            markProgrammeDraftDirty();
+            if (insightsLlmStatus) {{
+              insightsLlmStatus.textContent = `Generated ${{generatedInsights.length}} insights with ${{result.model || 'selected model'}}. Review them, then save.`;
+            }}
+          }} catch (err) {{
+            const message = err instanceof Error ? err.message : String(err);
+            if (insightsLlmStatus) {{
+              insightsLlmStatus.textContent = message;
+            }}
+            window.alert(message);
+          }} finally {{
+            if (generateInsightsLlmButton) {{
+              generateInsightsLlmButton.disabled = false;
+              generateInsightsLlmButton.textContent = previousText || 'Generate insights only';
+            }}
+          }}
+        }}
+
         async function requestSelectedDayLlmGeneration() {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
@@ -6989,6 +7295,10 @@ def edit_education_programme(id: int | None = None):
 
         programmeLlmButton?.addEventListener('click', function() {{
           void requestConceptProgrammeLlmGeneration();
+        }});
+
+        generateInsightsLlmButton?.addEventListener('click', function() {{
+          void requestProgrammeInsightsLlmGeneration();
         }});
 
         reviewSelectedDayVideoButton?.addEventListener('click', openSelectedDayVideoReview);
