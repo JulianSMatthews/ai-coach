@@ -104,6 +104,7 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
           userId={userId}
           initialSummary={pillarTrackerSummary}
           initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
+          initialInteractionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
         />
       </section>
     </PageShell>

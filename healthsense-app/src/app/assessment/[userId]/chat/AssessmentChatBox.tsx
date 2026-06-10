@@ -1986,6 +1986,9 @@ export default function AssessmentChatBox({
     const onSurfaceChange = (event: Event) => {
       const detail = (event as CustomEvent<{ surface?: string; source?: string; complete?: boolean }>).detail;
       const surface = String(detail?.surface || "").trim().toLowerCase();
+      if (modernHomeOnly && surface === "streak") {
+        return;
+      }
       const source = String(detail?.source || "").trim().toLowerCase();
       const entryMode: HomeSurfaceEntryMode = source === "summary" ? "summary" : "guided";
       if (entryMode === "guided") {
@@ -2026,7 +2029,7 @@ export default function AssessmentChatBox({
     return () => {
       window.removeEventListener("healthsense-home-surface", onSurfaceChange as EventListener);
     };
-  }, [morningSequenceDay, userId]);
+  }, [modernHomeOnly, morningSequenceDay, userId]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || homeSurface !== "habits") return;

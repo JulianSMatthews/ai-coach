@@ -31,6 +31,7 @@ type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
   initialAssessmentReviewed?: boolean;
+  initialInteractionDaysCount?: number | null;
 };
 
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
@@ -49,6 +50,14 @@ type BiomarkerExplanationScaleRow = {
   meaning: string;
   dotClassName?: string;
   tone?: BiomarkerExplanationTone;
+};
+type StreakCalendarDay = {
+  key: string;
+  iso: string;
+  dayNumber: number;
+  inMonth: boolean;
+  isToday: boolean;
+  isFuture: boolean;
 };
 
 const PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
@@ -966,6 +975,74 @@ function formatIsoLocalDay(value: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseIsoLocalDay(value?: string | null): Date | null {
+  const token = String(value || "").trim();
+  const match = token.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number.parseInt(match[1] || "", 10);
+  const month = Number.parseInt(match[2] || "", 10) - 1;
+  const day = Number.parseInt(match[3] || "", 10);
+  const parsed = new Date(year, month, day, 12, 0, 0, 0);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function monthStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function formatStreakMonthLabel(date: Date): string {
+  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+function buildStreakCalendarDays(monthDate: Date, todayIso: string): StreakCalendarDay[] {
+  const start = monthStart(monthDate);
+  const startOffset = (start.getDay() + 6) % 7;
+  const gridStart = addLocalDays(start, -startOffset);
+  const todayDate = parseIsoLocalDay(todayIso) || parseIsoLocalDay(formatIsoLocalDay(new Date())) || new Date();
+  const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  const cellCount = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  return Array.from({ length: cellCount }, (_, index) => {
+    const date = addLocalDays(gridStart, index);
+    const iso = formatIsoLocalDay(date);
+    return {
+      key: iso,
+      iso,
+      dayNumber: date.getDate(),
+      inMonth: date.getMonth() === start.getMonth(),
+      isToday: iso === formatIsoLocalDay(todayDate),
+      isFuture: date.getTime() > todayDate.getTime(),
+    };
+  });
+}
+
+function collectTrackerCompletionDates(summary?: PillarTrackerSummaryResponse | null): string[] {
+  const dates = new Set<string>();
+  const today = String(summary?.today || "").trim();
+  if (summary?.today_complete && today) {
+    dates.add(today);
+  }
+  const pillars = Array.isArray(summary?.pillars) ? summary.pillars : [];
+  for (const pillar of pillars) {
+    if (pillar?.today_complete && today) {
+      dates.add(today);
+    }
+    const options = Array.isArray(pillar?.checkin_options) ? pillar.checkin_options : [];
+    for (const option of options) {
+      const optionDate = String(option?.date || "").trim();
+      if (option?.complete && optionDate) {
+        dates.add(optionDate);
+      }
+    }
+  }
+  return Array.from(dates);
+}
+
 function resolveBiometricEndDay(...values: Array<string | null | undefined>): string {
   const today = new Date();
   let latest: Date | null = new Date(`${formatIsoLocalDay(today)}T12:00:00`);
@@ -1259,6 +1336,7 @@ export default function LatestAssessmentPanel({
   userId,
   initialSummary,
   initialAssessmentReviewed = false,
+  initialInteractionDaysCount = null,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
@@ -1277,6 +1355,11 @@ export default function LatestAssessmentPanel({
   const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
   const [assessmentReviewSyncStarted, setAssessmentReviewSyncStarted] = useState(initialAssessmentReviewed);
   const [objectivesModalOpen, setObjectivesModalOpen] = useState(false);
+  const [streakSectionOpen, setStreakSectionOpen] = useState(false);
+  const [streakCalendarMonth, setStreakCalendarMonth] = useState(() => {
+    const baseDate = parseIsoLocalDay(initialSummary.today) || new Date();
+    return monthStart(baseDate);
+  });
   const [weeklyObjectives, setWeeklyObjectives] = useState<WeeklyObjectivesResponse | null>(null);
   const [weeklyObjectivesLoading, setWeeklyObjectivesLoading] = useState(false);
   const [weeklyObjectivesError, setWeeklyObjectivesError] = useState<string | null>(null);
@@ -1351,6 +1434,25 @@ export default function LatestAssessmentPanel({
     () => pillars,
     [pillars],
   );
+  const streakTodayIso = String(summary.today || "").trim() || formatIsoLocalDay(new Date());
+  const currentStreakDays = Number.isFinite(Number(initialInteractionDaysCount))
+    ? Math.max(0, Math.round(Number(initialInteractionDaysCount)))
+    : 0;
+  const streakCompletedDateSet = useMemo(() => {
+    const dates = new Set<string>(collectTrackerCompletionDates(summary));
+    const anchor = parseIsoLocalDay(streakTodayIso);
+    if (anchor && currentStreakDays > 0) {
+      for (let index = 0; index < currentStreakDays; index += 1) {
+        dates.add(formatIsoLocalDay(addLocalDays(anchor, -index)));
+      }
+    }
+    return dates;
+  }, [currentStreakDays, streakTodayIso, summary]);
+  const streakCalendarDays = useMemo(
+    () => buildStreakCalendarDays(streakCalendarMonth, streakTodayIso),
+    [streakCalendarMonth, streakTodayIso],
+  );
+  const streakMonthLabel = formatStreakMonthLabel(streakCalendarMonth);
   const pillarCueCardStyle =
     displayTheme === "dark"
       ? {
@@ -2619,6 +2721,9 @@ export default function LatestAssessmentPanel({
   );
 
   const openObjectivesModal = useCallback(async () => {
+    setStreakSectionOpen(false);
+    setSelectedPillarKey(null);
+    setBiometricsModalOpen(false);
     setObjectivesModalOpen(true);
     setSelectedObjectivesSection(null);
     setBiometricsActionError(null);
@@ -2632,6 +2737,20 @@ export default function LatestAssessmentPanel({
     setWeeklyObjectivesError(null);
     setWeeklyObjectivesSaving(false);
     setBiometricsActionError(null);
+  }, []);
+
+  const closeStreakSection = useCallback(() => {
+    setStreakSectionOpen(false);
+    setActiveDockKey("checkin");
+    setSummaryPanelVisible(true);
+  }, []);
+
+  const showPreviousStreakMonth = useCallback(() => {
+    setStreakCalendarMonth((current) => monthStart(new Date(current.getFullYear(), current.getMonth() - 1, 1, 12, 0, 0, 0)));
+  }, []);
+
+  const showNextStreakMonth = useCallback(() => {
+    setStreakCalendarMonth((current) => monthStart(new Date(current.getFullYear(), current.getMonth() + 1, 1, 12, 0, 0, 0)));
   }, []);
 
   useEffect(() => {
@@ -2824,6 +2943,8 @@ export default function LatestAssessmentPanel({
       setSummaryPanelVisible(Boolean(detail?.visible));
     };
     const onShowSummaryPanel = () => {
+      setStreakSectionOpen(false);
+      setObjectivesModalOpen(false);
       setSummaryPanelVisible(true);
       setSelectedPillarKey(null);
       setActiveDockKey("checkin");
@@ -2842,11 +2963,19 @@ export default function LatestAssessmentPanel({
       const detail = (event as CustomEvent<{ surface?: string }>).detail;
       const surface = String(detail?.surface || "").trim();
       if (surface === "insight") {
+        setStreakSectionOpen(false);
+        setObjectivesModalOpen(false);
         setActiveDockKey("learn");
         setSummaryPanelVisible(false);
       } else if (surface === "streak") {
+        setStreakSectionOpen(true);
+        setObjectivesModalOpen(false);
+        setSelectedPillarKey(null);
+        setBiometricsModalOpen(false);
+        setActiveDockKey("checkin");
         setSummaryPanelVisible(false);
       } else if (surface === "blank" || surface === "tracking") {
+        setStreakSectionOpen(false);
         setActiveDockKey("checkin");
       }
     };
@@ -2944,6 +3073,9 @@ export default function LatestAssessmentPanel({
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
     if (!normalizedPillarKey) return;
     const guided = Boolean(options?.guided);
+    setStreakSectionOpen(false);
+    setObjectivesModalOpen(false);
+    setBiometricsModalOpen(false);
     setGuidedTrackingActive(guided);
     setTrackerReturnSurface(options?.returnSurface ?? null);
     setSelectedPillarKey(normalizedPillarKey);
@@ -3127,7 +3259,7 @@ export default function LatestAssessmentPanel({
 
   return (
     <>
-      {appSetupRequired && !selectedPillarKey && !objectivesModalOpen ? (
+      {appSetupRequired && !selectedPillarKey && !objectivesModalOpen && !streakSectionOpen ? (
         <section className="flex h-full min-h-0 items-center pb-8 pt-6 sm:pt-8">
           <div className="w-full min-w-0 overflow-x-auto snap-x snap-proximity [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex gap-4 px-4 sm:gap-5 sm:px-5">
@@ -3229,7 +3361,7 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
-      {summaryPanelVisible && !appSetupRequired && !selectedPillarKey && !objectivesModalOpen ? (
+      {summaryPanelVisible && !appSetupRequired && !selectedPillarKey && !objectivesModalOpen && !streakSectionOpen ? (
         <section
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
@@ -3329,6 +3461,129 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
+      {streakSectionOpen && !appSetupRequired ? (
+        <section className="flex h-full min-h-0 flex-col pb-28 pt-4 sm:pb-32 sm:pt-6">
+          <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 px-4 pb-3 sm:px-5">
+              <button
+                type="button"
+                onClick={closeStreakSection}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+                aria-label="Back to check-in"
+              >
+                <span className="text-3xl leading-none">‹</span>
+              </button>
+            </div>
+
+            <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-[1.65rem] font-semibold leading-[1.05] tracking-normal text-[var(--text-primary)] sm:text-3xl">
+                    Streak
+                  </h2>
+                  <p className="mt-1 text-base leading-snug text-[var(--text-secondary)]">
+                    A record of the days you have checked in or learned.
+                  </p>
+                </div>
+                <div className="shrink-0 rounded-[22px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-center">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
+                    Current
+                  </p>
+                  <p className="mt-1 text-3xl font-semibold leading-none text-[var(--text-primary)]">
+                    {currentStreakDays}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4 shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)] sm:px-5">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-[1.25rem] font-semibold leading-none text-[var(--text-primary)]">
+                    {streakMonthLabel}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={showPreviousStreakMonth}
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition active:scale-[0.98]"
+                      aria-label="Previous month"
+                    >
+                      <span className="text-3xl leading-none">‹</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={showNextStreakMonth}
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition active:scale-[0.98]"
+                      aria-label="Next month"
+                    >
+                      <span className="text-3xl leading-none">›</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-[var(--text-primary)]">
+                  {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
+                    <div key={`${label}-${index}`} className="py-0.5">
+                      {label}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-2 grid grid-cols-7 gap-x-1.5 gap-y-1.5">
+                  {streakCalendarDays.map((day) => {
+                    if (!day.inMonth) {
+                      return <div key={day.key} className="h-11" aria-hidden="true" />;
+                    }
+                    const completed = streakCompletedDateSet.has(day.iso);
+                    const dayStyle = completed
+                      ? {
+                          backgroundColor: "color-mix(in srgb, var(--accent) 16%, var(--surface))",
+                          borderColor: "transparent",
+                          color: "var(--accent)",
+                        }
+                      : day.isToday
+                        ? {
+                            backgroundColor: "var(--surface)",
+                            borderColor: "var(--border-strong)",
+                            color: "var(--text-primary)",
+                          }
+                        : {
+                            backgroundColor: "transparent",
+                            borderColor: "transparent",
+                            color: day.isFuture ? "var(--text-tertiary)" : "var(--text-secondary)",
+                          };
+                    return (
+                      <div
+                        key={day.key}
+                        className="flex h-11 flex-col items-center justify-center rounded-xl border text-center transition"
+                        style={dayStyle}
+                      >
+                        <span className="text-sm font-semibold leading-none">
+                          {day.dayNumber}
+                        </span>
+                        <svg
+                          viewBox="0 0 24 24"
+                          className={`mt-1 h-3.5 w-3.5 ${completed ? "" : "opacity-55"}`}
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M12 3.2c.38 1.54-.25 2.55-1.05 3.46C9.86 7.69 8.7 9 8.7 10.8c0 1.76 1.06 3.02 2.05 3.73.24-1.12.24-2.17.1-3.04.94.86 2.05 2.22 2.05 4.02A3.98 3.98 0 0 1 9 19.5a4.12 4.12 0 0 1-4.1-4.1c0-1.98.97-3.62 2.4-5.06 1.03-1.05 2.2-2.08 2.94-3.18.42-.62.74-1.3.85-2.28.27.15.58.55.91 1.3Z"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.55"
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {!biometricsModalOpen && !appSetupRequired ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
@@ -3342,6 +3597,9 @@ export default function LatestAssessmentPanel({
                     }
                     if (objectivesModalOpen) {
                       closeObjectivesModal();
+                    }
+                    if (streakSectionOpen) {
+                      setStreakSectionOpen(false);
                     }
                     setActiveDockKey("checkin");
                     setSummaryPanelVisible(true);
@@ -3375,6 +3633,9 @@ export default function LatestAssessmentPanel({
                     }
                     if (objectivesModalOpen) {
                       closeObjectivesModal();
+                    }
+                    if (streakSectionOpen) {
+                      setStreakSectionOpen(false);
                     }
                     setActiveDockKey("learn");
                     setSummaryPanelVisible(false);

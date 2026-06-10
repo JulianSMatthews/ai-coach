@@ -8,12 +8,14 @@ type CoachHomeTrackerPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse | null;
   initialAssessmentReviewed?: boolean;
+  initialInteractionDaysCount?: number | null;
 };
 
 export default function CoachHomeTrackerPanel({
   userId,
   initialSummary,
   initialAssessmentReviewed = false,
+  initialInteractionDaysCount = null,
 }: CoachHomeTrackerPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse | null>(initialSummary);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export default function CoachHomeTrackerPanel({
         userId={userId}
         initialSummary={summary}
         initialAssessmentReviewed={initialAssessmentReviewed}
+        initialInteractionDaysCount={initialInteractionDaysCount}
       />
     );
   }
