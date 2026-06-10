@@ -2225,14 +2225,11 @@ export default function LatestAssessmentPanel({
             const targetPillar = normalizedPillarKey
               ? pillars.find((pillar) => String(pillar.pillar_key || "").trim().toLowerCase() === normalizedPillarKey)
               : null;
-            if (normalizedPillarKey) {
-              scrollToPillarCueCard(normalizedPillarKey);
-            }
-            if (waitForFresh) {
-              return;
-            }
             if (targetPillar && !pillarNeedsGeneratedCue(targetPillar)) {
               resolved = true;
+              return;
+            }
+            if (waitForFresh) {
               return;
             }
             if (!normalizedPillarKey && !summaryHasFallbackCueMessages(payload)) {
@@ -2242,7 +2239,7 @@ export default function LatestAssessmentPanel({
           .catch(() => undefined);
       }, delay);
     });
-  }, [pillarNeedsGeneratedCue, refreshSummary, scrollToPillarCueCard, summaryHasFallbackCueMessages]);
+  }, [pillarNeedsGeneratedCue, refreshSummary, summaryHasFallbackCueMessages]);
 
   useEffect(() => {
     void refreshSummary().catch(() => undefined);
@@ -2872,7 +2869,8 @@ export default function LatestAssessmentPanel({
   useEffect(() => {
     if (!summaryPanelVisible || selectedPillarKey || !returnToPillarKey) return;
     scrollToPillarCueCard(returnToPillarKey);
-  }, [returnToPillarKey, scrollToPillarCueCard, selectedPillarKey, summary, summaryPanelVisible]);
+    setReturnToPillarKey(null);
+  }, [returnToPillarKey, scrollToPillarCueCard, selectedPillarKey, summaryPanelVisible]);
 
   useEffect(() => {
     if (!summaryPanelVisible || assessmentReviewed || assessmentReviewSyncStarted) return;
@@ -3131,7 +3129,7 @@ export default function LatestAssessmentPanel({
     <>
       {appSetupRequired && !selectedPillarKey && !objectivesModalOpen ? (
         <section className="flex h-full min-h-0 items-center pb-8 pt-6 sm:pt-8">
-          <div className="w-full min-w-0 overflow-x-auto snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="w-full min-w-0 overflow-x-auto snap-x snap-proximity [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex gap-4 px-4 sm:gap-5 sm:px-5">
               <article className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
                 <p className="text-[2.35rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.7rem]">
@@ -3237,7 +3235,7 @@ export default function LatestAssessmentPanel({
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
           <div className="relative -translate-y-[0.5cm] overflow-hidden">
-            <div className="overflow-x-auto snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="overflow-x-auto snap-x snap-proximity [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="flex gap-4 sm:gap-5">
                 {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
