@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       home_pillar_recovery: body.home_pillar_recovery ?? undefined,
       home_pillar_nutrition: body.home_pillar_nutrition ?? undefined,
       home_pillar_training: body.home_pillar_training ?? undefined,
+      app_setup_completed: body.app_setup_completed ?? undefined,
       training_objective: body.training_objective ?? undefined,
       preferred_channel: "app",
       marketing_opt_in: body.marketing_opt_in ?? undefined,

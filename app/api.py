@@ -8742,6 +8742,17 @@ def api_user_preferences_update(
                 raise HTTPException(status_code=400, detail=f"{home_pillar_key} must be on|off")
             _set_pref_value(s, user_id, home_pillar_key, resolved_val)
 
+        app_setup_completed = payload.get("app_setup_completed") if isinstance(payload, dict) else None
+        if app_setup_completed is not None:
+            setup_val = str(app_setup_completed).strip().lower()
+            if setup_val in {"1", "true", "yes", "on", "complete", "completed"}:
+                setup_val = "1"
+            elif setup_val in {"0", "false", "no", "off", ""}:
+                setup_val = "0"
+            else:
+                raise HTTPException(status_code=400, detail="app_setup_completed must be true|false")
+            _set_pref_value(s, user_id, "app_setup_completed", setup_val)
+
         training_objective = payload.get("training_objective") if isinstance(payload, dict) else None
         if training_objective is not None:
             obj_val = str(training_objective).strip()

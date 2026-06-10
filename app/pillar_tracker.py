@@ -30,6 +30,7 @@ _VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
 _CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 _MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
+_APP_SETUP_COMPLETED_PREF_KEY = "app_setup_completed"
 _HOME_PILLAR_QUOTE_FALLBACKS: dict[str, str] = {
     "reflection": "Notice one honest signal today and let it guide your next choice.",
     "purpose": "Purpose becomes clearer when today reflects what matters, not just what needs doing.",
@@ -2062,6 +2063,36 @@ def _summary_pillar_payload(
     }
 
 
+def _app_setup_completed_for_user(user_id: int) -> bool:
+    with SessionLocal() as s:
+        pref_value = (
+            s.execute(
+                select(UserPreference.value)
+                .where(
+                    UserPreference.user_id == int(user_id),
+                    UserPreference.key == _APP_SETUP_COMPLETED_PREF_KEY,
+                )
+                .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if pref_value is not None:
+            token = str(pref_value or "").strip().lower()
+            return token in {"1", "true", "yes", "on", "complete", "completed"}
+        existing_tracker_entry = (
+            s.execute(
+                select(DailyPillarTrackerEntry.id)
+                .where(DailyPillarTrackerEntry.user_id == int(user_id))
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        return existing_tracker_entry is not None
+
+
 def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip_quote_generation: bool = True) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     resolved_anchor = anchor or tracker_today()
@@ -2093,6 +2124,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
     total_pillars = len(pillars)
     today_completed_pillars_count = sum(1 for pillar in pillars if pillar.get("today_complete") is True)
     return {
+        "app_setup_completed": _app_setup_completed_for_user(int(user_id)),
         "week": {
             "anchor_date": resolved_anchor.isoformat(),
             "start": week_days[0].isoformat(),

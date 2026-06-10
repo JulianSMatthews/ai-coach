@@ -52,6 +52,41 @@ type BiomarkerExplanationScaleRow = {
 };
 
 const PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
+const DEFAULT_SETUP_PILLARS = ["reflection", "purpose", "resilience", "recovery"];
+const PILLAR_PREF_KEYS: Record<string, string> = {
+  reflection: "home_pillar_reflection",
+  purpose: "home_pillar_purpose",
+  resilience: "home_pillar_resilience",
+  recovery: "home_pillar_recovery",
+  nutrition: "home_pillar_nutrition",
+  training: "home_pillar_training",
+};
+const PILLAR_SETUP_COPY: Record<string, string> = {
+  reflection: "Understand what you are noticing, feeling, and learning from the patterns in your day.",
+  purpose: "Stay close to meaning, direction, values, and the choices that make the day feel worthwhile.",
+  resilience: "Work with pressure, emotional steadiness, support, and the way you recover your perspective.",
+  recovery: "Build awareness around sleep, rest, rhythm, and the conditions that help your body reset.",
+  nutrition: "Track the food and hydration signals that shape energy, appetite, and consistency.",
+  training: "Use movement, strength, cardio, and mobility as part of a balanced weekly rhythm.",
+};
+const SETUP_GUIDE_CARDS = [
+  {
+    title: "Check in",
+    body: "Each selected pillar becomes a daily cue card. Tap Today, Yesterday, or Last week to answer the pillar questions.",
+  },
+  {
+    title: "Weekly targets",
+    body: "Targets set the weekly context for each question. They can stay simple at first and be adjusted as your routine becomes clearer.",
+  },
+  {
+    title: "Scoring",
+    body: "Scores are feedback signals, not grades. They help CoachSense notice patterns and generate more relevant reflections.",
+  },
+  {
+    title: "Lessons",
+    body: "Your learning journey moves through concept units. The units follow the pillars and questions you choose here.",
+  },
+];
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_RECENT_CAPTURE_WINDOW_MS = 5 * 60 * 1000;
@@ -159,6 +194,16 @@ function formatJournalDate(value?: string | null): string {
     day: "numeric",
     month: "short",
   });
+}
+
+function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | null): Record<string, boolean> {
+  const activeKeys = new Set(
+    (Array.isArray(summary?.pillars) ? summary?.pillars : [])
+      .map((pillar) => String(pillar?.pillar_key || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const source = activeKeys.size ? activeKeys : new Set(DEFAULT_SETUP_PILLARS);
+  return Object.fromEntries(PILLAR_ORDER.map((pillarKey) => [pillarKey, source.has(pillarKey)]));
 }
 
 function formatCompactStepCount(value?: number | null): string {
@@ -1267,6 +1312,12 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("checkin");
+  const [setupPillarSelections, setSetupPillarSelections] = useState<Record<string, boolean>>(() =>
+    initialSetupPillarSelections(initialSummary),
+  );
+  const [setupSaving, setSetupSaving] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const appSetupRequired = summary.app_setup_completed !== true;
   const modalOverlayOpen = biometricsModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -2083,6 +2134,54 @@ export default function LatestAssessmentPanel({
     setSummary(payload);
     return payload;
   }, [userId]);
+
+  const saveAppSetup = useCallback(async () => {
+    const selectedKeys = PILLAR_ORDER.filter((pillarKey) => setupPillarSelections[pillarKey]);
+    if (!selectedKeys.length) {
+      setSetupError("Choose at least one pillar to continue.");
+      return;
+    }
+    setSetupSaving(true);
+    setSetupError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        userId,
+        app_setup_completed: "1",
+        preferred_channel: "app",
+      };
+      PILLAR_ORDER.forEach((pillarKey) => {
+        payload[PILLAR_PREF_KEYS[pillarKey]] = setupPillarSelections[pillarKey] ? "1" : "0";
+      });
+      const res = await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(normalizeError(text, "Failed to save setup."));
+      }
+      setSummary((current) => ({ ...current, app_setup_completed: true }));
+      await refreshSummary({ skipQuoteGeneration: true });
+      setActiveDockKey("checkin");
+      setSummaryPanelVisible(true);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("healthsense-home-surface", {
+            detail: {
+              surface: "blank",
+              source: "setup",
+            },
+          }),
+        );
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } catch (error) {
+      setSetupError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [refreshSummary, setupPillarSelections, userId]);
 
   const pillarNeedsGeneratedCue = useCallback((pillar: PillarTrackerPillar | null | undefined) => {
     if (!pillar) return true;
@@ -3030,7 +3129,109 @@ export default function LatestAssessmentPanel({
 
   return (
     <>
-      {summaryPanelVisible && !selectedPillarKey && !objectivesModalOpen ? (
+      {appSetupRequired && !selectedPillarKey && !objectivesModalOpen ? (
+        <section className="flex h-full min-h-0 items-center pb-8 pt-6 sm:pt-8">
+          <div className="w-full min-w-0 overflow-x-auto snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex gap-4 px-4 sm:gap-5 sm:px-5">
+              <article className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
+                <p className="text-[2.35rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.7rem]">
+                  Set up your CoachSense
+                </p>
+                <p className="mt-6 text-[1.24rem] font-medium leading-[1.25] text-[var(--text-secondary)]">
+                  Choose the pillars you want to work with first. You can change them later in Preferences.
+                </p>
+                <div className="mt-auto space-y-3 pt-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                    Start simple
+                  </p>
+                  <p className="text-sm leading-6 text-[var(--text-secondary)]">
+                    The selected pillars shape your check-in cards, weekly objectives, and the order of your learning units.
+                  </p>
+                </div>
+              </article>
+
+              {PILLAR_ORDER.map((pillarKey) => {
+                const meta = getPillarMeta(pillarKey);
+                const selected = Boolean(setupPillarSelections[pillarKey]);
+                return (
+                  <button
+                    key={`setup-${pillarKey}`}
+                    type="button"
+                    onClick={() =>
+                      setSetupPillarSelections((current) => ({
+                        ...current,
+                        [pillarKey]: !current[pillarKey],
+                      }))
+                    }
+                    aria-pressed={selected}
+                    className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] border border-[var(--border)] bg-[var(--surface)] px-7 py-7 text-left text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                  >
+                    <span className="flex items-start justify-between gap-4">
+                      <span className="text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
+                        {meta?.label || pillarKey}
+                      </span>
+                      <span
+                        className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                          selected
+                            ? "border-[#111111] bg-white text-[#111111]"
+                            : "border-[var(--border)] bg-[var(--surface-muted)] text-transparent"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M5 12.5 10 17l9-10" />
+                        </svg>
+                      </span>
+                    </span>
+                    <span className="mt-8 block text-[1.24rem] font-medium leading-[1.24] text-[var(--text-secondary)]">
+                      {PILLAR_SETUP_COPY[pillarKey] || meta?.note || ""}
+                    </span>
+                    <span className="mt-auto inline-flex min-h-[2.8rem] items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
+                      {selected ? "Selected" : "Add pillar"}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {SETUP_GUIDE_CARDS.map((card, index) => (
+                <article
+                  key={card.title}
+                  className="flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                    {`Step ${index + 1}`}
+                  </p>
+                  <p className="mt-5 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
+                    {card.title}
+                  </p>
+                  <p className="mt-8 text-[1.24rem] font-medium leading-[1.24] text-[var(--text-secondary)]">
+                    {card.body}
+                  </p>
+                  {index === SETUP_GUIDE_CARDS.length - 1 ? (
+                    <div className="mt-auto space-y-3 pt-6">
+                      {setupError ? (
+                        <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--text-secondary)]">
+                          {setupError}
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void saveAppSetup()}
+                        disabled={setupSaving}
+                        className="min-h-[3.25rem] w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-base font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {setupSaving ? "Saving setup" : "Start"}
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {summaryPanelVisible && !appSetupRequired && !selectedPillarKey && !objectivesModalOpen ? (
         <section
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
@@ -3130,7 +3331,7 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
-      {!biometricsModalOpen ? (
+      {!biometricsModalOpen && !appSetupRequired ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">

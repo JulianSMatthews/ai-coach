@@ -372,6 +372,7 @@ export type PillarTrackerPillar = {
 };
 
 export type PillarTrackerSummaryResponse = {
+  app_setup_completed?: boolean;
   week?: {
     anchor_date?: string;
     start?: string;
