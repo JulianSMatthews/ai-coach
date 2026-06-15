@@ -1987,6 +1987,9 @@ export default function AssessmentChatBox({
       const detail = (event as CustomEvent<{ surface?: string; source?: string; complete?: boolean }>).detail;
       const surface = String(detail?.surface || "").trim().toLowerCase();
       if (modernHomeOnly && surface === "streak") {
+        setHomeSurfaceEntryMode("summary");
+        setHomeSurface("blank");
+        setJourneyCompleted(true);
         return;
       }
       const source = String(detail?.source || "").trim().toLowerCase();
