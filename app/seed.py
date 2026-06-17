@@ -3560,6 +3560,124 @@ def upsert_education_programme_from_definition(
     )
 
 
+def _set_if_changed(row: Any, attr: str, value: Any) -> int:
+    if getattr(row, attr, None) == value:
+        return 0
+    setattr(row, attr, value)
+    return 1
+
+
+def _sync_existing_builtin_education_programme_text(
+    session: Session,
+    definition: dict[str, Any],
+) -> dict[str, Any]:
+    code_token = str(definition.get("code") or "").strip()
+    if not code_token:
+        return {"ok": False, "reason": "missing_code"}
+    programme = session.query(EducationProgramme).filter(EducationProgramme.code == code_token).one_or_none()
+    if programme is None:
+        return {"ok": False, "code": code_token, "reason": "programme_not_found"}
+
+    doc = definition.get("doc") or {}
+    days = list(doc.get("days") or [])
+    level_token = str(definition.get("level") or "").strip().lower() or "build"
+    resolved_label = str(definition.get("concept_label") or getattr(programme, "concept_label", "") or "").strip() or None
+    resolved_name = str(definition.get("name") or doc.get("title") or getattr(programme, "name", "") or "").strip()
+    changed = 0
+    changed += _set_if_changed(programme, "concept_label", resolved_label)
+    if resolved_name:
+        changed += _set_if_changed(programme, "name", resolved_name)
+    changed += _set_if_changed(programme, "duration_days", len(days))
+    session.add(programme)
+    session.flush()
+
+    existing_days = {
+        int(row.day_index): row
+        for row in session.query(EducationProgrammeDay)
+        .filter(EducationProgrammeDay.programme_id == int(programme.id))
+        .all()
+    }
+    question_count = 0
+    for day in sorted(days, key=lambda item: int(item.get("day_index") or 0)):
+        day_index = int(day.get("day_index") or 0)
+        if day_index <= 0:
+            continue
+        day_row = existing_days.get(day_index)
+        if day_row is None:
+            continue
+        changed += _set_if_changed(day_row, "concept_label", resolved_label)
+        changed += _set_if_changed(day_row, "lesson_goal", str(day.get("action_prompt") or "").strip() or None)
+        changed += _set_if_changed(day_row, "default_title", str(day.get("title") or "").strip() or None)
+        changed += _set_if_changed(day_row, "default_summary", str(day.get("summary") or "").strip() or None)
+        session.add(day_row)
+
+        variant = (
+            session.query(EducationLessonVariant)
+            .filter(
+                EducationLessonVariant.programme_day_id == int(day_row.id),
+                EducationLessonVariant.level == level_token,
+            )
+            .one_or_none()
+        )
+        if variant is None:
+            continue
+        takeaway = str(day.get("takeaway") or "").strip() or None
+        changed += _set_if_changed(variant, "title", str(day.get("title") or "").strip() or None)
+        changed += _set_if_changed(variant, "summary", str(day.get("summary") or "").strip() or None)
+        changed += _set_if_changed(variant, "script", str(day.get("script") or "").strip() or None)
+        changed += _set_if_changed(variant, "action_prompt", str(day.get("action_prompt") or "").strip() or None)
+        changed += _set_if_changed(variant, "takeaway_default", takeaway)
+        changed += _set_if_changed(variant, "takeaway_if_low_score", takeaway)
+        changed += _set_if_changed(variant, "takeaway_if_high_score", takeaway)
+        session.add(variant)
+
+        quiz = session.query(EducationQuiz).filter(EducationQuiz.lesson_variant_id == int(variant.id)).one_or_none()
+        if quiz is None:
+            continue
+        existing_questions = {
+            int(row.question_order): row
+            for row in session.query(EducationQuizQuestion)
+            .filter(EducationQuizQuestion.quiz_id == int(quiz.id))
+            .all()
+        }
+        for order, question in enumerate(day.get("questions") or [], start=1):
+            question_row = existing_questions.get(order)
+            if question_row is None:
+                continue
+            changed += _set_if_changed(question_row, "question_text", str(question.get("text") or "").strip())
+            changed += _set_if_changed(question_row, "options_json", list(question.get("options") or []))
+            changed += _set_if_changed(question_row, "correct_answer_json", question.get("correct"))
+            changed += _set_if_changed(question_row, "explanation", str(question.get("explanation") or "").strip() or None)
+            session.add(question_row)
+            question_count += 1
+
+    session.flush()
+    refresh_result: dict[str, Any] | None = None
+    if changed:
+        try:
+            from .education_plan import refresh_programme_insight_bank
+
+            refresh_result = refresh_programme_insight_bank(session, int(programme.id), source="seed_text_sync")
+        except Exception as exc:
+            refresh_result = {"ok": False, "error": str(exc)}
+    return {
+        "created_programme": False,
+        "text_synced": True,
+        "code": code_token,
+        "programme_id": int(programme.id),
+        "name": str(getattr(programme, "name", "") or resolved_name),
+        "pillar_key": str(getattr(programme, "pillar_key", "") or ""),
+        "concept_key": str(getattr(programme, "concept_key", "") or ""),
+        "journey_order": int(getattr(programme, "journey_order", 0) or 0),
+        "days": len(days),
+        "variant_ids": [],
+        "quiz_ids": [],
+        "questions": question_count,
+        "changed_fields": changed,
+        "insight_bank": refresh_result,
+    }
+
+
 def seed_education_programme_from_docx(
     docx_path: str,
     *,
@@ -3684,6 +3802,16 @@ def _sync_education_seed_definitions(
         )
         for definition in builtin_definitions
     ]
+    for definition in builtin_definitions:
+        if str(definition.get("code") or "").strip() != "processed_food_awareness_4d":
+            continue
+        sync_result = _sync_existing_builtin_education_programme_text(session, definition)
+        for item in results:
+            if str(item.get("code") or "").strip() == "processed_food_awareness_4d":
+                item["text_sync"] = sync_result
+                if int(sync_result.get("questions") or 0) > int(item.get("questions") or 0):
+                    item["questions"] = int(sync_result.get("questions") or 0)
+                break
     if include_env:
         results.extend(seed_education_programmes_from_env(session))
     return results
