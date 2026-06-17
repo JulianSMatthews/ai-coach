@@ -114,6 +114,11 @@ type EducationExplorerPillar = {
   lesson_count: number;
   concepts: EducationExplorerConcept[];
 };
+type ConceptIconProps = {
+  conceptKey?: string | null;
+  pillarKey?: string | null;
+  className?: string;
+};
 type GiaMessageRealtimeSessionResponse = {
   session_id?: string;
   speech_token?: string;
@@ -166,6 +171,110 @@ const HOME_SURFACE_COPY: Record<
     description: "Review your current app streak.",
   },
 };
+
+function ConceptEducationIcon({ conceptKey, pillarKey, className = "h-8 w-8" }: ConceptIconProps) {
+  const key = String(conceptKey || pillarKey || "").trim().toLowerCase();
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    className,
+    "aria-hidden": true,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  if (key === "hydration") {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 3.5s6 6.4 6 11A6 6 0 0 1 6 14.5c0-4.6 6-11 6-11Z" />
+        <path d="M9.4 15.1a2.8 2.8 0 0 0 3.4 2.2" />
+      </svg>
+    );
+  }
+  if (key === "protein_intake" || key === "fruit_veg" || key === "processed_food" || key === "nutrition") {
+    return (
+      <svg {...commonProps}>
+        <path d="M6 4.5v15" />
+        <path d="M9 4.5v5a3 3 0 0 1-3 3" />
+        <path d="M15.5 4.5c2.2.7 3.5 2.8 3.5 5.2 0 2.6-1.5 4.8-3.5 5.3v4.5" />
+        <path d="M15.5 4.5v10.5" />
+      </svg>
+    );
+  }
+  if (key === "sleep_duration" || key === "sleep_quality" || key === "bedtime_consistency" || key === "recovery") {
+    return (
+      <svg {...commonProps}>
+        <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
+        <path d="M16.5 4.8h3" />
+        <path d="M18 3.3v3" />
+      </svg>
+    );
+  }
+  if (key === "cardio_frequency" || key === "training") {
+    return (
+      <svg {...commonProps}>
+        <path d="M20.5 8.8c0 5.1-8.5 10.2-8.5 10.2S3.5 13.9 3.5 8.8A4.2 4.2 0 0 1 11 6.2a4.2 4.2 0 0 1 9.5 2.6Z" />
+        <path d="M7.5 12h2l1.4-3 2.2 5 1.2-2h2.2" />
+      </svg>
+    );
+  }
+  if (key === "strength_training") {
+    return (
+      <svg {...commonProps}>
+        <path d="M4 10v4" />
+        <path d="M7 8v8" />
+        <path d="M17 8v8" />
+        <path d="M20 10v4" />
+        <path d="M7 12h10" />
+      </svg>
+    );
+  }
+  if (key === "flexibility_mobility") {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 5.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+        <path d="M5.5 21c2-4.4 4.1-7.4 6.5-9" />
+        <path d="M12 12c2.4 1.6 4.5 4.6 6.5 9" />
+        <path d="M5 10.5c3.3-2.2 7.7-2.2 11 0" />
+      </svg>
+    );
+  }
+  if (key === "meaning_fulfilment" || key === "direction_vision" || key === "values_alignment" || key === "contribution_connection" || key === "purpose") {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
+        <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      </svg>
+    );
+  }
+  if (key === "emotional_regulation" || key === "stress_recovery" || key === "optimism_perspective" || key === "support_openness" || key === "positive_connection" || key === "resilience") {
+    return (
+      <svg {...commonProps}>
+        <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+        <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+        <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
+        <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
+      </svg>
+    );
+  }
+  if (key === "self_awareness" || key === "emotional_awareness" || key === "mindfulness_presence" || key === "pattern_recognition" || key === "reflection") {
+    return (
+      <svg {...commonProps}>
+        <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
+        <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path d="M12 3a7 7 0 0 0-4 12.7c.6.4 1 1 1.2 1.7h5.6c.2-.7.6-1.3 1.2-1.7A7 7 0 0 0 12 3Z" />
+      <path d="M9.5 21h5" />
+    </svg>
+  );
+}
 
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
@@ -1348,6 +1457,7 @@ export default function AssessmentChatBox({
       const status = String(programme?.status || "").trim().toLowerCase();
       const canOpen = Boolean(programme?.can_open);
       const unitNumber = Number(programme?.sequence_index || index + 1);
+      const conceptKey = String(programme?.concept_key || "").trim().toLowerCase();
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
       const programmeSummary = String(programme?.summary || "").trim();
       const darkStatusTag = status === "current" || status === "up_next" || status === "not_started";
@@ -1371,7 +1481,7 @@ export default function AssessmentChatBox({
             }
           }}
           aria-disabled={!canOpen}
-          className={`flex min-h-[16.5rem] w-full flex-col justify-between rounded-[30px] border px-5 py-5 text-left shadow-[0_18px_50px_-44px_rgba(30,27,22,0.5)] transition ${
+          className={`relative flex min-h-[16.5rem] w-full flex-col justify-between overflow-hidden rounded-[30px] border px-5 py-5 text-left shadow-[0_18px_50px_-44px_rgba(30,27,22,0.5)] transition ${
             canOpen ? "active:scale-[0.99]" : "cursor-default"
           }`}
           style={{
@@ -1407,13 +1517,18 @@ export default function AssessmentChatBox({
               </span>
             ) : null}
           </span>
-          {canOpen ? (
-            <span className="mt-6 flex items-center justify-end">
+          <span className="mt-6 flex items-end justify-between gap-4">
+            {canOpen ? (
               <span className="shrink-0 rounded-full bg-[#17120f] px-5 py-3 text-sm font-semibold text-white">
                 Open lessons
               </span>
+            ) : (
+              <span />
+            )}
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-[rgba(23,18,15,0.16)] bg-[rgba(255,255,255,0.32)] text-[#17120f]">
+              <ConceptEducationIcon conceptKey={conceptKey} pillarKey={pillarKey} />
             </span>
-          ) : null}
+          </span>
         </button>
       );
     },
