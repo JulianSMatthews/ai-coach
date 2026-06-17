@@ -87,7 +87,6 @@ export default function AppNav({
   const resolvedFirstName = String(userFirstName || "").trim();
   const greetingLabel = resolvedFirstName ? `Hi ${resolvedFirstName}` : "";
   const links: Array<{ label: string; href: string }> = [
-    { label: "Home", href: resolvedUserId ? "/" : "/login" },
     ...(resolvedUserId
       ? [
           { label: "Preferences", href: `/preferences/${resolvedUserId}` },
@@ -226,9 +225,10 @@ export default function AppNav({
               <span className="sr-only">Close menu</span>
               <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
                 <path
-                  d="M4 7h16M4 12h16M4 17h16"
+                  d="M15 5l-7 7 7 7"
                   stroke="currentColor"
-                  strokeWidth="1.5"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
                   strokeLinecap="round"
                 />
               </svg>
