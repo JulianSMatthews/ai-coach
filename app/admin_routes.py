@@ -7,6 +7,7 @@ import os
 import ast
 
 import json
+import re
 import time
 from datetime import datetime
 from types import SimpleNamespace
@@ -778,6 +779,292 @@ def _interleaved_released_education_programmes(rows: list[EducationProgramme]) -
                 ordered.append(items[index])
     ordered.extend(other)
     return ordered
+
+
+def _education_programme_default_llm_model() -> str:
+    try:
+        from . import llm as shared_llm
+
+        return shared_llm.resolve_model_name_for_touchpoint(EDUCATION_PROGRAMME_LLM_TOUCHPOINT)
+    except Exception:
+        return "default"
+
+
+def _education_summary_scope_label(scope: str, programme_id: int | None, pillar_key: str | None) -> str:
+    if programme_id:
+        return f"programme #{int(programme_id)}"
+    scope_key = str(scope or "").strip().lower()
+    pillar = str(pillar_key or "").strip().lower()
+    if scope_key == "pillar" and pillar:
+        return f"released active {pillar} programmes"
+    if scope_key == "active":
+        return "all active programmes"
+    if scope_key == "all":
+        return "all programmes"
+    return "released active programmes"
+
+
+def _education_summary_target_values(target_words: object, tolerance: object) -> tuple[int, int]:
+    try:
+        target = int(target_words or 17)
+    except Exception:
+        target = 17
+    try:
+        tol = int(tolerance or 2)
+    except Exception:
+        tol = 2
+    target = max(8, min(40, target))
+    tol = max(0, min(8, tol))
+    return target, tol
+
+
+def _education_summary_candidate_programmes(
+    session,
+    *,
+    scope: str,
+    programme_id: int | None,
+    pillar_key: str | None,
+    max_programmes: int,
+) -> list[EducationProgramme]:
+    query = session.query(EducationProgramme)
+    if programme_id:
+        query = query.filter(EducationProgramme.id == int(programme_id))
+    else:
+        scope_key = str(scope or "").strip().lower()
+        if scope_key == "all":
+            pass
+        elif scope_key == "active":
+            query = query.filter(EducationProgramme.is_active.is_(True))
+        else:
+            query = query.filter(
+                EducationProgramme.is_active.is_(True),
+                EducationProgramme.is_released.is_(True),
+            )
+        query = query.filter(
+            EducationProgramme.concept_key.isnot(None),
+            EducationProgramme.concept_key != "",
+        )
+        pillar = str(pillar_key or "").strip().lower()
+        if scope_key == "pillar" and pillar:
+            query = query.filter(EducationProgramme.pillar_key == pillar)
+    return (
+        query.order_by(
+            EducationProgramme.journey_order.asc(),
+            EducationProgramme.id.asc(),
+        )
+        .limit(max(1, min(100, int(max_programmes or 50))))
+        .all()
+    )
+
+
+def _rationalise_education_programme_summaries(
+    *,
+    scope: str,
+    programme_id: int | None,
+    pillar_key: str | None,
+    target_words: int,
+    tolerance: int,
+    model_override: str | None,
+    apply_changes: bool,
+    max_programmes: int = 50,
+) -> dict[str, object]:
+    ensure_education_plan_schema()
+    lower = max(4, int(target_words) - int(tolerance))
+    upper = max(lower, int(target_words) + int(tolerance))
+    rows: list[dict[str, object]] = []
+    with SessionLocal() as s:
+        programmes = _education_summary_candidate_programmes(
+            s,
+            scope=scope,
+            programme_id=programme_id,
+            pillar_key=pillar_key,
+            max_programmes=max_programmes,
+        )
+        for programme in programmes:
+            programme_id_int = int(getattr(programme, "id", 0) or 0)
+            row_result: dict[str, object] = {
+                "programme_id": programme_id_int,
+                "programme_name": str(getattr(programme, "name", "") or ""),
+                "programme_code": str(getattr(programme, "code", "") or ""),
+                "pillar_key": str(getattr(programme, "pillar_key", "") or ""),
+                "concept_label": str(getattr(programme, "concept_label", "") or getattr(programme, "concept_key", "") or ""),
+                "status": "pending",
+            }
+            try:
+                context, first_day, current_summary = _education_summary_context_for_programme(s, programme)
+                row_result["current_summary"] = current_summary
+                row_result["current_word_count"] = _education_summary_word_count(current_summary)
+                if first_day is None:
+                    raise ValueError("programme has no lessons")
+                generated = _generate_education_programme_summary_with_llm(
+                    programme_context=context,
+                    target_words=target_words,
+                    tolerance=tolerance,
+                    model_override=model_override,
+                )
+                generated_summary = str(generated.get("summary") or "").strip()
+                generated_count = int(generated.get("word_count") or 0)
+                row_result.update(
+                    {
+                        "programme_day_id": int(first_day.id),
+                        "generated_summary": generated_summary,
+                        "generated_word_count": generated_count,
+                        "model": str(generated.get("model") or ""),
+                        "duration_ms": int(generated.get("duration_ms") or 0),
+                        "status": "inside_target" if lower <= generated_count <= upper else "outside_target",
+                    }
+                )
+                _log_education_llm_generation(
+                    touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+                    prompt=str(generated.get("prompt") or ""),
+                    model=str(generated.get("model") or ""),
+                    duration_ms=int(generated.get("duration_ms") or 0),
+                    response_preview=str(generated.get("content") or ""),
+                    context_meta={
+                        "programme_id": programme_id_int,
+                        "programme_name": row_result["programme_name"],
+                        "programme_code": row_result["programme_code"],
+                        "pillar_key": row_result["pillar_key"],
+                        "concept_label": row_result["concept_label"],
+                        "target_words": int(target_words),
+                        "tolerance": int(tolerance),
+                        "apply_changes": bool(apply_changes),
+                    },
+                    prompt_variant="admin_programme_summary_rationalise",
+                    task_label=f"Rationalise programme summary: {row_result['programme_name']}",
+                    prompt_blocks={
+                        "context": json.dumps(context, ensure_ascii=False, default=str),
+                        "task": f"Rewrite the programme cue-card summary to {int(target_words)} words, tolerance {int(tolerance)}.",
+                    },
+                    block_order=["context", "task"],
+                )
+                if apply_changes and generated_summary:
+                    first_day.default_summary = generated_summary
+                    s.add(first_day)
+                    programme.updated_at = datetime.utcnow()
+                    s.add(programme)
+                    row_result["applied"] = True
+                else:
+                    row_result["applied"] = False
+            except Exception as exc:
+                row_result["status"] = "error"
+                row_result["error"] = str(exc)
+                row_result["applied"] = False
+            rows.append(row_result)
+        if apply_changes:
+            s.commit()
+        else:
+            s.rollback()
+    return {
+        "scope": _education_summary_scope_label(scope, programme_id, pillar_key),
+        "target_words": int(target_words),
+        "tolerance": int(tolerance),
+        "lower": lower,
+        "upper": upper,
+        "apply_changes": bool(apply_changes),
+        "rows": rows,
+    }
+
+
+def _education_summary_apply_preview_payload(rows: list[dict[str, object]]) -> str:
+    payload_rows = []
+    for row in rows:
+        summary = str(row.get("generated_summary") or "").strip()
+        if not summary:
+            continue
+        try:
+            programme_id = int(row.get("programme_id") or 0)
+            programme_day_id = int(row.get("programme_day_id") or 0)
+        except Exception:
+            continue
+        if programme_id <= 0 or programme_day_id <= 0:
+            continue
+        payload_rows.append(
+            {
+                "programme_id": programme_id,
+                "programme_day_id": programme_day_id,
+                "summary": summary,
+            }
+        )
+    return json.dumps({"rows": payload_rows}, ensure_ascii=False)
+
+
+def _render_education_summary_rationalisation_report(result: dict[str, object]) -> HTMLResponse:
+    rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+    apply_changes = bool(result.get("apply_changes"))
+    table_rows: list[str] = []
+    applied_count = 0
+    ok_count = 0
+    error_count = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "")
+        if status == "error":
+            error_count += 1
+        else:
+            ok_count += 1
+        if bool(row.get("applied")):
+            applied_count += 1
+        status_label = {
+            "inside_target": "Inside target",
+            "outside_target": "Outside target",
+            "error": "Error",
+        }.get(status, status or "Done")
+        applied_html = "<br/><span class='subtle'>Applied</span>" if bool(row.get("applied")) else ""
+        error_html = (
+            "<br/><span class='subtle'>" + html.escape(str(row.get("error") or "")) + "</span>"
+            if row.get("error")
+            else ""
+        )
+        model_html = " · " + html.escape(str(row.get("model") or "")) if row.get("model") else ""
+        table_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(row.get('programme_id') or ''))}</td>"
+            f"<td><strong>{html.escape(str(row.get('programme_name') or ''))}</strong><br/>"
+            f"<span class='subtle'>{html.escape(str(row.get('concept_label') or ''))} · {html.escape(str(row.get('pillar_key') or ''))}</span></td>"
+            f"<td>{html.escape(str(row.get('current_summary') or ''))}<br/><span class='subtle'>{html.escape(str(row.get('current_word_count') or 0))} words</span></td>"
+            f"<td>{html.escape(str(row.get('generated_summary') or ''))}<br/><span class='subtle'>{html.escape(str(row.get('generated_word_count') or 0))} words{model_html}</span></td>"
+            f"<td>{html.escape(status_label)}{applied_html}{error_html}</td>"
+            "</tr>"
+        )
+    preview_payload = _education_summary_apply_preview_payload([row for row in rows if isinstance(row, dict)])
+    try:
+        preview_rows_count = len(json.loads(preview_payload).get("rows", []))
+    except Exception:
+        preview_rows_count = 0
+    apply_form = ""
+    if not apply_changes and preview_rows_count:
+        apply_form = (
+            "<form method='post' action='/admin/education-programmes/summaries/apply-preview' "
+            "onsubmit=\"return confirm('Apply these generated summaries to the programme cue cards? Lesson scripts and quizzes will not change.');\">"
+            f"<input type='hidden' name='generated_json' value='{html.escape(preview_payload, quote=True)}' />"
+            "<button type='submit'>Apply these generated summaries</button>"
+            "</form>"
+        )
+    body = (
+        "<h2>Education summary rationalisation</h2>"
+        f"{_build_version_label()}"
+        "<div class='card' style='margin-bottom:12px;'>"
+        f"<p><strong>Scope:</strong> {html.escape(str(result.get('scope') or ''))}</p>"
+        f"<p><strong>Target:</strong> {html.escape(str(result.get('target_words') or ''))} words "
+        f"(acceptable range {html.escape(str(result.get('lower') or ''))}-{html.escape(str(result.get('upper') or ''))}).</p>"
+        f"<p><strong>Mode:</strong> {'Applied changes' if apply_changes else 'Preview only'}. "
+        "Only the first lesson default summary is changed; lesson scripts, quiz questions, titles, variants, and ordering are unchanged.</p>"
+        f"<p class='help'>Generated: {ok_count}. Errors: {error_count}. Applied: {applied_count}.</p>"
+        "<div class='stack'>"
+        f"{apply_form}"
+        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        "</div>"
+        "</div>"
+        "<div class='card'>"
+        "<table>"
+        "<tr><th>ID</th><th>Programme</th><th>Current summary</th><th>Generated summary</th><th>Status</th></tr>"
+        + ("".join(table_rows) if table_rows else "<tr><td colspan='5'><em>No programmes matched this scope.</em></td></tr>")
+        + "</table>"
+        "</div>"
+    )
+    return _wrap_page("Education Summary Rationalisation", body)
 
 
 def _json_script_content(value: object) -> str:
@@ -1932,6 +2219,173 @@ def _generate_education_programme_insights_with_llm(
         "content": llm_result["content"],
         "prompt": prompt,
         "context": programme_context,
+    }
+
+
+def _education_summary_word_count(value: object) -> int:
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    return len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)?", text))
+
+
+def _clean_llm_programme_summary(value: object) -> str:
+    summary = str(value or "").strip()
+    if not summary:
+        return ""
+    if summary.startswith("```"):
+        lines = summary.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        summary = "\n".join(lines).strip()
+    summary = re.sub(r"^\s*(summary|rewritten_summary)\s*:\s*", "", summary, flags=re.IGNORECASE)
+    summary = summary.strip().strip('"').strip("'").strip()
+    summary = re.sub(r"\s+", " ", summary).strip()
+    return summary[:400].strip()
+
+
+def _normalise_education_summary_llm_output(raw_text: str) -> str:
+    raw = str(raw_text or "").strip()
+    if not raw:
+        raise ValueError("LLM returned an empty summary")
+    summary = ""
+    try:
+        parsed = _extract_llm_json_object(raw)
+        if isinstance(parsed, dict):
+            candidate = parsed.get("summary") or parsed.get("rewritten_summary")
+            if isinstance(candidate, dict):
+                candidate = candidate.get("summary")
+            summary = _clean_llm_programme_summary(candidate)
+    except Exception:
+        summary = ""
+    if not summary:
+        summary = _clean_llm_programme_summary(raw)
+    if not summary:
+        raise ValueError("LLM response did not include a usable summary")
+    return summary
+
+
+def _build_education_summary_rationalisation_prompt(
+    *,
+    programme_context: dict[str, object],
+    target_words: int,
+    tolerance: int,
+) -> str:
+    lower = max(4, int(target_words) - int(tolerance))
+    upper = max(lower, int(target_words) + int(tolerance))
+    output_schema = {"summary": "one rewritten summary sentence"}
+    return (
+        "You are rewriting CoachSense education programme cue-card summaries for the admin editor.\n"
+        "Return one valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Rewrite only the mobile concept card summary for this education programme.\n"
+        "- Use the supplied programme context, lesson titles, summaries, goals, and transcript snippets as source material.\n"
+        "- The summary appears beneath the concept title before the user opens the programme.\n"
+        f"- Target exactly {int(target_words)} words; acceptable range is {lower}-{upper} words.\n"
+        "- Write one sentence only.\n"
+        "- Make it insight-led: describe what the user may come to understand about a pattern, signal, tension, or choice.\n"
+        "- Do not write an action instruction, progress update, score comment, target, or tracking message.\n"
+        "- Do not start with Today, In this lesson, This programme, Learn, Explore, or Discover.\n"
+        "- Do not use the words lesson, unit, day, or programme.\n"
+        "- Use UK English, calm coaching language, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+
+def _education_summary_context_for_programme(
+    session,
+    programme: EducationProgramme,
+) -> tuple[dict[str, object], EducationProgrammeDay | None, str]:
+    day_rows = (
+        session.query(EducationProgrammeDay)
+        .filter(EducationProgrammeDay.programme_id == int(programme.id))
+        .order_by(EducationProgrammeDay.day_index.asc(), EducationProgrammeDay.id.asc())
+        .all()
+    )
+    first_day = day_rows[0] if day_rows else None
+    day_ids = [int(day.id) for day in day_rows]
+    variant_rows = []
+    if day_ids:
+        variant_rows = (
+            session.query(EducationLessonVariant)
+            .filter(EducationLessonVariant.programme_day_id.in_(day_ids))
+            .order_by(
+                EducationLessonVariant.programme_day_id.asc(),
+                EducationLessonVariant.is_active.desc(),
+                EducationLessonVariant.level.asc(),
+                EducationLessonVariant.id.asc(),
+            )
+            .all()
+        )
+    variants_by_day: dict[int, list[EducationLessonVariant]] = {}
+    for variant in variant_rows:
+        variants_by_day.setdefault(int(variant.programme_day_id), []).append(variant)
+    first_variant = variants_by_day.get(int(first_day.id), [None])[0] if first_day is not None else None
+    current_summary = (
+        str(getattr(first_day, "default_summary", "") or "").strip()
+        or str(getattr(first_variant, "summary", "") or "").strip()
+        or str(getattr(first_day, "lesson_goal", "") or "").strip()
+    )
+    lessons: list[dict[str, object]] = []
+    for day in day_rows[:31]:
+        day_variants = variants_by_day.get(int(day.id), [])
+        active_variant = next((item for item in day_variants if bool(getattr(item, "is_active", True))), None)
+        variant = active_variant or (day_variants[0] if day_variants else None)
+        lessons.append(
+            {
+                "lesson_index": int(getattr(day, "day_index", 0) or 0),
+                "title": _trim_llm_context_text(getattr(day, "default_title", None), 240),
+                "summary": _trim_llm_context_text(getattr(day, "default_summary", None), 500),
+                "goal": _trim_llm_context_text(getattr(day, "lesson_goal", None), 500),
+                "variant_title": _trim_llm_context_text(getattr(variant, "title", None), 240),
+                "variant_summary": _trim_llm_context_text(getattr(variant, "summary", None), 500),
+                "script_excerpt": _trim_llm_context_text(getattr(variant, "script", None), 900),
+            }
+        )
+    programme_context = {
+        "programme_id": int(getattr(programme, "id", 0) or 0),
+        "programme_name": str(getattr(programme, "name", "") or "").strip(),
+        "programme_code": str(getattr(programme, "code", "") or "").strip(),
+        "pillar_key": str(getattr(programme, "pillar_key", "") or "").strip().lower(),
+        "concept_key": str(getattr(programme, "concept_key", "") or "").strip().lower(),
+        "concept_label": str(getattr(programme, "concept_label", "") or "").strip(),
+        "current_card_summary": current_summary,
+        "lessons": lessons,
+    }
+    return programme_context, first_day, current_summary
+
+
+def _generate_education_programme_summary_with_llm(
+    *,
+    programme_context: dict[str, object],
+    target_words: int,
+    tolerance: int,
+    model_override: str | None,
+) -> dict[str, object]:
+    prompt = _build_education_summary_rationalisation_prompt(
+        programme_context=programme_context,
+        target_words=target_words,
+        tolerance=tolerance,
+    )
+    llm_result = _invoke_education_llm_prompt(
+        prompt=prompt,
+        touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+        model_override=model_override,
+    )
+    summary = _normalise_education_summary_llm_output(str(llm_result.get("content") or ""))
+    word_count = _education_summary_word_count(summary)
+    return {
+        "summary": summary,
+        "word_count": word_count,
+        "model": llm_result.get("model"),
+        "duration_ms": llm_result.get("duration_ms"),
+        "content": llm_result.get("content"),
+        "prompt": prompt,
     }
 
 
@@ -3657,6 +4111,107 @@ async def save_prompt_template(
     return RedirectResponse(url="/admin/prompt-templates", status_code=303)
 
 
+@admin.post("/education-programmes/summaries/rationalise", response_class=HTMLResponse)
+async def rationalise_education_programme_summaries(
+    scope: str | None = Form(default="released"),
+    programme_id: str | None = Form(default=None),
+    pillar_key: str | None = Form(default=None),
+    target_words: str | None = Form(default="17"),
+    tolerance: str | None = Form(default="2"),
+    model_override: str | None = Form(default=None),
+    apply_changes: str | None = Form(default=None),
+    max_programmes: str | None = Form(default="50"),
+):
+    target, tol = _education_summary_target_values(target_words, tolerance)
+    try:
+        programme_id_int = int(programme_id or 0)
+    except Exception:
+        programme_id_int = 0
+    try:
+        max_programmes_int = int(max_programmes or 50)
+    except Exception:
+        max_programmes_int = 50
+    result = _rationalise_education_programme_summaries(
+        scope=str(scope or "released").strip().lower() or "released",
+        programme_id=programme_id_int if programme_id_int > 0 else None,
+        pillar_key=str(pillar_key or "").strip().lower() or None,
+        target_words=target,
+        tolerance=tol,
+        model_override=_normalize_model_override(model_override),
+        apply_changes=_truthy_form_value(apply_changes),
+        max_programmes=max_programmes_int,
+    )
+    return _render_education_summary_rationalisation_report(result)
+
+
+@admin.post("/education-programmes/summaries/apply-preview", response_class=HTMLResponse)
+async def apply_education_programme_summary_preview(
+    generated_json: str = Form(...),
+):
+    ensure_education_plan_schema()
+    try:
+        payload = json.loads(str(generated_json or "{}"))
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid generated summary payload: {exc}")
+    rows = payload.get("rows") if isinstance(payload, dict) else []
+    if not isinstance(rows, list):
+        raise HTTPException(400, "generated summary payload must contain rows")
+    result_rows: list[dict[str, object]] = []
+    with SessionLocal() as s:
+        for raw_row in rows:
+            if not isinstance(raw_row, dict):
+                continue
+            try:
+                programme_id = int(raw_row.get("programme_id") or 0)
+                programme_day_id = int(raw_row.get("programme_day_id") or 0)
+            except Exception:
+                continue
+            summary = _clean_llm_programme_summary(raw_row.get("summary"))
+            if programme_id <= 0 or programme_day_id <= 0 or not summary:
+                continue
+            programme = s.get(EducationProgramme, programme_id)
+            day = s.get(EducationProgrammeDay, programme_day_id)
+            row_result: dict[str, object] = {
+                "programme_id": programme_id,
+                "programme_day_id": programme_day_id,
+                "programme_name": str(getattr(programme, "name", "") or ""),
+                "programme_code": str(getattr(programme, "code", "") or ""),
+                "pillar_key": str(getattr(programme, "pillar_key", "") or ""),
+                "concept_label": str(getattr(programme, "concept_label", "") or getattr(programme, "concept_key", "") or ""),
+                "generated_summary": summary,
+                "generated_word_count": _education_summary_word_count(summary),
+                "status": "inside_target",
+                "applied": False,
+            }
+            try:
+                if programme is None or day is None:
+                    raise ValueError("programme or first lesson was not found")
+                if int(getattr(day, "programme_id", 0) or 0) != programme_id:
+                    raise ValueError("summary payload does not match this programme")
+                row_result["current_summary"] = str(getattr(day, "default_summary", "") or "")
+                row_result["current_word_count"] = _education_summary_word_count(getattr(day, "default_summary", "") or "")
+                day.default_summary = summary
+                s.add(day)
+                programme.updated_at = datetime.utcnow()
+                s.add(programme)
+                row_result["applied"] = True
+            except Exception as exc:
+                row_result["status"] = "error"
+                row_result["error"] = str(exc)
+            result_rows.append(row_result)
+        s.commit()
+    result = {
+        "scope": "previewed summaries",
+        "target_words": "",
+        "tolerance": "",
+        "lower": "",
+        "upper": "",
+        "apply_changes": True,
+        "rows": result_rows,
+    }
+    return _render_education_summary_rationalisation_report(result)
+
+
 @admin.get("/education-programmes", response_class=HTMLResponse)
 def list_education_programmes():
     ensure_education_plan_schema()
@@ -3714,6 +4269,69 @@ def list_education_programmes():
             "</td>"
             "</tr>"
         )
+    summary_model_options_html = _llm_model_options_html(_education_programme_default_llm_model())
+    summary_rationalise_html = f"""
+        <div class='card' style='margin-top:12px; margin-bottom:12px;'>
+        <h3 class='section-title'>Programme card summaries</h3>
+        <p class='help'>Use the LLM to rewrite concept cue-card summaries to a consistent word count. This changes only the first lesson default summary used by the programme card; lesson scripts, quizzes, titles, variants, and ordering are not changed.</p>
+        <form method='post' action='/admin/education-programmes/summaries/rationalise'>
+          <div class='grid-3'>
+            <div class='field'>
+              <label>Scope<br/>
+                <select name='scope'>
+                  <option value='released'>Released active programmes</option>
+                  <option value='pillar'>Released active programmes by pillar</option>
+                  <option value='active'>All active programmes</option>
+                  <option value='all'>All programmes</option>
+                </select>
+              </label>
+            </div>
+            <div class='field'>
+              <label>Pillar for pillar scope<br/>
+                <select name='pillar_key'>
+                  <option value=''>Any pillar</option>
+                  <option value='reflection'>Reflection</option>
+                  <option value='purpose'>Purpose</option>
+                  <option value='resilience'>Resilience</option>
+                  <option value='recovery'>Recovery</option>
+                  <option value='nutrition'>Nutrition</option>
+                  <option value='training'>Training</option>
+                </select>
+              </label>
+            </div>
+            <div class='field'>
+              <label>Programme ID override<br/>
+                <input type='number' name='programme_id' min='1' step='1' placeholder='Optional' />
+              </label>
+            </div>
+            <div class='field'>
+              <label>Target words<br/>
+                <input type='number' name='target_words' min='8' max='40' step='1' value='17' />
+              </label>
+            </div>
+            <div class='field'>
+              <label>Tolerance<br/>
+                <input type='number' name='tolerance' min='0' max='8' step='1' value='2' />
+              </label>
+            </div>
+            <div class='field'>
+              <label>Max programmes<br/>
+                <input type='number' name='max_programmes' min='1' max='100' step='1' value='50' />
+              </label>
+            </div>
+          </div>
+          <div class='field'>
+            <label>Model<br/>
+              <select name='model_override'>{summary_model_options_html}</select>
+            </label>
+          </div>
+          <div class='stack'>
+            <button type='submit' name='apply_changes' value='0'>Preview summary rewrites</button>
+            <button type='submit' name='apply_changes' value='1' class='danger' onclick="return confirm('Generate and apply new programme card summaries now? Lesson content will not be changed.');">Generate and apply now</button>
+          </div>
+        </form>
+        </div>
+    """
     body = (
         "<h2>Education Programmes</h2>"
         f"{_build_version_label()}"
@@ -3745,6 +4363,7 @@ def list_education_programmes():
         "</form>"
         "</div>"
         "</div>"
+        f"{summary_rationalise_html}"
         "<div class='card'>"
         "<table>"
         "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Order</th><th>Code</th><th>Name</th><th>Lessons</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
@@ -5596,6 +6215,7 @@ def edit_education_programme(id: int | None = None):
     }
     delete_form_html = ""
     avatar_bulk_html = ""
+    summary_rationalise_current_html = ""
     if row is not None:
         programme_id = html.escape(str(programme_payload.get("id") or ""))
         avatar_bulk_html = (
@@ -5637,12 +6257,45 @@ def edit_education_programme(id: int | None = None):
             "<button type='submit' class='danger'>Delete Programme</button>"
             "</form>"
         )
+        summary_rationalise_current_html = f"""
+      <details class="programme-day-llm" style="margin-bottom:12px;">
+        <summary>Rationalise this programme card summary with LLM</summary>
+        <p class="help">Rewrite only the concept cue-card summary for this programme. The first lesson default summary is updated when you apply; lesson scripts, quizzes, titles, variants, and ordering are unchanged.</p>
+        <form method="post" action="/admin/education-programmes/summaries/rationalise">
+          <input type="hidden" name="programme_id" value="{programme_id}" />
+          <input type="hidden" name="scope" value="programme" />
+          <input type="hidden" name="max_programmes" value="1" />
+          <div class="grid-3">
+            <div class="field">
+              <label>Target words<br/>
+                <input type="number" name="target_words" min="8" max="40" step="1" value="17" />
+              </label>
+            </div>
+            <div class="field">
+              <label>Tolerance<br/>
+                <input type="number" name="tolerance" min="0" max="8" step="1" value="2" />
+              </label>
+            </div>
+            <div class="field">
+              <label>Model<br/>
+                <select name="model_override">{programme_llm_model_options_html}</select>
+              </label>
+            </div>
+          </div>
+          <div class="stack">
+            <button type="submit" name="apply_changes" value="0">Preview summary rewrite</button>
+            <button type="submit" name="apply_changes" value="1" class="danger" onclick="return confirm('Generate and apply a new programme card summary now? Lesson content will not change.');">Generate and apply now</button>
+          </div>
+        </form>
+      </details>
+        """
     body = f"""
     <h2>{title}</h2>
     {_build_version_label()}
     <div class='card' style='margin-bottom:12px;'>
       <p class='help'>Use this editor to define a concept-based lesson module with levelled video variants, the 3-question quiz, and the takeaway text shown after quiz completion. The user is routed into a programme by concept, and the programme length is derived from the days you configure here.</p>
       {avatar_bulk_html}
+      {summary_rationalise_current_html}
     </div>
     <form method="post" action="/admin/education-programmes/save" id="education-programme-form">
       <input type="hidden" name="id" value="{html.escape(str(programme_payload.get('id') or ''))}" />
