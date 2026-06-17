@@ -84,7 +84,7 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "protein_intake":   "Protein intake",
         "fruit_veg":        "Fruit & vegetables",
         "hydration":        "Hydration",
-        "processed_food":   "Processed food",
+        "processed_food":   "Ultra-processed food",
         "omega_3":          "Omega 3",
         "vitamin_d":        "Vitamin D",
     },
@@ -145,7 +145,7 @@ CONCEPT_QUESTIONS = {
             "primary": "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
         },
         "processed_food": {
-            "primary": "In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
+            "primary": "In the last 7 days, how many portions of ultra-processed food did you *have on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
         },
     },
     "training": {
@@ -838,7 +838,7 @@ Return STRICT JSON only using this exact shape:
 
 Rules:
 Generate one week-1 habit step for each KR.
-Each step must be shaped by the KR theme (fruit & veg, processed foods, hydration, protein).
+Each step must be shaped by the KR theme (fruit & veg, ultra-processed foods, hydration, protein).
 Create a behaviour-based micro-action rather than offering advice or preparing full meals.
 Each step must be tiny, low-pressure, and able to begin in under 30 seconds.
 Steps must describe an observable action (placing, picking, adding, sipping, pausing, choosing, positioning).
@@ -855,7 +855,7 @@ Make a fruit or veg option more visible.
 Add a small amount of fruit or veg to something already being eaten.
 Introduce an extra colour or plant item into a familiar meal.
 Place a fruit/veg reminder in a location tied to a daily cue.
-For processed food KRs:
+For ultra-processed food KRs:
 Adjust the environment so a less processed option is easier to reach.
 Insert a brief pause or check-in before a usual snack choice.
 Redirect an automatic snack moment towards a slightly better alternative.
@@ -897,7 +897,7 @@ If only two are meaningfully different, provide A and B only.
 Each option must be one small, specific behaviour — never a cluster of tasks.
 Each option must be friction-reducing, preparatory, environmental, or routine-based.
 Each option must be simple enough to begin in under 30 seconds.
-Each option must tie directly to the KR’s theme (nutrition, hydration, processed food, protein, sleep routine, wind-down, movement, training set-up, resilience practice, etc).
+Each option must tie directly to the KR’s theme (nutrition, hydration, ultra-processed food, protein, sleep routine, wind-down, movement, training set-up, resilience practice, etc).
 Use observable action verbs such as: prepare, place, position, organise, set, arrange, decide, choose, carry, lay out, keep, use, put, store, move, adjust.
 Keep steps free of numbers, measurements, durations, targets, or time-based instructions.
 Avoid nutritional substitutions, nutrient advice, “add fruit”, “drink water”, or any wording that sounds like a diet tip.
@@ -906,7 +906,7 @@ Avoid repeated phrasing across options.
 Use plain British English.
 Ensure steps vary in structure and rely on behavioural archetypes instead of example sentences.
 Behavioural Archetypes (Use These Patterns to Generate Steps)
-For Nutrition KRs (fruit & veg, processed foods, hydration, protein):
+For Nutrition KRs (fruit & veg, ultra-processed foods, hydration, protein):
 Make a helpful food or drink option more visible or easier to reach.
 Add a simple element to something the user already does or already eats.
 Adjust the environment so the preferred option is the path of least resistance.
@@ -2624,14 +2624,14 @@ BUILTIN_EDUCATION_PROGRAMMES: list[dict[str, Any]] = [
     {
         "pillar_key": "nutrition",
         "concept_key": "processed_food",
-        "concept_label": "Processed food",
+        "concept_label": "Ultra-processed food",
         "code": "processed_food_awareness_4d",
-        "name": "Processed Foods Awareness",
+        "name": "Ultra-Processed Foods Awareness",
         "level": "build",
         "pass_score_pct": 66.67,
         "is_active": True,
         "doc": {
-            "title": "HealthSense - Processed Foods Education Programme (4 Lessons)",
+            "title": "HealthSense - Ultra-Processed Foods Education Programme (4 Lessons)",
             "days": [
                 {
                     "day_index": 1,
@@ -2748,7 +2748,7 @@ BUILTIN_EDUCATION_PROGRAMMES: list[dict[str, Any]] = [
                     "script": (
                         "You now understand what, why, and impact. Today is action.\n\n"
                         "You don't need perfection - just small steps.\n\n"
-                        "Replace one processed food, choose simpler ingredients, and build consistency."
+                        "Replace one ultra-processed food, choose simpler ingredients, and build consistency."
                     ),
                     "action_prompt": "Replace one ultra-processed food today.",
                     "takeaway": "Small changes create lasting improvement.",

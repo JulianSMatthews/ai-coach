@@ -4012,7 +4012,7 @@ def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarRe
         pdf.setFont("Helvetica", 11)
         y = _write_para(y, "Quarter Objective: Improve overall nutrition quality.", font_size=11, indent=12)
         y = _write_para(y, "1. Increase fruit and vegetable intake.", font_size=11, indent=12)
-        y = _write_para(y, "2. Reduce processed food consumption.", font_size=11, indent=12)
+        y = _write_para(y, "2. Reduce ultra-processed food consumption.", font_size=11, indent=12)
         y = _write_para(y, "3. Maintain adequate protein intake.", font_size=11, indent=12) - 8
 
         y = _write_heading(y, "How to Use This Report")

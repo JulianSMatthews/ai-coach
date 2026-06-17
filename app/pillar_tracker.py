@@ -175,7 +175,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         ),
         PillarTrackerConceptDefinition(
             concept_key="processed_food",
-            label="Processed Food",
+            label="Ultra-processed Food",
             helper="portions today",
             options=tuple(PillarTrackerOption(float(v), label) for v, label in ((0, "0"), (1, "1"), (2, "2"), (3, "3+"))),
             target_value=1,

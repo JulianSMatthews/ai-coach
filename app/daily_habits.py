@@ -2145,7 +2145,7 @@ def _fallback_habit_for_concept(concept: dict[str, Any], pillar_key: str) -> dic
         "protein_intake": ("Add protein to your next meal", target_label or "Aim for a stronger protein spread through the day."),
         "fruit_veg": ("Add colour to two meals today", target_label or "Build in at least one extra fruit or veg portion."),
         "hydration": ("Finish one full bottle early", target_label or "Keep water visible and top it up twice today."),
-        "processed_food": ("Swap one processed snack today", target_label or "Make one whole-food swap before the day ends."),
+        "processed_food": ("Swap one ultra-processed snack today", target_label or "Make one whole-food swap before the day ends."),
         "cardio_frequency": ("Fit in one cardio block today", target_label or "A brisk 20-minute walk counts."),
         "strength_training": ("Complete a short strength session", target_label or "Even one focused block moves this forward."),
         "flexibility_mobility": ("Do 10 minutes of mobility", target_label or "Use it as a reset before bed or after work."),

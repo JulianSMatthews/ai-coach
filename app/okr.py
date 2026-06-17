@@ -832,7 +832,7 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
         "fruit_veg":      {"label": "fruit & vegetable portions", "unit": "portions/day", "low": "increase", "high": "maintain"},
         "hydration":      {"label": "daily hydration",            "unit": "L/day",        "low": "increase", "high": "maintain"},
         "omega_3":        {"label": "omega 3 adherence",          "unit": "days/week",    "low": "increase", "high": "maintain"},
-        "processed_food": {"label": "processed food intake",      "unit": "portions/day", "low": "reduce",   "high": "reduce"},
+        "processed_food": {"label": "ultra-processed food intake", "unit": "portions/day", "low": "reduce",   "high": "reduce"},
         "protein_intake": {"label": "protein intake",             "unit": "portions/day", "low": "increase", "high": "maintain"},
         "vitamin_d":      {"label": "vitamin D adherence",        "unit": "days/week",    "low": "increase", "high": "maintain"},
     },
@@ -917,7 +917,7 @@ def _fallback_structured_okr(pillar_slug: str, pillar_score: float | None):
         "nutrition": [
             {"kr_key": "fruit_veg_step", "description": "Increase fruit and vegetable portions with one extra serving daily.", "concept_key": "fruit_veg"},
             {"kr_key": "hydration_step", "description": "Improve hydration consistency across the day.", "concept_key": "hydration"},
-            {"kr_key": "processed_food_step", "description": "Reduce processed food frequency with one whole-food swap per day.", "concept_key": "processed_food"},
+            {"kr_key": "processed_food_step", "description": "Reduce ultra-processed food frequency with one whole-food swap per day.", "concept_key": "processed_food"},
         ],
         "training": [
             {"kr_key": "cardio_step", "description": "Add one additional cardio session per week.", "concept_key": "cardio_frequency"},
