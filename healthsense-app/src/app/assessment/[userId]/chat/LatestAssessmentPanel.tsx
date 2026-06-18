@@ -3411,7 +3411,7 @@ export default function LatestAssessmentPanel({
                         <WeeklyScoreRing value={score} tone={palette.accent} />
                       </div>
                       <div className="pr-24">
-                        <p className="text-[2.4rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.8rem]">
+                        <p className="text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
                           {pillar.label}
                         </p>
                         {journalDate ? (
