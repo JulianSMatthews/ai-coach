@@ -237,20 +237,12 @@ export default function AppNav({
             </Link>
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)] text-[var(--chrome-text)]"
+              className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
               <span className="sr-only">Close menu</span>
-              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <path
-                  d="M15 5l-7 7 7 7"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <span className="text-3xl leading-none" aria-hidden="true">‹</span>
             </button>
           </div>
 
