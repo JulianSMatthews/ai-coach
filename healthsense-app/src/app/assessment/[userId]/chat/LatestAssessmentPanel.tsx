@@ -3422,7 +3422,7 @@ export default function LatestAssessmentPanel({
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div className="max-h-[9.5rem] max-w-[18rem] overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-h-[10.75rem]">
-                          <p className="text-[1.32rem] font-medium leading-[1.2] text-current opacity-80 sm:text-[1.48rem]">
+                          <p className="text-[1.18rem] leading-8 text-current opacity-80">
                             {quote}
                           </p>
                         </div>
