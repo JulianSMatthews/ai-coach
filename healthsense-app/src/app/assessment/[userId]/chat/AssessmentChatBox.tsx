@@ -1880,7 +1880,7 @@ export default function AssessmentChatBox({
               </span>
             </span>
             {programmeSummary ? (
-              <span className="mt-5 block text-[1.05rem] leading-7 opacity-75">
+              <span className="mt-5 block text-[1.31rem] leading-[2.15rem] opacity-75">
                 {programmeSummary}
               </span>
             ) : null}
