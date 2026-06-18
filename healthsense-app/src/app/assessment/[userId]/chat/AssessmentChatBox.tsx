@@ -1853,9 +1853,9 @@ export default function AssessmentChatBox({
             canOpen ? "active:scale-[0.99]" : "cursor-default"
           }`}
           style={{
-            backgroundColor: palette.accent,
-            borderColor: "rgba(23,18,15,0.16)",
-            color: "#17120f",
+            backgroundColor: "var(--surface)",
+            borderColor: "var(--border)",
+            color: "var(--text-primary)",
           }}
         >
           <span>
@@ -1871,9 +1871,9 @@ export default function AssessmentChatBox({
               <span
                 className="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold"
                 style={{
-                  backgroundColor: darkStatusTag ? "#17120f" : "rgba(255,255,255,0.64)",
-                  borderColor: darkStatusTag ? "#17120f" : "rgba(23,18,15,0.16)",
-                  color: darkStatusTag ? "#fff" : "#17120f",
+                  backgroundColor: darkStatusTag ? "var(--action-primary-bg)" : "var(--surface-muted)",
+                  borderColor: darkStatusTag ? "var(--action-primary-border)" : "var(--border)",
+                  color: darkStatusTag ? "var(--action-primary-text)" : "var(--text-primary)",
                 }}
               >
                 {statusLabel}
@@ -1887,13 +1887,19 @@ export default function AssessmentChatBox({
           </span>
           <span className="mt-6 flex items-end justify-between gap-4">
             {canOpen ? (
-              <span className="shrink-0 rounded-full bg-[#17120f] px-5 py-3 text-sm font-semibold text-white">
+              <span className="shrink-0 rounded-full bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
                 Open lessons
               </span>
             ) : (
               <span />
             )}
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-[rgba(23,18,15,0.16)] bg-[rgba(255,255,255,0.32)] text-[#17120f]">
+            <span
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border text-[#17120f]"
+              style={{
+                backgroundColor: palette.accent,
+                borderColor: "rgba(23,18,15,0.16)",
+              }}
+            >
               <ConceptEducationIcon conceptKey={conceptKey} pillarKey={pillarKey} />
             </span>
           </span>
