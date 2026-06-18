@@ -663,6 +663,72 @@ function isEducationLessonCompleted(lesson: any): boolean {
   return Boolean(progress?.completed_at) || completionStatus === "completed";
 }
 
+function resolveEducationProgrammeProgress(programme: any): { completed: number; total: number } {
+  const lessons: any[] = Array.isArray(programme?.lessons) ? programme.lessons : [];
+  const totalValue = Number(programme?.lesson_count ?? lessons.length);
+  const total = Number.isFinite(totalValue) && totalValue > 0 ? Math.round(totalValue) : lessons.length;
+  const completedValue = Number(programme?.completed_lesson_count);
+  const completed = Number.isFinite(completedValue)
+    ? Math.round(completedValue)
+    : lessons.filter((lesson) => isEducationLessonCompleted(lesson)).length;
+  return {
+    completed: Math.max(0, Math.min(total, completed)),
+    total,
+  };
+}
+
+function EducationProgrammeProgressIcon({
+  conceptKey,
+  pillarKey,
+  tone,
+  completed,
+  total,
+}: {
+  conceptKey?: string | null;
+  pillarKey?: string | null;
+  tone: string;
+  completed: number;
+  total: number;
+}) {
+  const size = 84;
+  const stroke = 8;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = total > 0 ? Math.max(0, Math.min(1, completed / total)) : 0;
+  const offset = circumference * (1 - progress);
+  return (
+    <span className="relative flex h-[84px] w-[84px] shrink-0 items-center justify-center text-[#17120f]" aria-hidden="true">
+      <svg width={size} height={size} className="absolute inset-0 rotate-[-90deg]">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="var(--ring-track)"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={tone}
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span
+        className="flex h-[60px] w-[60px] items-center justify-center rounded-full"
+        style={{ backgroundColor: tone }}
+      >
+        <ConceptEducationIcon conceptKey={conceptKey} pillarKey={pillarKey} className="h-9 w-9" />
+      </span>
+    </span>
+  );
+}
+
 function firstIncompleteEducationLessonToken(lessons: any[]): string {
   const lesson = lessons.find((item) => !isEducationLessonCompleted(item));
   return String(lesson?.programme_day_id || lesson?.day_index || "").trim();
@@ -1837,6 +1903,7 @@ export default function AssessmentChatBox({
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
       const programmeSummary = String(programme?.summary || "").trim();
       const showStartLessonsButton = canOpen && status === "current";
+      const lessonProgress = resolveEducationProgrammeProgress(programme);
       return (
         <button
           key={`programme-${String(programme?.programme_id || index)}`}
@@ -1857,14 +1924,16 @@ export default function AssessmentChatBox({
           }}
         >
           <span
-            className="absolute right-5 top-5 flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full border-[8px] text-[#17120f]"
-            style={{
-              backgroundColor: palette.accent,
-              borderColor: "var(--ring-track)",
-            }}
-            aria-hidden="true"
+            className="absolute right-5 top-5"
+            aria-label={`${lessonProgress.completed} of ${lessonProgress.total} lessons completed`}
           >
-            <ConceptEducationIcon conceptKey={conceptKey} pillarKey={pillarKey} className="h-10 w-10" />
+            <EducationProgrammeProgressIcon
+              conceptKey={conceptKey}
+              pillarKey={pillarKey}
+              tone={palette.accent}
+              completed={lessonProgress.completed}
+              total={lessonProgress.total}
+            />
           </span>
           <span>
             <span className="flex items-start justify-between gap-4">
