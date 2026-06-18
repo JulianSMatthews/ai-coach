@@ -3408,7 +3408,7 @@ export default function LatestAssessmentPanel({
                       style={pillarCueCardStyle}
                     >
                       <div className="absolute right-5 top-5">
-                        <WeeklyScoreRing value={score} tone={palette.accent} />
+                        <WeeklyScoreRing value={score} tone="var(--text-primary)" />
                       </div>
                       <div className="pr-24">
                         <p className="text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
