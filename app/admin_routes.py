@@ -893,9 +893,22 @@ def _rationalise_education_programme_summaries(
             try:
                 context, first_day, current_summary = _education_summary_context_for_programme(s, programme)
                 row_result["current_summary"] = current_summary
-                row_result["current_word_count"] = _education_summary_word_count(current_summary)
+                current_word_count = _education_summary_word_count(current_summary)
+                row_result["current_word_count"] = current_word_count
                 if first_day is None:
                     raise ValueError("programme has no lessons")
+                if current_summary and lower <= current_word_count <= upper:
+                    row_result.update(
+                        {
+                            "programme_day_id": int(first_day.id),
+                            "generated_summary": "",
+                            "generated_word_count": 0,
+                            "status": "already_in_target",
+                            "applied": False,
+                        }
+                    )
+                    rows.append(row_result)
+                    continue
                 generated = _generate_education_programme_summary_with_llm(
                     programme_context=context,
                     target_words=target_words,
@@ -994,7 +1007,8 @@ def _render_education_summary_rationalisation_report(result: dict[str, object]) 
     apply_changes = bool(result.get("apply_changes"))
     table_rows: list[str] = []
     applied_count = 0
-    ok_count = 0
+    generated_count = 0
+    skipped_count = 0
     error_count = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -1002,11 +1016,14 @@ def _render_education_summary_rationalisation_report(result: dict[str, object]) 
         status = str(row.get("status") or "")
         if status == "error":
             error_count += 1
+        elif status == "already_in_target":
+            skipped_count += 1
         else:
-            ok_count += 1
+            generated_count += 1
         if bool(row.get("applied")):
             applied_count += 1
         status_label = {
+            "already_in_target": "Already in target",
             "inside_target": "Inside target",
             "outside_target": "Outside target",
             "error": "Error",
@@ -1018,13 +1035,23 @@ def _render_education_summary_rationalisation_report(result: dict[str, object]) 
             else ""
         )
         model_html = " · " + html.escape(str(row.get("model") or "")) if row.get("model") else ""
+        generated_summary = (
+            "Not regenerated"
+            if status == "already_in_target"
+            else str(row.get("generated_summary") or "")
+        )
+        generated_words = (
+            str(row.get("current_word_count") or 0)
+            if status == "already_in_target"
+            else str(row.get("generated_word_count") or 0)
+        )
         table_rows.append(
             "<tr>"
             f"<td>{html.escape(str(row.get('programme_id') or ''))}</td>"
             f"<td><strong>{html.escape(str(row.get('programme_name') or ''))}</strong><br/>"
             f"<span class='subtle'>{html.escape(str(row.get('concept_label') or ''))} · {html.escape(str(row.get('pillar_key') or ''))}</span></td>"
             f"<td>{html.escape(str(row.get('current_summary') or ''))}<br/><span class='subtle'>{html.escape(str(row.get('current_word_count') or 0))} words</span></td>"
-            f"<td>{html.escape(str(row.get('generated_summary') or ''))}<br/><span class='subtle'>{html.escape(str(row.get('generated_word_count') or 0))} words{model_html}</span></td>"
+            f"<td>{html.escape(generated_summary)}<br/><span class='subtle'>{html.escape(generated_words)} words{model_html}</span></td>"
             f"<td>{html.escape(status_label)}{applied_html}{error_html}</td>"
             "</tr>"
         )
@@ -1051,7 +1078,7 @@ def _render_education_summary_rationalisation_report(result: dict[str, object]) 
         f"(acceptable range {html.escape(str(result.get('lower') or ''))}-{html.escape(str(result.get('upper') or ''))}).</p>"
         f"<p><strong>Mode:</strong> {'Applied changes' if apply_changes else 'Preview only'}. "
         "Only the first lesson default summary is changed; lesson scripts, quiz questions, titles, variants, and ordering are unchanged.</p>"
-        f"<p class='help'>Generated: {ok_count}. Errors: {error_count}. Applied: {applied_count}.</p>"
+        f"<p class='help'>Generated: {generated_count}. Already in target: {skipped_count}. Errors: {error_count}. Applied: {applied_count}.</p>"
         "<div class='stack'>"
         f"{apply_form}"
         "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
@@ -2275,7 +2302,7 @@ def _build_education_summary_rationalisation_prompt(
 ) -> str:
     lower = max(4, int(target_words) - int(tolerance))
     upper = max(lower, int(target_words) + int(tolerance))
-    output_schema = {"summary": "one rewritten summary sentence"}
+    output_schema = {"summary": "one content-led learning preview sentence"}
     return (
         "You are rewriting CoachSense education programme cue-card summaries for the admin editor.\n"
         "Return one valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
@@ -2286,10 +2313,11 @@ def _build_education_summary_rationalisation_prompt(
         f"- Target exactly {int(target_words)} words; acceptable range is {lower}-{upper} words.\n"
         "- Write one sentence only.\n"
         "- Make it content-led and learning-led: say what the education covers and what the user will learn to understand, recognise, or practise.\n"
+        "- Prefer starting with 'Learn how...' when it reads naturally.\n"
         "- Prefer concrete education verbs such as covers, explains, introduces, shows, connects, examines, or explores.\n"
         "- Do not describe the outcome, promise a result, or say what the programme will improve, build, strengthen, support, enable, or help the user achieve.\n"
         "- Do not write an action instruction, progress update, score comment, target, tracking message, or motivational claim.\n"
-        "- Do not start with Today, In this lesson, Learn, Explore, or Discover.\n"
+        "- Do not start with This programme, The programme, Today, In this lesson, Explore, or Discover.\n"
         "- Do not use the words lesson or day.\n"
         "- Use UK English, calm coaching language, and avoid diagnosis or medical claims.\n\n"
         "CONTEXT_JSON:\n"
