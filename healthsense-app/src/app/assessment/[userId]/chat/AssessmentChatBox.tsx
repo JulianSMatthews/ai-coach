@@ -1762,7 +1762,9 @@ export default function AssessmentChatBox({
       );
       const lessonDescription = normalizeLessonText(String(lesson?.goal || lesson?.summary || "").trim());
       const lessonConcept = String(lesson?.concept_label || lesson?.concept_key || "").trim();
-      const posterUrl = String(lesson?.content?.poster_url || lesson?.content?.avatar?.poster_url || "").trim();
+      const lessonConceptKey = String(lesson?.concept_key || "").trim().toLowerCase();
+      const lessonPillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
+      const palette = getPillarPalette(lessonPillarKey);
       const lessonCompleted = isEducationLessonCompleted(lesson);
       const lessonIsNext = Boolean(options?.isStartable) && !lessonCompleted;
       return (
@@ -1770,20 +1772,33 @@ export default function AssessmentChatBox({
           key={`lesson-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
           type="button"
           onClick={() => openEducationLesson(lesson, { closeExplorer: false })}
-          className="relative flex w-[min(92vw,24rem)] shrink-0 overflow-hidden rounded-[30px] text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem] sm:max-w-[25rem]"
+          className="relative flex w-full min-w-full shrink-0 overflow-hidden rounded-[30px] border text-left shadow-[0_18px_50px_-44px_rgba(30,27,22,0.5)] transition sm:w-[25rem] sm:min-w-[25rem] sm:max-w-[25rem]"
           style={{
-            backgroundColor: lessonCompleted ? "var(--chrome)" : "#d6ab81",
-            color: lessonCompleted ? "var(--text-primary)" : "#18110d",
+            backgroundColor: "var(--surface)",
+            borderColor: "var(--border)",
+            color: "var(--text-primary)",
             minHeight: "30rem",
           }}
         >
+          <span
+            className="absolute right-5 top-5 z-10 flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full border-[8px] text-[#17120f]"
+            style={{
+              backgroundColor: palette.accent,
+              borderColor: "var(--ring-track)",
+            }}
+            aria-hidden="true"
+          >
+            <ConceptEducationIcon conceptKey={lessonConceptKey} pillarKey={lessonPillarKey} className="h-10 w-10" />
+          </span>
           <span className="relative z-10 flex min-h-full w-full flex-col justify-between p-5 sm:p-6">
             <span>
-              <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-current opacity-75">
-                {lessonConcept || String(lesson?.pillar_label || "").trim() || "Lesson"}
-              </span>
-              <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-current sm:max-w-[11ch] sm:text-[3rem]">
-                {lessonTitle || "Untitled lesson"}
+              <span className="block pr-24">
+                <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-current opacity-75">
+                  {lessonConcept || String(lesson?.pillar_label || "").trim() || "Lesson"}
+                </span>
+                <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-current sm:max-w-[11ch] sm:text-[3rem]">
+                  {lessonTitle || "Untitled lesson"}
+                </span>
               </span>
               {lessonDescription ? (
                 <span className="mt-5 block max-w-[18.5rem] text-[1.18rem] leading-8 text-current opacity-80">
@@ -1793,7 +1808,7 @@ export default function AssessmentChatBox({
             </span>
             <span className="relative z-10 flex items-end gap-3">
               {lessonIsNext ? (
-                <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
+                <span className="rounded-full bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
                   Start lesson
                 </span>
               ) : lessonCompleted ? (
@@ -1805,13 +1820,6 @@ export default function AssessmentChatBox({
               )}
             </span>
           </span>
-          {posterUrl ? (
-            <img
-              src={posterUrl}
-              alt=""
-              className="pointer-events-none absolute bottom-0 left-0 h-[66%] w-[72%] object-contain object-left-bottom"
-            />
-          ) : null}
         </button>
       );
     },
