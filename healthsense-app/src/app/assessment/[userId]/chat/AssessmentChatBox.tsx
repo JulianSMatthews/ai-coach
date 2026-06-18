@@ -1847,14 +1847,16 @@ export default function AssessmentChatBox({
           }}
         >
           <span
-            className="absolute right-5 top-5 z-10 flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full border-[8px] text-[#17120f]"
-            style={{
-              backgroundColor: palette.accent,
-              borderColor: lessonCompleted ? palette.accent : "var(--ring-track)",
-            }}
-            aria-hidden="true"
+            className="absolute right-5 top-5 z-10"
+            aria-label={lessonCompleted ? "Lesson completed" : "Lesson not completed"}
           >
-            <ConceptEducationIcon conceptKey={lessonConceptKey} pillarKey={lessonPillarKey} className="h-10 w-10" />
+            <EducationProgrammeProgressIcon
+              conceptKey={lessonConceptKey}
+              pillarKey={lessonPillarKey}
+              tone={palette.accent}
+              completed={lessonCompleted ? 1 : 0}
+              total={1}
+            />
           </span>
           <span className="relative z-10 flex min-h-full w-full flex-col justify-between p-5 sm:p-6">
             <span>
