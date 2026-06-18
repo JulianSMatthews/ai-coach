@@ -382,6 +382,7 @@ export type PillarTrackerSummaryResponse = {
   today_complete?: boolean;
   today_completed_pillars_count?: number | null;
   total_pillars?: number | null;
+  overall_score?: number | null;
   pillars?: PillarTrackerPillar[];
 };
 

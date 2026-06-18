@@ -2123,6 +2123,12 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
         )
     total_pillars = len(pillars)
     today_completed_pillars_count = sum(1 for pillar in pillars if pillar.get("today_complete") is True)
+    pillar_scores = [
+        int(round(float(pillar.get("score"))))
+        for pillar in pillars
+        if pillar.get("score") is not None
+    ]
+    overall_score = int(round(sum(pillar_scores) / max(1, len(pillar_scores)))) if pillar_scores else None
     return {
         "app_setup_completed": _app_setup_completed_for_user(int(user_id)),
         "week": {
@@ -2134,6 +2140,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
         "today_complete": bool(total_pillars and today_completed_pillars_count >= total_pillars),
         "today_completed_pillars_count": today_completed_pillars_count,
         "total_pillars": total_pillars,
+        "overall_score": overall_score,
         "pillars": pillars,
     }
 

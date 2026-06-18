@@ -23,6 +23,7 @@ import {
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
 import { Capacitor } from "@capacitor/core";
+import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -2234,6 +2235,7 @@ export default function LatestAssessmentPanel({
     }
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
     setSummary(payload);
+    dispatchPillarTrackerOverallScore(payload);
     return payload;
   }, [userId]);
 

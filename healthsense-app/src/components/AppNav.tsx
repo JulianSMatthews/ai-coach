@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import LogoutButton from "@/components/LogoutButton";
 import { Badge } from "@/components/ui";
+import { PILLAR_TRACKER_OVERALL_SCORE_EVENT } from "@/lib/pillarTrackerSummary";
 
 type AppNavProps = {
   userId?: string;
@@ -79,8 +80,9 @@ export default function AppNav({
   userFirstName = "",
 }: AppNavProps) {
   const [open, setOpen] = useState(false);
+  const [liveOverallScore, setLiveOverallScore] = useState<number | null>(overallScore);
   const resolvedUserId = String(userId || "").trim();
-  const resolvedOverallScore = Number.isFinite(Number(overallScore)) ? Math.max(0, Math.min(100, Math.round(Number(overallScore)))) : null;
+  const resolvedOverallScore = Number.isFinite(Number(liveOverallScore)) ? Math.max(0, Math.min(100, Math.round(Number(liveOverallScore)))) : null;
   const resolvedInteractionDaysCount = Number.isFinite(Number(interactionDaysCount))
     ? Math.max(0, Math.round(Number(interactionDaysCount)))
     : null;
@@ -106,6 +108,23 @@ export default function AppNav({
       document.body.style.overflow = previous;
     };
   }, [open]);
+
+  useEffect(() => {
+    setLiveOverallScore(Number.isFinite(Number(overallScore)) ? Number(overallScore) : null);
+  }, [overallScore]);
+
+  useEffect(() => {
+    const onOverallScoreUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ overallScore?: number | null }>).detail;
+      const nextScore = Number(detail?.overallScore);
+      if (!Number.isFinite(nextScore)) return;
+      setLiveOverallScore(Math.max(0, Math.min(100, Math.round(nextScore))));
+    };
+    window.addEventListener(PILLAR_TRACKER_OVERALL_SCORE_EVENT, onOverallScoreUpdated as EventListener);
+    return () => {
+      window.removeEventListener(PILLAR_TRACKER_OVERALL_SCORE_EVENT, onOverallScoreUpdated as EventListener);
+    };
+  }, []);
 
   return (
     <>

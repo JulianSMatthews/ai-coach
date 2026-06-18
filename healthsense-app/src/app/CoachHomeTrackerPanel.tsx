@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PillarTrackerSummaryResponse } from "@/lib/api";
+import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
 import LatestAssessmentPanel from "./assessment/[userId]/chat/LatestAssessmentPanel";
 
 type CoachHomeTrackerPanelProps = {
@@ -19,6 +20,10 @@ export default function CoachHomeTrackerPanel({
 }: CoachHomeTrackerPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse | null>(initialSummary);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    dispatchPillarTrackerOverallScore(summary);
+  }, [summary]);
 
   useEffect(() => {
     if (summary) return;
