@@ -1828,17 +1828,7 @@ export default function AssessmentChatBox({
       const conceptKey = String(programme?.concept_key || "").trim().toLowerCase();
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
       const programmeSummary = String(programme?.summary || "").trim();
-      const darkStatusTag = status === "current" || status === "up_next" || status === "not_started";
-      const statusLabel =
-        status === "current"
-          ? "Current"
-          : status === "up_next"
-            ? "Up next"
-            : status === "completed"
-              ? "Completed"
-              : status === "in_progress"
-                ? "In progress"
-                : "Not started";
+      const showStartLessonsButton = canOpen && status === "current";
       return (
         <button
           key={`programme-${String(programme?.programme_id || index)}`}
@@ -1868,16 +1858,6 @@ export default function AssessmentChatBox({
                   Unit {unitNumber}: {conceptLabel}
                 </span>
               </span>
-              <span
-                className="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold"
-                style={{
-                  backgroundColor: darkStatusTag ? "var(--action-primary-bg)" : "var(--surface-muted)",
-                  borderColor: darkStatusTag ? "var(--action-primary-border)" : "var(--border)",
-                  color: darkStatusTag ? "var(--action-primary-text)" : "var(--text-primary)",
-                }}
-              >
-                {statusLabel}
-              </span>
             </span>
             {programmeSummary ? (
               <span className="mt-5 block text-[1.31rem] leading-[2.15rem] opacity-75">
@@ -1886,9 +1866,9 @@ export default function AssessmentChatBox({
             ) : null}
           </span>
           <span className="mt-6 flex items-end justify-between gap-4">
-            {canOpen ? (
+            {showStartLessonsButton ? (
               <span className="shrink-0 rounded-full bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
-                Open lessons
+                Start lessons
               </span>
             ) : (
               <span />
