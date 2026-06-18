@@ -342,14 +342,6 @@ DEMO_USERS = [
         "admin_role": ADMIN_ROLE_GLOBAL,
         "club_slug": "healthsense",
     },
-    {
-        "first_name": "Rhys",
-        "surname": "Williams",
-        "phone": "+447860362908",
-        "is_superuser": True,
-        "admin_role": ADMIN_ROLE_CLUB,
-        "club_slug": "healthsense",
-    },
 ]
 
 # Touchpoint type definitions for user-facing explanations
