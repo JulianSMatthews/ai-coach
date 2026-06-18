@@ -1850,7 +1850,7 @@ export default function AssessmentChatBox({
             className="absolute right-5 top-5 z-10 flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full border-[8px] text-[#17120f]"
             style={{
               backgroundColor: palette.accent,
-              borderColor: "var(--ring-track)",
+              borderColor: lessonCompleted ? palette.accent : "var(--ring-track)",
             }}
             aria-hidden="true"
           >
