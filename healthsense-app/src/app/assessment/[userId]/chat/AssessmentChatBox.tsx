@@ -1848,9 +1848,19 @@ export default function AssessmentChatBox({
             color: "var(--text-primary)",
           }}
         >
+          <span
+            className="absolute right-5 top-5 flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full border-[8px] text-[#17120f]"
+            style={{
+              backgroundColor: palette.accent,
+              borderColor: "var(--ring-track)",
+            }}
+            aria-hidden="true"
+          >
+            <ConceptEducationIcon conceptKey={conceptKey} pillarKey={pillarKey} className="h-10 w-10" />
+          </span>
           <span>
             <span className="flex items-start justify-between gap-4">
-              <span className="min-w-0">
+              <span className="min-w-0 pr-24">
                 <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
                   {String(programme?.pillar_label || palette.label || "Programme").trim()}
                 </span>
@@ -1873,15 +1883,6 @@ export default function AssessmentChatBox({
             ) : (
               <span />
             )}
-            <span
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border text-[#17120f]"
-              style={{
-                backgroundColor: palette.accent,
-                borderColor: "rgba(23,18,15,0.16)",
-              }}
-            >
-              <ConceptEducationIcon conceptKey={conceptKey} pillarKey={pillarKey} />
-            </span>
           </span>
         </button>
       );
