@@ -171,7 +171,8 @@ _EDUCATION_SCHEMA_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_status ON user_education_plans(user_id, status);",
     "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_entry_concept ON user_education_plans(user_id, entry_concept_key);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_concept_levels_user_concept ON user_education_concept_levels(user_id, pillar_key, concept_key);",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_day_progress_plan_date ON user_education_day_progress(user_plan_id, lesson_date);",
+    "CREATE INDEX IF NOT EXISTS ix_user_education_day_progress_plan_day ON user_education_day_progress(user_plan_id, programme_day_id);",
+    "CREATE INDEX IF NOT EXISTS ix_user_education_day_progress_plan_date ON user_education_day_progress(user_plan_id, lesson_date);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_quiz_answers_progress_question ON user_education_quiz_answers(user_day_progress_id, question_id);",
 )
 
@@ -207,6 +208,22 @@ def _ensure_education_columns() -> None:
             conn.execute(text("ALTER TABLE education_programmes ALTER COLUMN is_active SET DEFAULT true;"))
 
 
+def _ensure_education_progress_indexes() -> None:
+    inspector = inspect(engine)
+    if not inspector.has_table("user_education_day_progress"):
+        return
+    with engine.begin() as conn:
+        dialect = str(getattr(conn.dialect, "name", "") or "").strip().lower()
+        if dialect == "postgresql":
+            conn.execute(
+                text(
+                    "ALTER TABLE IF EXISTS user_education_day_progress "
+                    "DROP CONSTRAINT IF EXISTS uq_user_education_day_progress_plan_date;"
+                )
+            )
+            conn.execute(text("DROP INDEX IF EXISTS uq_user_education_day_progress_plan_date;"))
+
+
 def _apply_education_data_migrations() -> None:
     migration_key = "2026_05_20_education_programmes_inactive_by_default"
     with engine.begin() as conn:
@@ -239,6 +256,7 @@ def ensure_education_plan_schema() -> None:
         for table in _EDUCATION_SCHEMA_TABLES:
             table.create(bind=engine, checkfirst=True)
         _ensure_education_columns()
+        _ensure_education_progress_indexes()
         _apply_education_data_migrations()
         with engine.begin() as conn:
             for sql in _EDUCATION_SCHEMA_INDEX_SQL:
@@ -2713,6 +2731,7 @@ def _education_plan_lesson_payload(
     quiz = _quiz_row(session, int(getattr(lesson_variant, "id", 0) or 0) or None)
     quiz_questions = _question_rows(session, int(getattr(quiz, "id", 0) or 0) or None)
     completed_at = getattr(progress, "completed_at", None) if progress is not None else None
+    quiz_answers_by_question = _quiz_answers_by_question(session, progress)
     return {
         "programme_day_id": int(programme_day.id),
         "day_index": int(getattr(programme_day, "day_index", 0) or 0) or None,
@@ -2751,6 +2770,17 @@ def _education_plan_lesson_payload(
         "takeaway": takeaway,
         "takeaway_variant": takeaway_variant,
         "quiz_question_count": len(quiz_questions),
+        "quiz": {
+            "id": int(getattr(quiz, "id", 0) or 0) or None,
+            "pass_score_pct": _safe_float(getattr(quiz, "pass_score_pct", None)),
+            "questions": [
+                _quiz_question_payload(
+                    item,
+                    quiz_answers_by_question.get(int(getattr(item, "id", 0) or 0)),
+                )
+                for item in quiz_questions
+            ],
+        },
         "content": content_payload,
     }
 
@@ -2833,6 +2863,11 @@ def _education_journey_payload(
     user_id: int,
     active_plan: UserEducationPlan,
     active_programme: EducationProgramme,
+    anchor: date,
+    context: dict[str, Any],
+    assessment: dict[str, Any],
+    progress_by_day_id: dict[int, UserEducationDayProgress],
+    concept_level_by_key: dict[tuple[str, str], UserEducationConceptLevel],
 ) -> dict[str, Any]:
     programmes = _released_concept_programmes_for_checkin_journey(session, int(user_id))
     if not programmes:
@@ -2887,8 +2922,9 @@ def _education_journey_payload(
     active_programme_id = int(getattr(active_programme, "id", 0) or 0)
     programme_ids = [int(getattr(programme, "id", 0) or 0) for programme in programmes if getattr(programme, "id", None)]
     first_day_by_programme: dict[int, EducationProgrammeDay] = {}
+    days_by_programme: dict[int, list[EducationProgrammeDay]] = {}
     if programme_ids:
-        first_days = (
+        programme_days = (
             session.execute(
                 select(EducationProgrammeDay)
                 .where(EducationProgrammeDay.programme_id.in_(programme_ids))
@@ -2901,8 +2937,10 @@ def _education_journey_payload(
             .scalars()
             .all()
         )
-        for day in first_days:
+        for day in programme_days:
             programme_id = int(getattr(day, "programme_id", 0) or 0)
+            if programme_id:
+                days_by_programme.setdefault(programme_id, []).append(day)
             if programme_id and programme_id not in first_day_by_programme:
                 first_day_by_programme[programme_id] = day
     first_day_ids = [int(getattr(day, "id", 0) or 0) for day in first_day_by_programme.values() if getattr(day, "id", None)]
@@ -2941,6 +2979,22 @@ def _education_journey_payload(
         concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
         pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower()
         lesson_count = _programme_duration_days(session, programme)
+        programme_days = days_by_programme.get(programme_id, [])
+        programme_plan = (plans_by_programme.get(programme_id) or [active_plan])[-1]
+        lessons = [
+            _education_plan_lesson_payload(
+                session,
+                plan=programme_plan,
+                programme=programme,
+                programme_day=day,
+                anchor=anchor,
+                context=context,
+                assessment=assessment,
+                progress_by_day_id=progress_by_day_id,
+                concept_level_by_key=concept_level_by_key,
+            )
+            for day in programme_days
+        ]
         completed_day_indexes = completed_day_indexes_by_programme.get(programme_id, set())
         completed_lesson_count = min(len(completed_day_indexes), lesson_count)
         programme_completed = programme_id in completed_programme_ids or (
@@ -2988,11 +3042,12 @@ def _education_journey_payload(
                 "lesson_count": lesson_count,
                 "completed_lesson_count": completed_lesson_count,
                 "current_lesson_index": current_lesson_index,
+                "lessons": lessons,
                 "status": status,
                 "status_label": status.replace("_", " ").title(),
                 "is_current": is_current,
                 "is_completed": programme_completed,
-                "can_open": is_current,
+                "can_open": bool(lesson_count > 0),
                 "plan_count": len(plans_by_programme.get(programme_id, [])),
             }
         )
@@ -3557,7 +3612,7 @@ def _get_or_create_active_plan(
         plan=existing,
         lesson_date=plan_date,
     )
-    if locked_day_index is not None and locked_day_index <= next_incomplete_day_index:
+    if locked_day_index is not None and locked_day_index == next_incomplete_day_index:
         existing.current_day_index = locked_day_index
     else:
         existing.current_day_index = next_incomplete_day_index
@@ -3580,6 +3635,68 @@ def _get_or_create_active_plan(
     return existing, programme
 
 
+def _get_or_create_programme_plan(
+    session,
+    *,
+    user_id: int,
+    programme: EducationProgramme,
+    plan_date: date,
+    context: dict[str, Any],
+    context_hash: str,
+    assessment: dict[str, Any],
+) -> UserEducationPlan:
+    programme_id = int(getattr(programme, "id", 0) or 0)
+    existing = (
+        session.execute(
+            select(UserEducationPlan)
+            .where(
+                UserEducationPlan.user_id == int(user_id),
+                UserEducationPlan.programme_id == programme_id,
+            )
+            .order_by(desc(UserEducationPlan.updated_at), desc(UserEducationPlan.id))
+        )
+        .scalars()
+        .first()
+    )
+    concept_key = _normalize_concept_key(getattr(programme, "concept_key", None))
+    concept_label = str(getattr(programme, "concept_label", "") or "").strip() or (
+        concept_key.replace("_", " ").title() if concept_key else None
+    )
+    pillar_key = str(getattr(programme, "pillar_key", "") or "").strip().lower() or "nutrition"
+    if existing is None:
+        run = assessment.get("run") if isinstance(assessment, dict) else None
+        existing = UserEducationPlan(
+            user_id=int(user_id),
+            programme_id=programme_id,
+            pillar_key=pillar_key,
+            entry_concept_key=concept_key,
+            entry_concept_label=concept_label,
+            route_version="concept_programme_v1",
+            starts_on=plan_date,
+            current_day_index=1,
+            status="selected",
+            source_assessment_run_id=int(getattr(run, "id", 0) or 0) or None,
+            initial_context_json={
+                "created_from": "education_programme_selection",
+                "entry_concept_key": concept_key,
+                "entry_concept_label": concept_label,
+            },
+            last_context_hash=context_hash or None,
+            last_refreshed_at=_now_utc(),
+        )
+    existing.pillar_key = pillar_key
+    existing.entry_concept_key = _normalize_concept_key(getattr(existing, "entry_concept_key", None)) or concept_key
+    existing.entry_concept_label = str(getattr(existing, "entry_concept_label", "") or "").strip() or concept_label
+    existing.route_version = str(getattr(existing, "route_version", "") or "").strip() or "concept_programme_v1"
+    if str(getattr(existing, "status", "") or "").strip().lower() in {"", "paused"}:
+        existing.status = "selected"
+    existing.last_context_hash = context_hash or None
+    existing.last_refreshed_at = _now_utc()
+    session.add(existing)
+    session.flush()
+    return existing
+
+
 def _get_or_create_day_progress(
     session,
     *,
@@ -3593,7 +3710,7 @@ def _get_or_create_day_progress(
             select(UserEducationDayProgress)
             .where(
                 UserEducationDayProgress.user_plan_id == int(plan.id),
-                UserEducationDayProgress.lesson_date == lesson_date,
+                UserEducationDayProgress.programme_day_id == int(programme_day.id),
             )
             .order_by(desc(UserEducationDayProgress.updated_at), desc(UserEducationDayProgress.id))
         )
@@ -3610,6 +3727,14 @@ def _get_or_create_day_progress(
         )
     row.programme_day_id = int(programme_day.id)
     row.lesson_variant_id = int(getattr(lesson_variant, "id", 0) or 0) or None
+    if not (
+        getattr(row, "completed_at", None)
+        or getattr(row, "quiz_completed_at", None)
+        or getattr(row, "video_completed_at", None)
+        or getattr(row, "watch_pct", None)
+        or getattr(row, "watched_seconds", None)
+    ):
+        row.lesson_date = lesson_date
     session.add(row)
     session.flush()
     return row
@@ -3714,6 +3839,28 @@ def _quiz_row(session, lesson_variant_id: int | None) -> EducationQuiz | None:
         .scalars()
         .first()
     )
+
+
+def _quiz_answers_by_question(
+    session,
+    progress: UserEducationDayProgress | None,
+) -> dict[int, UserEducationQuizAnswer]:
+    if progress is None or not getattr(progress, "id", None):
+        return {}
+    rows = (
+        session.execute(
+            select(UserEducationQuizAnswer)
+            .where(UserEducationQuizAnswer.user_day_progress_id == int(progress.id))
+            .order_by(UserEducationQuizAnswer.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        int(getattr(item, "question_id", 0) or 0): item
+        for item in rows
+        if int(getattr(item, "question_id", 0) or 0)
+    }
 
 
 def _previous_lesson_payload(
@@ -3877,14 +4024,25 @@ def _lesson_state(
             for item in quiz_answers
             if int(getattr(item, "question_id", 0) or 0)
         }
+    user_plan_ids = [
+        int(row or 0)
+        for row in session.execute(
+            select(UserEducationPlan.id).where(UserEducationPlan.user_id == int(user_id))
+        ).scalars().all()
+        if int(row or 0)
+    ]
+    if int(getattr(plan, "id", 0) or 0) and int(plan.id) not in user_plan_ids:
+        user_plan_ids.append(int(plan.id))
     progress_rows = (
         session.execute(
             select(UserEducationDayProgress)
-            .where(UserEducationDayProgress.user_plan_id == int(plan.id))
+            .where(UserEducationDayProgress.user_plan_id.in_(user_plan_ids))
             .order_by(desc(UserEducationDayProgress.updated_at), desc(UserEducationDayProgress.id))
         )
         .scalars()
         .all()
+        if user_plan_ids
+        else []
     )
     progress_by_day_id: dict[int, UserEducationDayProgress] = {}
     for progress_row in progress_rows:
@@ -3969,6 +4127,11 @@ def _lesson_state(
             user_id=int(user_id),
             active_plan=plan,
             active_programme=programme,
+            anchor=anchor,
+            context=context,
+            assessment=assessment,
+            progress_by_day_id=progress_by_day_id,
+            concept_level_by_key=concept_level_by_key,
         ),
         "lesson": {
             "programme_day_id": int(programme_day.id),
@@ -4170,15 +4333,177 @@ def record_education_video_progress(
         return state
 
 
+def _apply_education_quiz_submission(
+    session,
+    *,
+    progress: UserEducationDayProgress,
+    lesson_variant: EducationLessonVariant | None,
+    answers: list[dict[str, Any]] | None,
+) -> bool:
+    lesson_variant_id = int(getattr(lesson_variant, "id", 0) or 0) if lesson_variant is not None else 0
+    quiz = _quiz_row(session, lesson_variant_id)
+    if progress is None or quiz is None or not getattr(quiz, "id", None):
+        return False
+    question_rows = _question_rows(session, int(quiz.id))
+    answers_by_question: dict[int, Any] = {}
+    for row in answers or []:
+        if not isinstance(row, dict):
+            continue
+        qid = _safe_int(row.get("question_id"))
+        if not qid:
+            continue
+        answers_by_question[int(qid)] = row.get("answer")
+    correct_count = 0
+    total = len(question_rows)
+    session.execute(
+        delete(UserEducationQuizAnswer).where(UserEducationQuizAnswer.user_day_progress_id == int(progress.id))
+    )
+    for question in question_rows:
+        submitted = _normalize_answer_payload(answers_by_question.get(int(question.id)))
+        expected = getattr(question, "correct_answer_json", None)
+        is_correct = _answers_equal(expected, submitted) if expected is not None else None
+        if is_correct:
+            correct_count += 1
+        session.add(
+            UserEducationQuizAnswer(
+                user_day_progress_id=int(progress.id),
+                question_id=int(question.id),
+                answer_json=submitted,
+                is_correct=is_correct,
+            )
+        )
+    score_pct = round((correct_count / total) * 100.0, 2) if total > 0 else None
+    progress.quiz_score_pct = score_pct
+    progress.quiz_completed_at = _now_utc()
+    takeaway_text, takeaway_variant = _select_takeaway(lesson_variant, score_pct)
+    progress.takeaway_text_shown = takeaway_text
+    progress.takeaway_variant = takeaway_variant
+    _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz))
+    session.add(progress)
+    return True
+
+
 def submit_education_quiz(
     user_id: int,
     *,
     answers: list[dict[str, Any]] | None,
     anchor: date | None = None,
+    programme_day_id: int | None = None,
+    lesson_variant_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
+        selected_programme_day_id = _safe_int(programme_day_id)
+        if selected_programme_day_id:
+            snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
+            context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+            context_hash = str(snapshot.get("context_hash") or "").strip()
+            assessment = _assessment_snapshot(session, int(user_id))
+            programme_day = session.get(EducationProgrammeDay, int(selected_programme_day_id))
+            programme = (
+                session.get(EducationProgramme, int(getattr(programme_day, "programme_id", 0) or 0))
+                if programme_day is not None
+                else None
+            )
+            if programme_day is None or not _programme_is_available_in_app(programme):
+                state = _lesson_state(
+                    session,
+                    user_id=int(user_id),
+                    anchor=resolved_anchor,
+                    refresh_avatar_media=False,
+                )
+                session.commit()
+                return state
+            plan = _get_or_create_programme_plan(
+                session,
+                user_id=int(user_id),
+                programme=programme,
+                plan_date=resolved_anchor,
+                context=context,
+                context_hash=context_hash,
+                assessment=assessment,
+            )
+            pillar_key = str(getattr(programme, "pillar_key", "") or getattr(plan, "pillar_key", "") or "").strip().lower()
+            concept_key = str(getattr(programme_day, "concept_key", "") or "").strip().lower()
+            tracker_pillar = _find_tracker_pillar(context, pillar_key) or {}
+            tracker_concept = _find_tracker_concept(context, pillar_key, concept_key) or {}
+            concept_score = _assessment_concept_score(assessment, pillar_key, concept_key)
+            pillar_score = _assessment_pillar_score(assessment, pillar_key)
+            concept_level = _get_or_create_concept_level(
+                session,
+                user_id=int(user_id),
+                pillar_key=pillar_key,
+                concept_key=concept_key,
+                assessment_score=concept_score if concept_score is not None else pillar_score,
+                tracker_state={
+                    "pillar_state": tracker_pillar.get("state"),
+                    "signal": tracker_concept.get("signal"),
+                    "latest_value": tracker_concept.get("latest_value"),
+                    "target_label": tracker_concept.get("target_label"),
+                    "active_label": tracker_pillar.get("active_label"),
+                },
+            )
+            current_level = str(getattr(concept_level, "current_level", "") or "build").strip() or "build"
+            selected_variant_id = _safe_int(lesson_variant_id)
+            lesson_variant = session.get(EducationLessonVariant, int(selected_variant_id)) if selected_variant_id else None
+            if (
+                lesson_variant is None
+                or int(getattr(lesson_variant, "programme_day_id", 0) or 0) != int(programme_day.id)
+            ):
+                lesson_variant = _resolve_lesson_variant(session, int(programme_day.id), current_level)
+            progress = _get_or_create_day_progress(
+                session,
+                plan=plan,
+                programme_day=programme_day,
+                lesson_variant=lesson_variant,
+                lesson_date=resolved_anchor,
+            )
+            applied = _apply_education_quiz_submission(
+                session,
+                progress=progress,
+                lesson_variant=lesson_variant,
+                answers=answers,
+            )
+            if not applied:
+                state = _lesson_state(
+                    session,
+                    user_id=int(user_id),
+                    anchor=resolved_anchor,
+                    refresh_avatar_media=False,
+                )
+                session.commit()
+                return state
+            if _plan_last_programme_day_completed(session, plan=plan, programme=programme):
+                plan.current_day_index = _programme_duration_days(session, programme)
+                plan.status = "completed"
+            else:
+                plan.current_day_index = _next_incomplete_programme_day_index(session, plan=plan, programme=programme)
+            _sync_plan_streaks(session, plan)
+            session.add(plan)
+            _clear_education_explore_catalog_cache(session, int(user_id))
+            session.flush()
+            submitted_lesson = _education_plan_lesson_payload(
+                session,
+                plan=plan,
+                programme=programme,
+                programme_day=programme_day,
+                anchor=resolved_anchor,
+                context=context,
+                assessment=assessment,
+                progress_by_day_id={int(programme_day.id): progress},
+                concept_level_by_key={(pillar_key, concept_key): concept_level},
+            )
+            state = _lesson_state(
+                session,
+                user_id=int(user_id),
+                anchor=resolved_anchor,
+                refresh_avatar_media=False,
+            )
+            state["submitted_lesson"] = submitted_lesson
+            session.commit()
+            return state
+
         state = _lesson_state(
             session,
             user_id=int(user_id),
@@ -4190,52 +4515,30 @@ def submit_education_quiz(
             return state
         progress_id = int(((state.get("progress") or {}).get("id") or 0) or 0)
         lesson_variant_id = int((((state.get("lesson") or {}).get("lesson_variant_id")) or 0) or 0)
-        quiz_id = int((((state.get("quiz") or {}).get("id")) or 0) or 0)
         progress = session.get(UserEducationDayProgress, progress_id)
         lesson_variant = session.get(EducationLessonVariant, lesson_variant_id) if lesson_variant_id else None
-        if progress is None or not quiz_id:
+        if progress is None:
             session.commit()
             return state
-        question_rows = _question_rows(session, quiz_id)
-        answers_by_question: dict[int, Any] = {}
-        for row in answers or []:
-            if not isinstance(row, dict):
-                continue
-            qid = _safe_int(row.get("question_id"))
-            if not qid:
-                continue
-            answers_by_question[int(qid)] = row.get("answer")
-        correct_count = 0
-        total = len(question_rows)
-        session.execute(
-            delete(UserEducationQuizAnswer).where(UserEducationQuizAnswer.user_day_progress_id == int(progress.id))
+        applied = _apply_education_quiz_submission(
+            session,
+            progress=progress,
+            lesson_variant=lesson_variant,
+            answers=answers,
         )
-        for question in question_rows:
-            submitted = _normalize_answer_payload(answers_by_question.get(int(question.id)))
-            expected = getattr(question, "correct_answer_json", None)
-            is_correct = _answers_equal(expected, submitted) if expected is not None else None
-            if is_correct:
-                correct_count += 1
-            session.add(
-                UserEducationQuizAnswer(
-                    user_day_progress_id=int(progress.id),
-                    question_id=int(question.id),
-                    answer_json=submitted,
-                    is_correct=is_correct,
-                )
-            )
-        score_pct = round((correct_count / total) * 100.0, 2) if total > 0 else None
-        progress.quiz_score_pct = score_pct
-        progress.quiz_completed_at = _now_utc()
-        takeaway_text, takeaway_variant = _select_takeaway(lesson_variant, score_pct)
-        progress.takeaway_text_shown = takeaway_text
-        progress.takeaway_variant = takeaway_variant
-        quiz = _quiz_row(session, lesson_variant_id)
-        _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz))
-        session.add(progress)
+        if not applied:
+            session.commit()
+            return state
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
+            programme = session.get(EducationProgramme, int(getattr(plan, "programme_id", 0) or 0))
+            if programme is not None and _plan_last_programme_day_completed(session, plan=plan, programme=programme):
+                plan.current_day_index = _programme_duration_days(session, programme)
+                plan.status = "completed"
+            elif programme is not None:
+                plan.current_day_index = _next_incomplete_programme_day_index(session, plan=plan, programme=programme)
             _sync_plan_streaks(session, plan)
+            session.add(plan)
         _clear_education_explore_catalog_cache(session, int(user_id))
         session.flush()
         state = _lesson_state(

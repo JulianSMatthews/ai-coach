@@ -103,6 +103,7 @@ type AssessmentCompletionSummaryMedia = {
 type HomeSurface = "blank" | "tracking" | "habits" | "insight" | "ask" | "streak";
 type HomeSurfaceEntryMode = "guided" | "summary";
 type EducationExplorerConcept = {
+  programme_id?: number | null;
   concept_key: string;
   concept_label: string;
   lesson_count: number;
@@ -665,6 +666,33 @@ function isEducationLessonCompleted(lesson: any): boolean {
 function firstIncompleteEducationLessonToken(lessons: any[]): string {
   const lesson = lessons.find((item) => !isEducationLessonCompleted(item));
   return String(lesson?.programme_day_id || lesson?.day_index || "").trim();
+}
+
+function findEducationLessonByProgrammeDayId(payload: any, programmeDayId: number): any | null {
+  if (!payload || !programmeDayId) return null;
+  if (Number(payload?.submitted_lesson?.programme_day_id || 0) === programmeDayId) {
+    return payload.submitted_lesson;
+  }
+  const lists: any[] = [];
+  if (Array.isArray(payload?.lessons)) lists.push(payload.lessons);
+  if (Array.isArray(payload?.journey?.programmes)) {
+    for (const programme of payload.journey.programmes) {
+      if (Array.isArray(programme?.lessons)) lists.push(programme.lessons);
+    }
+  }
+  if (Array.isArray(payload?.explore_catalog?.pillars)) {
+    for (const pillar of payload.explore_catalog.pillars) {
+      const concepts = Array.isArray(pillar?.concepts) ? pillar.concepts : [];
+      for (const concept of concepts) {
+        if (Array.isArray(concept?.lessons)) lists.push(concept.lessons);
+      }
+    }
+  }
+  for (const lessons of lists) {
+    const match = lessons.find((lesson: any) => Number(lesson?.programme_day_id || 0) === programmeDayId);
+    if (match) return match;
+  }
+  return null;
 }
 
 function mergeDailyPlanItems(
@@ -1310,6 +1338,7 @@ export default function AssessmentChatBox({
   const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
   const [educationQuizError, setEducationQuizError] = useState<string | null>(null);
   const [educationProgrammeOpen, setEducationProgrammeOpen] = useState(false);
+  const [selectedEducationProgrammeId, setSelectedEducationProgrammeId] = useState<number | null>(null);
   const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
   const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "concepts" | "lessons">("pillars");
@@ -1455,35 +1484,35 @@ export default function AssessmentChatBox({
       ? educationPlan.explore_catalog.pillars
       : [];
     if (catalogPillars.length) {
-      return catalogPillars
-        .map((pillar) => {
-          const pillarKey = String(pillar?.pillar_key || "").trim().toLowerCase();
-          if (!pillarKey) return null;
-          const concepts = (Array.isArray(pillar?.concepts) ? pillar.concepts : [])
-            .map((concept) => {
-              const conceptKey = String(concept?.concept_key || "").trim().toLowerCase();
-              if (!conceptKey) return null;
-              const lessons = Array.isArray(concept?.lessons) ? concept.lessons : [];
-              const lessonCount = Number(concept?.lesson_count ?? lessons.length);
-              return {
-                concept_key: conceptKey,
-                concept_label: String(concept?.concept_label || conceptKey.replace(/_/g, " ")).trim() || "Concept",
-                lesson_count: Number.isFinite(lessonCount) ? lessonCount : lessons.length,
-                lessons,
-              };
-            })
-            .filter((concept): concept is EducationExplorerConcept => Boolean(concept));
-          const lessonCount = Number(pillar?.lesson_count ?? concepts.reduce((total, concept) => {
-            return total + concept.lesson_count;
-          }, 0));
-          return {
-            pillar_key: pillarKey,
-            pillar_label: String(pillar?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
-            lesson_count: Number.isFinite(lessonCount) ? lessonCount : 0,
-            concepts,
-          };
-        })
-        .filter((pillar): pillar is EducationExplorerPillar => Boolean(pillar));
+      const pillars: EducationExplorerPillar[] = [];
+      for (const pillar of catalogPillars) {
+        const pillarKey = String(pillar?.pillar_key || "").trim().toLowerCase();
+        if (!pillarKey) continue;
+        const concepts: EducationExplorerConcept[] = [];
+        for (const concept of Array.isArray(pillar?.concepts) ? pillar.concepts : []) {
+          const conceptKey = String(concept?.concept_key || "").trim().toLowerCase();
+          if (!conceptKey) continue;
+          const lessons = Array.isArray(concept?.lessons) ? concept.lessons : [];
+          const lessonCount = Number(concept?.lesson_count ?? lessons.length);
+          concepts.push({
+            programme_id: Number(concept?.programme_id || 0) || null,
+            concept_key: conceptKey,
+            concept_label: String(concept?.concept_label || conceptKey.replace(/_/g, " ")).trim() || "Concept",
+            lesson_count: Number.isFinite(lessonCount) ? lessonCount : lessons.length,
+            lessons,
+          });
+        }
+        const lessonCount = Number(pillar?.lesson_count ?? concepts.reduce((total, concept) => {
+          return total + concept.lesson_count;
+        }, 0));
+        pillars.push({
+          pillar_key: pillarKey,
+          pillar_label: String(pillar?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
+          lesson_count: Number.isFinite(lessonCount) ? lessonCount : 0,
+          concepts,
+        });
+      }
+      return pillars;
     }
     return [];
   }, [educationPlan?.explore_catalog?.pillars]);
@@ -1497,6 +1526,7 @@ export default function AssessmentChatBox({
     if (catalogConcepts.length) {
       return catalogConcepts
         .map((concept) => ({
+          programme_id: concept.programme_id,
           concept_key: concept.concept_key,
           concept_label: concept.concept_label,
           lesson_count: concept.lesson_count,
@@ -1516,6 +1546,46 @@ export default function AssessmentChatBox({
     if (catalogLessons.length) return catalogLessons;
     return [];
   }, [activeEducationExplorerConceptKey, activeEducationExplorerPillarKey, educationExplorerConcepts]);
+  const selectedEducationProgramme = useMemo(() => {
+    const selectedId = Number(
+      selectedEducationProgrammeId ||
+        educationPlan?.journey?.current_programme_id ||
+        educationPlan?.programme_id ||
+        0,
+    );
+    if (selectedId) {
+      const match = educationJourneyProgrammes.find((programme) => Number(programme?.programme_id || 0) === selectedId);
+      if (match) return match;
+    }
+    return educationJourneyProgrammes[0] || null;
+  }, [
+    educationJourneyProgrammes,
+    educationPlan?.journey?.current_programme_id,
+    educationPlan?.programme_id,
+    selectedEducationProgrammeId,
+  ]);
+  const selectedEducationProgrammeLessons = useMemo(() => {
+    const selectedId = Number(selectedEducationProgramme?.programme_id || 0);
+    const cardLessons = Array.isArray(selectedEducationProgramme?.lessons)
+      ? selectedEducationProgramme.lessons.filter(Boolean)
+      : [];
+    if (cardLessons.length) return cardLessons;
+    if (selectedId && selectedId === Number(educationPlan?.programme_id || 0) && educationLessonRail.length) {
+      return educationLessonRail;
+    }
+    for (const pillar of educationExplorerPillars) {
+      for (const concept of pillar.concepts || []) {
+        const conceptLessons = Array.isArray(concept.lessons) ? concept.lessons : [];
+        if (conceptLessons.some((lesson: any) => Number(lesson?.programme_day_id || 0) > 0)) {
+          const conceptProgrammeId = Number(concept.programme_id || 0);
+          if (conceptProgrammeId && conceptProgrammeId === selectedId) {
+            return conceptLessons;
+          }
+        }
+      }
+    }
+    return [];
+  }, [educationExplorerPillars, educationLessonRail, educationPlan?.programme_id, selectedEducationProgramme]);
   const openEducationLesson = useCallback((lesson: any, options?: { closeExplorer?: boolean }) => {
     const lessonDayIndex = Number(lesson?.day_index || 0);
     const lessonTitle = lessonTitleWithIndex(
@@ -1560,13 +1630,21 @@ export default function AssessmentChatBox({
     setEducationQuizMessage(null);
     setEducationQuizError(null);
   }, []);
-  const openCurrentEducationProgramme = useCallback(() => {
+  const openEducationProgramme = useCallback((programme?: any) => {
+    const programmeId = Number(
+      programme?.programme_id ||
+        programme?.id ||
+        educationPlan?.journey?.current_programme_id ||
+        educationPlan?.programme_id ||
+        0,
+    );
+    setSelectedEducationProgrammeId(programmeId || null);
     setEducationProgrammeOpen(true);
     setEducationExplorerOpen(false);
     setEducationExplorerMode("pillars");
     setEducationExplorerPillarKey(null);
     setEducationExplorerConceptKey(null);
-  }, []);
+  }, [educationPlan?.journey?.current_programme_id, educationPlan?.programme_id]);
   const activeEducationLessonContent = activeEducationLesson?.content || null;
   const activeEducationLessonAvatar = activeEducationLessonContent?.avatar || null;
   const activeEducationLessonVideoUrl = firstNonEmptyString(
@@ -1620,18 +1698,32 @@ export default function AssessmentChatBox({
       const res = await fetch("/api/education-plan/quiz-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, answers }),
+        body: JSON.stringify({
+          userId,
+          programme_day_id: Number(activeEducationLesson?.programme_day_id || 0) || undefined,
+          lesson_variant_id: activeEducationLessonVariantId || undefined,
+          answers,
+        }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
         throw new Error(parseApiError(text, "Failed to submit quiz."));
       }
       const payload = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
-      setEducationPlan(payload);
+      setEducationPlan((current) => ({
+        ...(current || {}),
+        ...payload,
+        explore_catalog: payload.explore_catalog || current?.explore_catalog,
+      }));
       setEducationQuizMessage("Quiz submitted.");
-      const updatedLesson = Array.isArray(payload.lessons)
-        ? payload.lessons.find((lesson: any) => Number(lesson?.day_index || 0) === Number(activeEducationLesson?.day_index || 0))
-        : null;
+      const updatedLesson = findEducationLessonByProgrammeDayId(
+        payload,
+        Number(activeEducationLesson?.programme_day_id || 0),
+      ) || (
+        Array.isArray(payload.lessons)
+          ? payload.lessons.find((lesson: any) => Number(lesson?.day_index || 0) === Number(activeEducationLesson?.day_index || 0))
+          : null
+      );
       if (updatedLesson) {
         setActiveEducationLesson(updatedLesson);
       } else if (
@@ -1730,7 +1822,8 @@ export default function AssessmentChatBox({
       const pillarKey = String(programme?.pillar_key || "").trim().toLowerCase();
       const palette = getPillarPalette(pillarKey);
       const status = String(programme?.status || "").trim().toLowerCase();
-      const canOpen = Boolean(programme?.can_open);
+      const programmeLessons = Array.isArray(programme?.lessons) ? programme.lessons : [];
+      const canOpen = Boolean(programme?.can_open) || programmeLessons.length > 0;
       const unitNumber = Number(programme?.sequence_index || index + 1);
       const conceptKey = String(programme?.concept_key || "").trim().toLowerCase();
       const conceptLabel = String(programme?.concept_label || programme?.name || "Concept").trim();
@@ -1752,7 +1845,7 @@ export default function AssessmentChatBox({
           type="button"
           onClick={() => {
             if (canOpen) {
-              openCurrentEducationProgramme();
+              openEducationProgramme(programme);
             }
           }}
           aria-disabled={!canOpen}
@@ -1807,7 +1900,7 @@ export default function AssessmentChatBox({
         </button>
       );
     },
-    [openCurrentEducationProgramme],
+    [openEducationProgramme],
   );
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
@@ -3763,9 +3856,9 @@ export default function AssessmentChatBox({
                   <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
                     <div className="overflow-x-auto pb-2">
                       <div className="flex gap-3">
-                        {educationLessonRail.length ? (
-                          educationLessonRail.map((lesson, index) => {
-                            const startableToken = firstIncompleteEducationLessonToken(educationLessonRail);
+                        {selectedEducationProgrammeLessons.length ? (
+                          selectedEducationProgrammeLessons.map((lesson, index) => {
+                            const startableToken = firstIncompleteEducationLessonToken(selectedEducationProgrammeLessons);
                             const lessonToken = String(lesson?.programme_day_id || lesson?.day_index || "").trim();
                             return renderEducationLessonCard(lesson, {
                               featured: index === 0,

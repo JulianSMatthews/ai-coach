@@ -40,10 +40,10 @@ function normalizeReportUrl(value: unknown, base: string): string | null {
   return raw;
 }
 
-function normalizeEducationPlanMedia(data: Record<string, unknown>, base: string) {
-  const lesson = data.lesson && typeof data.lesson === "object" ? data.lesson as Record<string, unknown> : null;
-  const content = lesson?.content && typeof lesson.content === "object" ? lesson.content as Record<string, unknown> : null;
-  if (!content) return data;
+function normalizeLessonMedia(lesson: unknown, base: string) {
+  const lessonRecord = lesson && typeof lesson === "object" ? lesson as Record<string, unknown> : null;
+  const content = lessonRecord?.content && typeof lessonRecord.content === "object" ? lessonRecord.content as Record<string, unknown> : null;
+  if (!content) return;
   for (const key of ["video_url", "podcast_url", "poster_url"]) {
     content[key] = normalizeReportUrl(content[key], base);
   }
@@ -51,6 +51,31 @@ function normalizeEducationPlanMedia(data: Record<string, unknown>, base: string
   if (avatar) {
     for (const key of ["url", "video_url", "result_url", "resultUrl", "poster_url", "summary_url"]) {
       avatar[key] = normalizeReportUrl(avatar[key], base);
+    }
+  }
+}
+
+function normalizeEducationPlanMedia(data: Record<string, unknown>, base: string) {
+  normalizeLessonMedia(data.lesson, base);
+  normalizeLessonMedia(data.submitted_lesson, base);
+  for (const lesson of Array.isArray(data.lessons) ? data.lessons : []) {
+    normalizeLessonMedia(lesson, base);
+  }
+  const journey = data.journey && typeof data.journey === "object" ? data.journey as Record<string, unknown> : null;
+  for (const programme of Array.isArray(journey?.programmes) ? journey.programmes : []) {
+    const programmeRecord = programme && typeof programme === "object" ? programme as Record<string, unknown> : null;
+    for (const lesson of Array.isArray(programmeRecord?.lessons) ? programmeRecord.lessons : []) {
+      normalizeLessonMedia(lesson, base);
+    }
+  }
+  const catalog = data.explore_catalog && typeof data.explore_catalog === "object" ? data.explore_catalog as Record<string, unknown> : null;
+  for (const pillar of Array.isArray(catalog?.pillars) ? catalog.pillars : []) {
+    const pillarRecord = pillar && typeof pillar === "object" ? pillar as Record<string, unknown> : null;
+    for (const concept of Array.isArray(pillarRecord?.concepts) ? pillarRecord.concepts : []) {
+      const conceptRecord = concept && typeof concept === "object" ? concept as Record<string, unknown> : null;
+      for (const lesson of Array.isArray(conceptRecord?.lessons) ? conceptRecord.lessons : []) {
+        normalizeLessonMedia(lesson, base);
+      }
     }
   }
   return data;

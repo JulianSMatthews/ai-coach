@@ -597,6 +597,22 @@ export type EducationLessonContent = {
   created_at?: string | null;
 };
 
+export type EducationLessonQuiz = {
+  id?: number | null;
+  pass_score_pct?: number | null;
+  questions?: Array<{
+    id?: number;
+    order?: number;
+    question_text?: string;
+    answer_type?: string;
+    options?: unknown[];
+    explanation?: string | null;
+    submitted_answer?: unknown;
+    is_correct?: boolean | null;
+    correct_answer?: unknown;
+  }>;
+};
+
 export type EducationPlanTodayResponse = {
   available?: boolean;
   reason?: string | null;
@@ -666,6 +682,7 @@ export type EducationPlanTodayResponse = {
     takeaway?: string | null;
     takeaway_variant?: string | null;
     quiz_question_count?: number | null;
+    quiz?: EducationLessonQuiz | null;
     content?: EducationLessonContent | null;
   }> | null;
   journey?: {
@@ -694,6 +711,35 @@ export type EducationPlanTodayResponse = {
       is_completed?: boolean | null;
       can_open?: boolean | null;
       plan_count?: number | null;
+      lessons?: Array<{
+        programme_day_id?: number | null;
+        day_index?: number | null;
+        pillar_key?: string | null;
+        pillar_label?: string | null;
+        concept_key?: string | null;
+        concept_label?: string | null;
+        title?: string | null;
+        summary?: string | null;
+        goal?: string | null;
+        action_prompt?: string | null;
+        level?: string | null;
+        lesson_variant_id?: number | null;
+        is_current?: boolean | null;
+        progress?: {
+          id?: number | null;
+          completion_status?: string | null;
+          video_completed_at?: string | null;
+          quiz_completed_at?: string | null;
+          completed_at?: string | null;
+          watch_pct?: number | null;
+          quiz_score_pct?: number | null;
+        } | null;
+        takeaway?: string | null;
+        takeaway_variant?: string | null;
+        quiz_question_count?: number | null;
+        quiz?: EducationLessonQuiz | null;
+        content?: EducationLessonContent | null;
+      }> | null;
     }> | null;
   } | null;
   explore_catalog?: {
@@ -732,27 +778,14 @@ export type EducationPlanTodayResponse = {
           takeaway?: string | null;
           takeaway_variant?: string | null;
           quiz_question_count?: number | null;
+          quiz?: EducationLessonQuiz | null;
           content?: EducationLessonContent | null;
         }> | null;
       }> | null;
     }> | null;
   } | null;
   explore_catalog_pending?: boolean | null;
-  quiz?: {
-    id?: number | null;
-    pass_score_pct?: number | null;
-    questions?: Array<{
-      id?: number;
-      order?: number;
-      question_text?: string;
-      answer_type?: string;
-      options?: unknown[];
-      explanation?: string | null;
-      submitted_answer?: unknown;
-      is_correct?: boolean | null;
-      correct_answer?: unknown;
-    }>;
-  } | null;
+  quiz?: EducationLessonQuiz | null;
   progress?: {
     id?: number | null;
     watch_pct?: number | null;

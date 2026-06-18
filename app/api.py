@@ -8351,6 +8351,8 @@ def api_user_education_plan_quiz_submit(
         int(user_id),
         answers=answers if isinstance(answers, list) else [],
         anchor=anchor,
+        programme_day_id=_safe_int((body or {}).get("programme_day_id") or (body or {}).get("programmeDayId")),
+        lesson_variant_id=_safe_int((body or {}).get("lesson_variant_id") or (body or {}).get("lessonVariantId")),
     )
     _log_app_engagement_event(
         user_id=user_id,

@@ -1478,7 +1478,8 @@ class UserEducationDayProgress(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("user_plan_id", "lesson_date", name="uq_user_education_day_progress_plan_date"),
+        Index("ix_user_education_day_progress_plan_day", "user_plan_id", "programme_day_id"),
+        Index("ix_user_education_day_progress_plan_date", "user_plan_id", "lesson_date"),
     )
 
 
