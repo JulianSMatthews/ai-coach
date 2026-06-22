@@ -8893,6 +8893,40 @@ def api_user_account_deletion_request(
     }
 
 
+@api_v1.post("/users/{user_id}/account-delete")
+def api_user_account_delete(
+    user_id: int,
+    request: Request,
+):
+    """
+    Permanently delete the signed-in user's account and related records.
+    """
+    session_user = _get_session_user(request)
+    if not session_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session required")
+    if int(getattr(session_user, "id", 0) or 0) != int(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    if _user_admin_role(session_user) in {ADMIN_ROLE_CLUB, ADMIN_ROLE_GLOBAL}:
+        raise HTTPException(status_code=400, detail="Admin users must be deleted from user management")
+
+    try:
+        scheduler.disable_coaching(user_id)
+    except Exception:
+        pass
+
+    reset_result = admin_reset_user(user_id=user_id, admin_user=session_user)
+    deleted_rows = reset_result.get("deleted", {}) if isinstance(reset_result, dict) else {}
+
+    with SessionLocal() as s:
+        target = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not target:
+            return {"status": "deleted", "user_id": user_id, "deleted": deleted_rows}
+        s.delete(target)
+        s.commit()
+
+    return {"status": "deleted", "user_id": user_id, "deleted": deleted_rows}
+
+
 def _wearable_provider_note(definition, *, connection: WearableConnection | None) -> str | None:
     if not wearable_provider_enabled(definition.key):
         return "Disabled by environment configuration."

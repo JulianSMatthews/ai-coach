@@ -19,13 +19,13 @@ export async function POST(request: Request) {
     const cookieHeader = request.headers.get("cookie") || "";
     const session = cookieValue(cookieHeader, "hs_session");
     const cookieUserId = cookieValue(cookieHeader, "hs_user_id");
-    const userId = String(body?.userId || cookieUserId || "").trim();
+    const userId = String(cookieUserId || body?.userId || "").trim();
 
     if (!session || !userId) {
-      return NextResponse.json({ error: "Please sign in before requesting account deletion." }, { status: 401 });
+      return NextResponse.json({ error: "Please sign in before deleting your account." }, { status: 401 });
     }
 
-    const res = await fetch(`${getBaseUrl()}/api/v1/users/${encodeURIComponent(userId)}/account-deletion-request`, {
+    const res = await fetch(`${getBaseUrl()}/api/v1/users/${encodeURIComponent(userId)}/account-delete`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -39,9 +39,12 @@ export async function POST(request: Request) {
     });
     const text = await res.text().catch(() => "");
     if (!res.ok) {
-      return NextResponse.json({ error: text || "Failed to request account deletion." }, { status: res.status });
+      return NextResponse.json({ error: text || "Failed to delete account." }, { status: res.status });
     }
-    return NextResponse.json(text ? JSON.parse(text) : { ok: true });
+    const response = NextResponse.json(text ? JSON.parse(text) : { ok: true });
+    response.cookies.set("hs_session", "", { path: "/", maxAge: 0 });
+    response.cookies.set("hs_user_id", "", { path: "/", maxAge: 0 });
+    return response;
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }

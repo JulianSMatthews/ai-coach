@@ -25,7 +25,7 @@ export default function DeleteAccountForm() {
     event.preventDefault();
     setStatus(null);
     if (!confirm) {
-      setStatus("Confirm that you want CoachSense to start account deletion.");
+      setStatus("Confirm that you want CoachSense to delete your account.");
       return;
     }
     setSubmitting(true);
@@ -41,9 +41,15 @@ export default function DeleteAccountForm() {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(payload?.error || "Deletion request failed.");
+        throw new Error(payload?.error || "Account deletion failed.");
       }
-      setStatus("Deletion request received. CoachSense support will verify the request and follow up.");
+      try {
+        window.localStorage.removeItem("hs_user_id_local");
+        window.localStorage.removeItem("hs_session_local");
+      } catch {}
+      setUserId("");
+      setEmail("");
+      setStatus("Your account has been deleted.");
       setReason("");
       setConfirm(false);
     } catch (error) {
@@ -65,7 +71,7 @@ export default function DeleteAccountForm() {
           placeholder="Sign in first if this is blank"
         />
         <p className="mt-2 text-[15px] leading-6 text-[var(--text-secondary)]">
-          For security, deletion requests must come from a signed-in account.
+          For security, account deletion must come from a signed-in account.
         </p>
       </div>
 
@@ -87,7 +93,7 @@ export default function DeleteAccountForm() {
           rows={3}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          placeholder="Anything support should know before verifying deletion..."
+          placeholder="Anything you want to note before deletion..."
         />
       </div>
 
@@ -99,8 +105,8 @@ export default function DeleteAccountForm() {
           onChange={(event) => setConfirm(event.target.checked)}
         />
         <span>
-          I understand this starts deletion of my CoachSense account and related assessment, check-in, lesson, coaching,
-          and message records after identity verification.
+          I understand this will delete my CoachSense account and related assessment, check-in, lesson, coaching,
+          and message records.
         </span>
       </label>
 
@@ -110,7 +116,7 @@ export default function DeleteAccountForm() {
           disabled={submitting}
           className="w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-center text-[19px] font-semibold text-[var(--action-primary-text)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? "Sending..." : "Request deletion"}
+          {submitting ? "Deleting..." : "Delete account"}
         </button>
         <a
           className="inline-flex w-full items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-center text-[19px] font-semibold text-[var(--text-primary)] transition hover:bg-[var(--surface-muted)]"

@@ -30,7 +30,7 @@ The reviewer should be able to test:
 - Assessment/home screen
 - Gia message
 - Preferences
-- Support, privacy, terms, and account deletion request
+- Support, privacy, terms, and account deletion
 
 ## Subscription/payment explanation
 
@@ -45,5 +45,5 @@ Support URL: https://app.healthsense.coach/support
 
 Privacy URL: https://app.healthsense.coach/privacy
 
-Account deletion is available inside the app at `/delete-account`. The request is recorded against the signed-in user
-and support verifies identity before completing deletion.
+Account deletion is available inside the app at `/delete-account`. A signed-in user can delete their own account and
+related assessment, check-in, lesson, coaching, preference, session, and message records from that page.

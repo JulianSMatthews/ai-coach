@@ -6,7 +6,7 @@ export default function DeleteAccountPage() {
     <LegalPage
       eyebrow="Account"
       title="Delete account"
-      subtitle="Start a CoachSense account deletion request from inside the app."
+      subtitle="Delete your CoachSense account from inside the app."
     >
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">What deletion includes</h2>
@@ -21,7 +21,7 @@ export default function DeleteAccountPage() {
       </section>
 
       <section className="space-y-2.5">
-        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Request deletion</h2>
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Confirm deletion</h2>
         <DeleteAccountForm />
       </section>
     </LegalPage>

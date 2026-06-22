@@ -43,7 +43,7 @@ export default function PrivacyPage() {
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Your choices</h2>
         <p>
           Notifications are optional and controlled by your device settings. You can update coaching preferences in the
-          app and request account deletion from the Delete account page.
+          app and delete your account from the Delete account page.
         </p>
       </section>
 

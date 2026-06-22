@@ -21,11 +21,11 @@ export default function SupportPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Account deletion</h2>
         <p>
-          You can start an account deletion request from the{" "}
+          You can delete your account from the{" "}
           <a className="text-[var(--accent)] underline" href="/delete-account">
             Delete account
           </a>{" "}
-          page. We may verify your identity before deleting assessment, check-in, lesson, coaching, and message records.
+          page. Deletion removes your account and related assessment, check-in, lesson, coaching, and message records.
         </p>
       </section>
 
