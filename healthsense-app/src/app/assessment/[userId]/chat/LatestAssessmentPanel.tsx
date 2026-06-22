@@ -226,7 +226,7 @@ function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | n
 
 function resolveWeeklyObjectiveDraftValue(concept?: WeeklyObjectiveConcept | null): number | null {
   const selectedValue = Number(concept?.selected_value);
-  if (Number.isFinite(selectedValue)) return selectedValue;
+  if (Number.isFinite(selectedValue) && selectedValue > 0) return selectedValue;
   const defaultOption = (concept?.options || []).find((option) => Number(option?.value) === DEFAULT_WEEKLY_TARGET_DAYS);
   return defaultOption ? DEFAULT_WEEKLY_TARGET_DAYS : null;
 }

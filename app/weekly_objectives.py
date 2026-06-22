@@ -31,6 +31,7 @@ OMEGA_3_DAYS_PREF_KEY = "weekly_objectives_omega_3_days"
 VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
 CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
 MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
+DEFAULT_WEEKLY_TARGET_DAYS = 5
 
 FASTING_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("off", "Off"),
@@ -135,6 +136,28 @@ def _concept_target_options(user_id: int, pillar_key: str, concept_key: str) -> 
         for option in (concept_def.options or [])
     ]
 
+
+def _uses_weekly_day_options(options: list[dict[str, Any]]) -> bool:
+    values: set[int] = set()
+    for option in options:
+        raw_value = option.get("value")
+        if raw_value is None:
+            continue
+        try:
+            values.add(int(float(raw_value)))
+        except Exception:
+            continue
+    return {0, DEFAULT_WEEKLY_TARGET_DAYS, 7}.issubset(values)
+
+
+def _default_weekly_target_value(selected_value: float | None, options: list[dict[str, Any]]) -> float | None:
+    if selected_value is not None and selected_value > 0:
+        return selected_value
+    if _uses_weekly_day_options(options):
+        return float(DEFAULT_WEEKLY_TARGET_DAYS)
+    return selected_value
+
+
 def _current_cycle_objective(session, user_id: int, pillar_key: str) -> OKRObjective | None:
     cycle = ensure_cycle(session, datetime.now(timezone.utc))
     return (
@@ -221,6 +244,8 @@ def _objective_concepts_payload(user_id: int, pillar_key: str) -> dict[str, Any]
                 selected_value = float(getattr(resolved_target, "target_value"))
             except Exception:
                 selected_value = None
+        options = _concept_target_options(int(user_id), pillar_key, concept_def.concept_key)
+        selected_value = _default_weekly_target_value(selected_value, options)
         if selected_value is not None:
             configured_count += 1
         guide = (_GUIDE.get(pillar_key, {}) or {}).get(concept_def.concept_key, {}) or {}
@@ -241,7 +266,7 @@ def _objective_concepts_payload(user_id: int, pillar_key: str) -> dict[str, Any]
                 "target_source": getattr(resolved_target, "source", None),
                 "target_label": getattr(resolved_target, "target_label", None),
                 "selected_value": selected_value,
-                "options": _concept_target_options(int(user_id), pillar_key, concept_def.concept_key),
+                "options": options,
             }
         )
     return {
@@ -558,12 +583,14 @@ def save_weekly_objectives_config(
             concept_meta = guide.get(concept_key, {}) or {}
             unit = str(concept_meta.get("unit") or "").strip() or None
             metric_label = str(concept_meta.get("label") or concept_def.label).strip() or concept_def.label
+            options = _concept_target_options(int(user_id), section_key, concept_key)
             allowed_values = {
                 float(option.get("value"))
-                for option in _concept_target_options(int(user_id), section_key, concept_key)
+                for option in options
                 if option.get("value") is not None
             }
             selected_value = _normalize_numeric_choice(target_map.get(concept_key), allowed_values)
+            selected_value = _default_weekly_target_value(selected_value, options)
             primary = primary_krs.get(concept_key)
             baseline_num = getattr(primary, "baseline_num", None) if primary is not None else None
             actual_num = getattr(primary, "actual_num", None) if primary is not None else None
