@@ -5,16 +5,15 @@ Use these notes when submitting the iOS build to App Store Connect.
 ## App purpose
 
 HealthSense is a wellbeing coaching and habit-support app. It provides an assessment, coaching guidance from Gia,
-daily habit tracking, education, optional biometric trends, and optional urine strip photo screening.
+daily habit tracking, and education.
 
 HealthSense is not a medical diagnosis, treatment, emergency, or clinical decision app.
 
 ## Native capabilities
 
-- Camera/photo library: used only when the user chooses to capture or upload a urine strip photo.
-- Apple Health: optional read access for resting heart rate, heart rate variability, step count, and exercise minutes.
-- HealthKit data is used only to show wellbeing and training-readiness trends inside HealthSense.
-- HealthKit data is not sold, used for advertising, or shared with third parties for advertising.
+- This v1 iOS build does not request Apple Health, camera, or photo library permissions.
+- Biometric trends and urine strip photo screening are disabled for this App Store submission.
+- If these features are enabled in a later version, the app will add the relevant native permissions and updated review notes.
 
 ## Account access for review
 
@@ -30,9 +29,6 @@ The reviewer should be able to test:
 - Login
 - Assessment/home screen
 - Gia message
-- Biometrics modal
-- Apple Health permission prompt on a real device
-- Urine test photo flow
 - Preferences
 - Support, privacy, terms, and account deletion request
 

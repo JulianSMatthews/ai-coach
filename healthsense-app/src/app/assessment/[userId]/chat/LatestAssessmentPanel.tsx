@@ -22,7 +22,6 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { Capacitor } from "@capacitor/core";
 import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
@@ -105,6 +104,9 @@ const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_RECENT_CAPTURE_WINDOW_MS = 5 * 60 * 1000;
 const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const BIOMETRICS_ENABLED = ["1", "true", "yes", "on"].includes(
+  String(process.env.NEXT_PUBLIC_BIOMETRICS_ENABLED || "").trim().toLowerCase(),
+);
 const BIOMETRIC_SOURCE_ORDER: Array<{ key: BiometricMetricKey; label: string }> = [
   { key: "resting_hr", label: "Resting HR" },
   { key: "hrv", label: "HRV" },
@@ -1587,7 +1589,7 @@ export default function LatestAssessmentPanel({
   const [setupSaving, setSetupSaving] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const appSetupRequired = summary.app_setup_completed !== true;
-  const modalOverlayOpen = biometricsModalOpen || Boolean(selectedPillarKey);
+  const modalOverlayOpen = (BIOMETRICS_ENABLED && biometricsModalOpen) || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockButtonStyleInactive =
@@ -1734,7 +1736,7 @@ export default function LatestAssessmentPanel({
       ),
     [wellbeingObjectiveItems],
   );
-  const appleHealthSupported = canUseAppleHealth();
+  const appleHealthSupported = BIOMETRICS_ENABLED && canUseAppleHealth();
   const biometricSourceRows = useMemo(
     () => normalizeBiometricSourceRows(restingHeartRate?.biometric_sources),
     [restingHeartRate?.biometric_sources],
@@ -2535,6 +2537,7 @@ export default function LatestAssessmentPanel({
   }, [refreshSummary]);
 
   const loadRestingHeartRate = useCallback(async () => {
+    if (!BIOMETRICS_ENABLED) return null;
     const res = await fetch(`/api/apple-health/resting-heart-rate?userId=${encodeURIComponent(userId)}`, {
       method: "GET",
       cache: "no-store",
@@ -2549,6 +2552,7 @@ export default function LatestAssessmentPanel({
   }, [userId]);
 
   const loadLatestUrineTest = useCallback(async () => {
+    if (!BIOMETRICS_ENABLED) return null;
     setUrineTestLoading(true);
     setUrineTestError(null);
     try {
@@ -2593,7 +2597,7 @@ export default function LatestAssessmentPanel({
 
   const syncNativeRestingHeartRate = useCallback(
     async (requestAccess = false) => {
-      if (!appleHealthSupported) return null;
+      if (!BIOMETRICS_ENABLED || !appleHealthSupported) return null;
       if (requestAccess) {
         setRestingHeartRateEnabling(true);
       } else {
@@ -2625,6 +2629,7 @@ export default function LatestAssessmentPanel({
   );
 
   const startUrineCaptureTimer = useCallback(() => {
+    if (!BIOMETRICS_ENABLED) return;
     setUrineTestError(null);
     setUrineCaptureStartedAt(Date.now());
     setUrineTimerSecondsLeft(URINE_CAPTURE_TIMER_SECONDS);
@@ -2643,6 +2648,7 @@ export default function LatestAssessmentPanel({
     mimeType: string;
     sizeBytes: number;
   }) => {
+    if (!BIOMETRICS_ENABLED) return;
     setUrineTestSaving(true);
     setUrineTestError(null);
     const captureStage = urineCaptureStartedAt ? "timed" : "single";
@@ -2691,78 +2697,19 @@ export default function LatestAssessmentPanel({
   }, [logUserAppEvent, urineCaptureStartedAt, userId]);
 
   const openUrinePhotoCapture = useCallback(async () => {
+    if (!BIOMETRICS_ENABLED) return;
     setUrineTestError(null);
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-        const photo = await Camera.getPhoto({
-          allowEditing: false,
-          correctOrientation: true,
-          quality: 88,
-          resultType: CameraResultType.DataUrl,
-          saveToGallery: false,
-          source: CameraSource.Camera,
-        });
-        const imageDataUrl = String(photo.dataUrl || "").trim();
-        if (!imageDataUrl) {
-          throw new Error("No photo data was returned.");
-        }
-        await submitUrinePhotoCapture({
-          capturedAt: new Date(),
-          fileName: "urine-sample.jpg",
-          imageDataUrl,
-          mimeType: "image/jpeg",
-          sizeBytes: Math.round((imageDataUrl.length * 3) / 4),
-        });
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.toLowerCase().includes("cancel")) {
-          setUrineTestError(message || "Camera capture failed.");
-        }
-        return;
-      }
-    }
     urinePhotoCameraInputRef.current?.click();
-  }, [submitUrinePhotoCapture]);
+  }, []);
 
   const openUrinePhotoLibrary = useCallback(async () => {
+    if (!BIOMETRICS_ENABLED) return;
     setUrineTestError(null);
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-        const photo = await Camera.getPhoto({
-          allowEditing: false,
-          correctOrientation: true,
-          quality: 88,
-          resultType: CameraResultType.DataUrl,
-          saveToGallery: false,
-          source: CameraSource.Photos,
-        });
-        const imageDataUrl = String(photo.dataUrl || "").trim();
-        if (!imageDataUrl) {
-          throw new Error("No photo data was returned.");
-        }
-        await submitUrinePhotoCapture({
-          capturedAt: new Date(),
-          fileName: "urine-sample-library.jpg",
-          imageDataUrl,
-          mimeType: "image/jpeg",
-          sizeBytes: Math.round((imageDataUrl.length * 3) / 4),
-        });
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.toLowerCase().includes("cancel")) {
-          setUrineTestError(message || "Photo library selection failed.");
-        }
-        return;
-      }
-    }
     urinePhotoLibraryInputRef.current?.click();
-  }, [submitUrinePhotoCapture]);
+  }, []);
 
   const handleUrinePhotoSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!BIOMETRICS_ENABLED) return;
     const file = event.target.files?.[0];
     if (!file) {
       event.target.value = "";
@@ -3053,13 +3000,13 @@ export default function LatestAssessmentPanel({
   }, [modalOverlayOpen]);
 
   useEffect(() => {
-    if (!biometricsModalOpen) return;
+    if (!BIOMETRICS_ENABLED || !biometricsModalOpen) return;
     void loadLatestUrineTest();
     void loadWeeklyObjectives();
   }, [biometricsModalOpen, loadLatestUrineTest, loadWeeklyObjectives]);
 
   useEffect(() => {
-    if (!biometricsModalOpen || !urineTestFlowOpen) return;
+    if (!BIOMETRICS_ENABLED || !biometricsModalOpen || !urineTestFlowOpen) return;
     setUrineCaptureNowMs(Date.now());
     const interval = window.setInterval(() => setUrineCaptureNowMs(Date.now()), 30000);
     return () => {
@@ -3068,7 +3015,7 @@ export default function LatestAssessmentPanel({
   }, [biometricsModalOpen, urineTestFlowOpen]);
 
   useEffect(() => {
-    if (!biometricsModalOpen || !urineCaptureStartedAt) return;
+    if (!BIOMETRICS_ENABLED || !biometricsModalOpen || !urineCaptureStartedAt) return;
     const updateTimer = () => {
       const elapsedSeconds = Math.floor((Date.now() - urineCaptureStartedAt) / 1000);
       const nextSecondsLeft = Math.max(0, URINE_CAPTURE_TIMER_SECONDS - elapsedSeconds);
@@ -3085,7 +3032,7 @@ export default function LatestAssessmentPanel({
   }, [biometricsModalOpen, urineCaptureStartedAt]);
 
   useEffect(() => {
-    if (!summaryPanelVisible) return;
+    if (!BIOMETRICS_ENABLED || !summaryPanelVisible) return;
     let cancelled = false;
     const hydrateRestingHeartRate = async () => {
       try {
@@ -3756,7 +3703,7 @@ export default function LatestAssessmentPanel({
         </section>
       ) : null}
 
-      {!biometricsModalOpen && !appSetupRequired ? (
+      {!(BIOMETRICS_ENABLED && biometricsModalOpen) && !appSetupRequired ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
@@ -3828,7 +3775,7 @@ export default function LatestAssessmentPanel({
         </div>
       ) : null}
 
-      {biometricsModalOpen ? (
+      {BIOMETRICS_ENABLED && biometricsModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--surface)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-4 sm:px-5">

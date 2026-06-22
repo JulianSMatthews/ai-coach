@@ -30,6 +30,11 @@ If you need a fully bundled native app later, the app will need a broader migrat
 
 Current limitation: external checkout and wearable OAuth flows still return through the hosted web app, so they are not yet wired as native deep-link callbacks. The iOS shell works, but those flows are still web-session-first rather than native-first.
 
+For the v1 App Store submission, biometric integrations are disabled by default. The iOS target does not include
+HealthKit entitlement, HealthKit plugin registration, Camera plugin dependency, or camera/photo/HealthKit purpose
+strings. The web UI can be re-enabled later with `NEXT_PUBLIC_BIOMETRICS_ENABLED=1`, but a future iOS release should
+also restore the native permissions/plugins and updated App Review notes before submitting those features.
+
 ## Getting Started
 
 First, run the development server:

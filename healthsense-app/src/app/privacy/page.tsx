@@ -26,8 +26,8 @@ export default function PrivacyPage() {
           activity to show relevant cue cards, lessons, weekly objectives, and coaching messages.
         </p>
         <p>
-          Health data is used only for wellbeing coaching and app features. It is not used for advertising and is not
-          sold.
+          This iOS version does not request Apple Health, camera, or photo library access. If optional biomarker
+          features are added in a later version, we will explain the data used before asking for permission.
         </p>
       </section>
 
