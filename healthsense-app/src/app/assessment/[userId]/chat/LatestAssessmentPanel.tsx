@@ -1439,9 +1439,31 @@ function SetupCardIcon({ iconKey, tone, background }: { iconKey: string; tone: s
   );
 }
 
-function SetupPillarIcon({ pillarKey }: { pillarKey: string }) {
+function SetupPillarSelectionCircle({ pillarKey, selected }: { pillarKey: string; selected: boolean }) {
   const palette = getPillarPalette(pillarKey);
-  return <SetupCardIcon iconKey={pillarKey} tone={palette.accent} background={palette.bg} />;
+  return (
+    <span className="absolute right-5 top-5 flex h-[84px] w-[84px] shrink-0 items-center justify-center" aria-hidden="true">
+      <svg width="84" height="84" className="absolute inset-0 rotate-[-90deg]">
+        <circle cx="42" cy="42" r="38" stroke="var(--ring-track)" strokeWidth="8" fill="none" />
+        <circle cx="42" cy="42" r="38" stroke={palette.accent} strokeWidth="8" fill="none" strokeLinecap="round" />
+      </svg>
+      <span
+        className="relative flex h-[60px] w-[60px] items-center justify-center rounded-full text-[#17120f]"
+        style={{ backgroundColor: selected ? palette.accent : palette.bg }}
+      >
+        {selected ? (
+          <svg viewBox="0 0 24 24" className="h-9 w-9 text-white" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12.5 10 17l9-10" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+        )}
+      </span>
+    </span>
+  );
 }
 
 function SetupGuideIcon({ iconKey }: { iconKey: string }) {
@@ -3426,7 +3448,7 @@ export default function LatestAssessmentPanel({
     <>
       {appSetupRequired && !selectedPillarKey && !objectivesModalOpen && !streakSectionOpen ? (
         <section className="flex h-full min-h-0 items-center pb-8 pt-6 sm:pt-8">
-          <div className="coach-scrollbar w-full min-w-0 overflow-x-auto snap-x snap-proximity pb-4">
+          <div className="coach-scrollbar w-full min-w-0 -translate-y-5 overflow-x-auto snap-x snap-proximity pb-4">
             <div className="flex gap-4 px-4 sm:gap-5 sm:px-5">
               <article className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] bg-[var(--surface)] px-6 py-6 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7">
                 <SetupHealthSenseLogo />
@@ -3434,7 +3456,7 @@ export default function LatestAssessmentPanel({
                 <p className="pr-16 text-[2.35rem] font-semibold leading-[0.98] tracking-normal text-[var(--text-primary)] sm:text-[2.7rem]">
                   Set up your CoachSense
                 </p>
-                <p className="mt-6 pr-4 text-[1.24rem] font-medium leading-[1.25] text-[var(--text-secondary)]">
+                <p className="mt-6 pr-4 text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
                   Choose the pillars you want to work with first. They shape your check-in cards, weekly objectives, and learning units, and you can change them later in Preferences.
                 </p>
               </article>
@@ -3455,22 +3477,10 @@ export default function LatestAssessmentPanel({
                     aria-pressed={selected}
                     className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] border border-[var(--border)] bg-[var(--surface)] px-6 py-6 text-left text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7"
                   >
-                    <SetupPillarIcon pillarKey={pillarKey} />
+                    <SetupPillarSelectionCircle pillarKey={pillarKey} selected={selected} />
                     <span className="flex items-start justify-between gap-4">
                       <span className="pr-24 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
                         {meta?.label || pillarKey}
-                      </span>
-                      <span
-                        className={`mt-24 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
-                          selected
-                            ? "border-[#111111] bg-white text-[#111111]"
-                            : "border-[var(--border)] bg-[var(--surface-muted)] text-transparent"
-                        }`}
-                        aria-hidden="true"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M5 12.5 10 17l9-10" />
-                        </svg>
                       </span>
                     </span>
                     <span className="mt-8 block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
