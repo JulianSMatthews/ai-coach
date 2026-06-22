@@ -422,6 +422,146 @@
         transform: none;
       }
 
+      .queue-try {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-start;
+        margin-top: auto;
+        border: 1px solid var(--accent-dark);
+        border-radius: 999px;
+        background: var(--accent-dark);
+        padding: 10px 18px;
+        color: var(--white);
+        font-size: 14px;
+        font-family: var(--font-body);
+        font-weight: 500;
+      }
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .demo-card {
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: var(--white);
+        padding: 28px;
+        box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
+      }
+
+      .demo-card h3 {
+        margin: 0 0 12px;
+        font-family: var(--font-display);
+        font-size: clamp(34px, 4vw, 46px);
+        font-weight: 400;
+        line-height: 1.1;
+      }
+
+      .demo-card p {
+        margin: 0;
+        color: var(--ink);
+        font-size: 18px;
+        line-height: 1.5;
+      }
+
+      .demo-prompt {
+        margin-top: 24px;
+        border-radius: 24px;
+        background: #fbf4ea;
+        padding: 20px;
+      }
+
+      .demo-prompt strong {
+        display: block;
+        margin-bottom: 12px;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 400;
+        line-height: 1.15;
+      }
+
+      .demo-options {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .demo-option {
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        padding: 0 16px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 15px;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .demo-option.is-selected {
+        border-color: var(--accent-dark);
+        background: var(--accent-dark);
+        color: var(--white);
+      }
+
+      .demo-feedback {
+        min-height: 56px;
+        margin-top: 16px;
+        border-radius: 18px;
+        background: #fff8ee;
+        padding: 14px 16px;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .lesson-video {
+        position: relative;
+        display: grid;
+        min-height: 220px;
+        place-items: center;
+        overflow: hidden;
+        border-radius: 24px;
+        background: #241d18;
+        color: var(--white);
+      }
+
+      .lesson-video::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 28% 20%, rgba(197, 72, 23, 0.32), transparent 34%),
+          linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 55%);
+      }
+
+      .lesson-video-content {
+        position: relative;
+        display: grid;
+        gap: 12px;
+        justify-items: center;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .play-dot {
+        display: grid;
+        width: 62px;
+        height: 62px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--accent);
+        color: var(--white);
+        font-size: 28px;
+        line-height: 1;
+      }
+
       .quote {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -497,6 +637,10 @@
 
         .queue-card {
           flex-basis: min(88vw, 22rem);
+        }
+
+        .demo-grid {
+          grid-template-columns: 1fr;
         }
       }
 
@@ -688,45 +832,7 @@
               <span class="queue-kicker">Step 1</span>
               <h3>Check in</h3>
               <p>Take a moment to understand where you are today.</p>
-            </article>
-            <article class="queue-card step">
-              <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--accent)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
-                <span class="queue-circle" style="--circle-bg:#f5ddce;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="7.5" />
-                    <circle cx="12" cy="12" r="3.5" />
-                    <path d="M12 12 18.5 5.5" />
-                    <path d="M17.8 4.2h2v2" />
-                  </svg>
-                </span>
-              </span>
-              <span class="queue-kicker">Step 2</span>
-              <h3>Weekly targets</h3>
-              <p>Set a simple rhythm for the week, then adjust it as your routine becomes clearer.</p>
-            </article>
-            <article class="queue-card step">
-              <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--accent)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
-                <span class="queue-circle" style="--circle-bg:#f5ddce;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4.5 18.5h15" />
-                    <path d="M7 18.5v-5" />
-                    <path d="M12 18.5v-9" />
-                    <path d="M17 18.5v-12" />
-                    <path d="M6.5 7.5 10 4l3 3 4.5-4.5" />
-                  </svg>
-                </span>
-              </span>
-              <span class="queue-kicker">Step 3</span>
-              <h3>Scoring</h3>
-              <p>Use scores as feedback signals that help shape more relevant reflections.</p>
+              <a class="queue-try" href="#purpose-checkin-demo">Try it</a>
             </article>
             <article class="queue-card step">
               <span class="queue-ring" aria-hidden="true">
@@ -743,9 +849,51 @@
                   </svg>
                 </span>
               </span>
-              <span class="queue-kicker">Step 4</span>
-              <h3>Lessons</h3>
-              <p>Move through short concept units linked to the pillars and questions you choose.</p>
+              <span class="queue-kicker">Step 2</span>
+              <h3>Learn</h3>
+              <p>Try a short lesson and answer one question.</p>
+              <a class="queue-try" href="#emotion-lesson-demo">Try it</a>
+            </article>
+          </div>
+        </section>
+
+        <section id="try-it">
+          <div class="section-heading">
+            <h2>Try a sample.</h2>
+            <p>These website demos show the feel of CoachSense without saving data or creating an account.</p>
+          </div>
+          <div class="demo-grid">
+            <article class="demo-card" id="purpose-checkin-demo">
+              <h3>Purpose check-in</h3>
+              <p>A short question to help you reconnect with what matters today.</p>
+              <div class="demo-prompt">
+                <strong>What would make today feel more aligned with your purpose?</strong>
+                <div class="demo-options" data-demo-group="purpose">
+                  <button class="demo-option" type="button" data-feedback="A small useful action is enough. CoachSense would turn this into a gentle next step for today.">Do one useful thing I have been avoiding</button>
+                  <button class="demo-option" type="button" data-feedback="That is a clear purpose signal. CoachSense would help you protect time for the person or commitment that matters.">Make time for someone important</button>
+                  <button class="demo-option" type="button" data-feedback="Good. Purpose often starts with attention. CoachSense would help you name one value to carry into the day.">Pause and notice what matters most</button>
+                </div>
+                <div class="demo-feedback" data-feedback-for="purpose">Choose an answer to see how a check-in responds.</div>
+              </div>
+            </article>
+
+            <article class="demo-card" id="emotion-lesson-demo">
+              <h3>Why emotions matter</h3>
+              <div class="lesson-video" aria-label="Sample lesson video">
+                <div class="lesson-video-content">
+                  <span class="play-dot" aria-hidden="true">▶</span>
+                  <p>Sample video lesson</p>
+                </div>
+              </div>
+              <div class="demo-prompt">
+                <strong>What is the main role of emotions?</strong>
+                <div class="demo-options" data-demo-group="lesson">
+                  <button class="demo-option" type="button" data-feedback="Not quite. Emotions can feel uncomfortable, but they are signals rather than problems to ignore.">They get in the way of clear thinking</button>
+                  <button class="demo-option" type="button" data-feedback="Yes. Emotions are signals that help you notice needs, threats, values and choices.">They give useful signals about what needs attention</button>
+                  <button class="demo-option" type="button" data-feedback="Not always. The skill is to listen to emotions without letting them make every decision.">They should always decide what you do next</button>
+                </div>
+                <div class="demo-feedback" data-feedback-for="lesson">Answer the lesson question to see feedback.</div>
+              </div>
             </article>
           </div>
         </section>
@@ -806,5 +954,20 @@
         </div>
       </footer>
     </div>
+    <script>
+      document.querySelectorAll("[data-demo-group]").forEach((group) => {
+        const groupName = group.getAttribute("data-demo-group");
+        const feedback = document.querySelector(`[data-feedback-for="${groupName}"]`);
+        group.querySelectorAll(".demo-option").forEach((button) => {
+          button.addEventListener("click", () => {
+            group.querySelectorAll(".demo-option").forEach((option) => option.classList.remove("is-selected"));
+            button.classList.add("is-selected");
+            if (feedback) {
+              feedback.textContent = button.getAttribute("data-feedback") || "";
+            }
+          });
+        });
+      });
+    </script>
   </body>
 </html>
