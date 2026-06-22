@@ -3483,7 +3483,7 @@ export default function LatestAssessmentPanel({
                         {meta?.label || pillarKey}
                       </span>
                     </span>
-                    <span className="mt-8 block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
+                    <span className="mt-[calc(2rem+0.33mm)] block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
                       {PILLAR_SETUP_COPY[pillarKey] || meta?.note || ""}
                     </span>
                     <span className="mt-auto inline-flex min-h-[2.8rem] items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
@@ -3499,6 +3499,7 @@ export default function LatestAssessmentPanel({
                   className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] bg-[var(--surface)] px-6 py-6 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7"
                 >
                   <SetupGuideIcon iconKey={card.icon} />
+                  <SetupSwipeHint />
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
                     {`Step ${index + 1}`}
                   </p>
