@@ -479,13 +479,19 @@
       }
 
       footer {
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 18px;
         padding: 24px 0 42px;
         color: var(--muted);
         font-size: 14px;
         font-weight: 400;
+      }
+
+      .footer-legal {
+        grid-column: 1 / -1;
+        font-size: 13px;
+        line-height: 1.5;
       }
 
       @media (max-width: 920px) {
@@ -800,6 +806,9 @@
       <footer>
         <div>© 2026 CoachSense Group Limited</div>
         <div>Find your own way. Build your inner sense.</div>
+        <div class="footer-legal">
+          CoachSense is a trading name of CoachSense Group Limited. Registered in England & Wales. Company No. 16877998
+        </div>
       </footer>
     </div>
   </body>
