@@ -146,7 +146,7 @@
 
       .app-preview {
         position: relative;
-        min-height: 560px;
+        min-height: 0;
         border-radius: 42px;
         border: 1px solid rgba(255, 255, 255, 0.66);
         background: linear-gradient(160deg, var(--panel), #f1dccd);
@@ -154,7 +154,7 @@
         padding: 28px;
       }
 
-      .phone {
+      .preview-video-shell {
         max-width: 330px;
         margin: 0 auto;
         border-radius: 40px;
@@ -163,139 +163,11 @@
         box-shadow: 0 28px 80px rgba(42, 33, 27, 0.22);
       }
 
-      .screen {
-        min-height: 520px;
+      .preview-video {
+        display: block;
+        width: 100%;
         border-radius: 30px;
         background: #f6f1e7;
-        overflow: hidden;
-        position: relative;
-        padding: 18px;
-      }
-
-      .screen-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 18px;
-      }
-
-      .screen-head img {
-        width: 34px;
-        height: 48px;
-        object-fit: contain;
-      }
-
-      .screen-head span {
-        font-size: 14px;
-        font-weight: 850;
-      }
-
-      .coach-panel {
-        border-radius: 28px;
-        background: rgba(255, 255, 255, 0.74);
-        border: 1px solid var(--line);
-        padding: 20px;
-      }
-
-      .coach-panel h2 {
-        margin: 0 0 8px;
-        font-size: 32px;
-        line-height: 1;
-      }
-
-      .coach-panel p {
-        margin: 0 0 18px;
-        color: var(--muted);
-        font-weight: 600;
-      }
-
-      .mini-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-      }
-
-      .mini {
-        min-height: 104px;
-        border-radius: 20px;
-        background: var(--white);
-        border: 1px solid rgba(42, 33, 27, 0.1);
-        padding: 14px;
-      }
-
-      .mini span {
-        display: block;
-        margin-bottom: 20px;
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .mini strong {
-        display: block;
-        font-size: 15px;
-        line-height: 1.15;
-      }
-
-      .score-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-top: 12px;
-      }
-
-      .score {
-        border-radius: 22px;
-        background: var(--white);
-        padding: 14px;
-        border: 1px solid rgba(42, 33, 27, 0.1);
-      }
-
-      .ring {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        display: grid;
-        place-items: center;
-        background:
-          radial-gradient(circle at center, var(--white) 52%, transparent 54%),
-          conic-gradient(var(--tone) var(--value), var(--track) 0);
-        font-weight: 900;
-      }
-
-      .score h3 {
-        margin: 12px 0 0;
-        font-size: 17px;
-        line-height: 1;
-      }
-
-      .dock {
-        position: absolute;
-        left: 14px;
-        right: 14px;
-        bottom: 14px;
-        min-height: 70px;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        border-radius: 24px;
-        border: 1px solid var(--line);
-        background: rgba(255, 253, 249, 0.94);
-        padding: 8px;
-      }
-
-      .dock span {
-        display: grid;
-        place-items: center;
-        border-radius: 18px;
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .dock span:first-child {
-        background: #111;
-        color: #fff;
       }
 
       section {
@@ -475,8 +347,7 @@
         }
 
         .pillars,
-        .steps,
-        .mini-grid {
+        .steps {
           grid-template-columns: 1fr;
         }
 
@@ -525,38 +396,10 @@
           </div>
 
           <aside class="app-preview" aria-label="CoachSense app preview">
-            <div class="phone">
-              <div class="screen">
-                <div class="screen-head">
-                  <img src="healthsense-mark.svg" alt="" />
-                  <span>Today</span>
-                </div>
-                <div class="coach-panel">
-                  <h2>Your daily sense check</h2>
-                  <p>A short pause to notice where you are, what matters, and what step comes next.</p>
-                  <div class="mini-grid">
-                    <div class="mini"><span>Today</span><strong>What needs your attention?</strong></div>
-                    <div class="mini"><span>Coach</span><strong>One clear action</strong></div>
-                    <div class="mini"><span>Reflection</span><strong>Notice the pattern</strong></div>
-                    <div class="mini"><span>Progress</span><strong>Keep going</strong></div>
-                  </div>
-                </div>
-                <div class="score-row">
-                  <div class="score">
-                    <div class="ring" style="--tone:#7c5cff;--value:68%">68</div>
-                    <h3>Reflection</h3>
-                  </div>
-                  <div class="score">
-                    <div class="ring" style="--tone:#0f8b8d;--value:74%">74</div>
-                    <h3>Purpose</h3>
-                  </div>
-                </div>
-                <div class="dock">
-                  <span>Check in</span>
-                  <span>Learn</span>
-                  <span>Coach</span>
-                </div>
-              </div>
+            <div class="preview-video-shell">
+              <video class="preview-video" autoplay muted loop playsinline>
+                <source src="coachsense-app-preview.webm" type="video/webm" />
+              </video>
             </div>
           </aside>
         </section>
