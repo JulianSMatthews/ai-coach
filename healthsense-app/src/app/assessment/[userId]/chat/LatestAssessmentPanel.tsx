@@ -3483,7 +3483,7 @@ export default function LatestAssessmentPanel({
                         {meta?.label || pillarKey}
                       </span>
                     </span>
-                    <span className="mt-[calc(2rem+0.33mm)] block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
+                    <span className="mt-[calc(2rem+0.33cm)] block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
                       {PILLAR_SETUP_COPY[pillarKey] || meta?.note || ""}
                     </span>
                     <span className="mt-auto inline-flex min-h-[2.8rem] items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
