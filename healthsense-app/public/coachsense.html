@@ -541,11 +541,28 @@
         object-fit: cover;
       }
 
+      .lesson-audio-player {
+        position: relative;
+        z-index: 1;
+        display: none;
+        width: min(100%, 520px);
+      }
+
       .lesson-video.has-video .lesson-video-player {
         display: block;
       }
 
+      .lesson-video.has-audio {
+        padding: 24px;
+      }
+
+      .lesson-video.has-audio .lesson-audio-player {
+        display: block;
+      }
+
       .lesson-video.has-video .lesson-video-content,
+      .lesson-video.has-audio .lesson-video-content,
+      .lesson-video.has-audio::before,
       .lesson-video.has-video::before {
         display: none;
       }
@@ -894,11 +911,12 @@
 
             <article class="demo-card" id="emotion-lesson-demo">
               <h3>Why emotions matter</h3>
-              <div class="lesson-video" aria-label="Education programme lesson video" data-lesson-video-shell>
+              <div class="lesson-video" aria-label="Education programme lesson media" data-lesson-video-shell>
                 <video class="lesson-video-player" controls playsinline preload="metadata" data-lesson-video-player></video>
+                <audio class="lesson-audio-player" controls preload="metadata" data-lesson-audio-player></audio>
                 <div class="lesson-video-content">
                   <span class="play-dot" aria-hidden="true">▶</span>
-                  <p data-lesson-video-status>Loading education programme video...</p>
+                  <p data-lesson-video-status>Loading education programme lesson...</p>
                 </div>
               </div>
               <div class="demo-prompt">
@@ -971,6 +989,8 @@
       </footer>
     </div>
     <script>
+      const fallbackLessonAudioUrl = "/reports/1/content-gen-34.mp3";
+
       function firstText() {
         for (const value of arguments) {
           const token = String(value || "").trim();
@@ -984,26 +1004,41 @@
         return [".mp4", ".webm", ".mov", ".m4v"].some((extension) => token.endsWith(extension));
       }
 
-      function videoFallback(value) {
-        const token = firstText(value);
-        return likelyVideoUrl(token) ? token : "";
+      function likelyAudioUrl(value) {
+        const token = firstText(value).toLowerCase().split("?")[0];
+        return [".mp3", ".m4a", ".aac", ".wav", ".ogg"].some((extension) => token.endsWith(extension));
       }
 
-      function lessonVideoUrl(lesson) {
+      function normalizeLessonMediaUrl(value) {
+        const token = firstText(value);
+        if (!token) return "";
+        try {
+          const parsed = new URL(token, window.location.href);
+          if (parsed.hostname === "healthsenseapi.ngrok.app" && parsed.pathname === fallbackLessonAudioUrl) {
+            return fallbackLessonAudioUrl;
+          }
+        } catch (error) {
+          return token;
+        }
+        return token;
+      }
+
+      function lessonMediaUrl(lesson) {
         const content = lesson && typeof lesson === "object" ? lesson.content || {} : {};
         const avatar = content && typeof content === "object" ? content.avatar || {} : {};
-        return firstText(
+        const explicitVideo = firstText(
           avatar.url,
           avatar.video_url,
           avatar.videoUrl,
           avatar.result_url,
           avatar.resultUrl,
           content.video_url,
-          videoFallback(content.podcast_url),
         );
+        const podcastUrl = firstText(content.podcast_url);
+        return normalizeLessonMediaUrl(explicitVideo || podcastUrl);
       }
 
-      function findEmotionLessonVideo(data) {
+      function findEmotionLessonMedia(data) {
         const candidates = [];
         const pushLesson = (lesson) => {
           if (lesson && typeof lesson === "object") candidates.push(lesson);
@@ -1032,14 +1067,28 @@
           ].join(" ").toLowerCase();
           return haystack.includes("emotion") || haystack.includes("calm") || haystack.includes("control");
         });
-        return lessonVideoUrl(emotionMatch) || candidates.map(lessonVideoUrl).find(Boolean) || "";
+        return lessonMediaUrl(emotionMatch) || candidates.map(lessonMediaUrl).find(Boolean) || "";
       }
 
-      async function loadEducationProgrammeVideo() {
+      function showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer) {
+        const mediaUrl = normalizeLessonMediaUrl(url) || fallbackLessonAudioUrl;
+        if (likelyVideoUrl(mediaUrl)) {
+          videoPlayer.src = mediaUrl;
+          videoPlayer.load();
+          shell.classList.add("has-video");
+          return;
+        }
+        audioPlayer.src = likelyAudioUrl(mediaUrl) ? mediaUrl : fallbackLessonAudioUrl;
+        audioPlayer.load();
+        shell.classList.add("has-audio");
+      }
+
+      async function loadEducationProgrammeMedia() {
         const shell = document.querySelector("[data-lesson-video-shell]");
-        const player = document.querySelector("[data-lesson-video-player]");
+        const videoPlayer = document.querySelector("[data-lesson-video-player]");
+        const audioPlayer = document.querySelector("[data-lesson-audio-player]");
         const status = document.querySelector("[data-lesson-video-status]");
-        if (!shell || !player) return;
+        if (!shell || !videoPlayer || !audioPlayer) return;
         try {
           const response = await fetch("/api/education-plan/today?userId=2&includeExplore=true&exploreCacheOnly=true&prefetch=true", {
             cache: "no-store",
@@ -1048,17 +1097,13 @@
             throw new Error("video_unavailable");
           }
           const data = await response.json();
-          const url = findEmotionLessonVideo(data);
+          const url = findEmotionLessonMedia(data);
           if (!url) {
             throw new Error("video_missing");
           }
-          player.src = url;
-          player.load();
-          shell.classList.add("has-video");
+          showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer);
         } catch (error) {
-          if (status) {
-            status.textContent = "Education programme video is not available right now.";
-          }
+          showEducationProgrammeMedia(fallbackLessonAudioUrl, shell, videoPlayer, audioPlayer);
         }
       }
 
@@ -1075,7 +1120,7 @@
           });
         });
       });
-      loadEducationProgrammeVideo();
+      loadEducationProgrammeMedia();
     </script>
   </body>
 </html>
