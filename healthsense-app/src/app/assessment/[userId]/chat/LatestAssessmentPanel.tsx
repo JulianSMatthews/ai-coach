@@ -11,6 +11,7 @@ import type {
   PillarTrackerSummaryResponse,
   UrineTestMarker,
   UrineTestResponse,
+  WeeklyObjectiveConcept,
   WeeklyObjectivePillarConfig,
   WeeklyObjectiveWellbeingItem,
   WeeklyObjectivesResponse,
@@ -107,6 +108,7 @@ const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const BIOMETRICS_ENABLED = ["1", "true", "yes", "on"].includes(
   String(process.env.NEXT_PUBLIC_BIOMETRICS_ENABLED || "").trim().toLowerCase(),
 );
+const DEFAULT_WEEKLY_TARGET_DAYS = 5;
 const BIOMETRIC_SOURCE_ORDER: Array<{ key: BiometricMetricKey; label: string }> = [
   { key: "resting_hr", label: "Resting HR" },
   { key: "hrv", label: "HRV" },
@@ -220,6 +222,25 @@ function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | n
   );
   const source = activeKeys.size ? activeKeys : new Set(DEFAULT_SETUP_PILLARS);
   return Object.fromEntries(PILLAR_ORDER.map((pillarKey) => [pillarKey, source.has(pillarKey)]));
+}
+
+function resolveWeeklyObjectiveDraftValue(concept?: WeeklyObjectiveConcept | null): number | null {
+  const selectedValue = Number(concept?.selected_value);
+  if (Number.isFinite(selectedValue)) return selectedValue;
+  const defaultOption = (concept?.options || []).find((option) => Number(option?.value) === DEFAULT_WEEKLY_TARGET_DAYS);
+  return defaultOption ? DEFAULT_WEEKLY_TARGET_DAYS : null;
+}
+
+function buildDefaultWeeklyObjectiveTargets(
+  pillar?: WeeklyObjectivePillarConfig | null,
+): Record<string, number | null> {
+  const targets: Record<string, number | null> = {};
+  (pillar?.concepts || []).forEach((concept) => {
+    const conceptKey = String(concept?.concept_key || "").trim();
+    if (!conceptKey) return;
+    targets[conceptKey] = resolveWeeklyObjectiveDraftValue(concept);
+  });
+  return targets;
 }
 
 function formatCompactStepCount(value?: number | null): string {
@@ -2454,6 +2475,38 @@ export default function LatestAssessmentPanel({
       }
       setSummary((current) => ({ ...current, app_setup_completed: true }));
       await refreshSummary({ skipQuoteGeneration: true });
+      const objectivesRes = await fetch(`/api/weekly-objectives?userId=${encodeURIComponent(userId)}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (objectivesRes.ok) {
+        const objectivesText = await objectivesRes.text().catch(() => "");
+        const objectivesPayload = (objectivesText ? JSON.parse(objectivesText) : {}) as WeeklyObjectivesResponse;
+        const selectedKeySet = new Set(selectedKeys);
+        await Promise.all(
+          (objectivesPayload.pillars || [])
+            .filter((pillar) => selectedKeySet.has(String(pillar?.pillar_key || "").trim().toLowerCase()))
+            .map((pillar) => {
+              const sectionKey = String(pillar?.pillar_key || "").trim().toLowerCase();
+              const conceptTargets = buildDefaultWeeklyObjectiveTargets(pillar);
+              const hasTargets = Object.values(conceptTargets).some((value) => Number.isFinite(Number(value)));
+              if (!sectionKey || !hasTargets) return Promise.resolve();
+              return fetch("/api/weekly-objectives", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId,
+                  sectionKey,
+                  conceptTargets,
+                }),
+              }).then(async (targetRes) => {
+                if (targetRes.ok) return;
+                const targetText = await targetRes.text().catch(() => "");
+                throw new Error(normalizeError(targetText, "Failed to save default weekly targets."));
+              });
+            }),
+        );
+      }
       setActiveDockKey("checkin");
       setSummaryPanelVisible(true);
       if (typeof window !== "undefined") {
@@ -2736,14 +2789,7 @@ export default function LatestAssessmentPanel({
     (payload?.pillars || []).forEach((pillar) => {
       const pillarKey = String(pillar?.pillar_key || "").trim().toLowerCase();
       if (!pillarKey) return;
-      const conceptDraft: Record<string, number | null> = {};
-      (pillar?.concepts || []).forEach((concept) => {
-        const conceptKey = String(concept?.concept_key || "").trim();
-        if (!conceptKey) return;
-        const selectedValue = Number(concept?.selected_value);
-        conceptDraft[conceptKey] = Number.isFinite(selectedValue) ? selectedValue : null;
-      });
-      nextPillarDrafts[pillarKey] = conceptDraft;
+      nextPillarDrafts[pillarKey] = buildDefaultWeeklyObjectiveTargets(pillar);
     });
     setPillarObjectiveDrafts(nextPillarDrafts);
     const nextWellbeingDraft: Record<string, string> = {};
@@ -3430,7 +3476,7 @@ export default function LatestAssessmentPanel({
                         {meta?.label || pillarKey}
                       </span>
                     </span>
-                    <span className="mt-[calc(2rem+0.33cm)] block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
+                    <span className="mt-[calc(2rem+0.66cm)] block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
                       {PILLAR_SETUP_COPY[pillarKey] || meta?.note || ""}
                     </span>
                     <span className="mt-auto inline-flex min-h-[2.8rem] items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
