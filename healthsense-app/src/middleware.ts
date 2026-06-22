@@ -12,7 +12,7 @@ const PUBLIC_PATHS = [
   "/delete-account",
   "/coachsense.html",
   "/coachsense-logo.svg",
-  "/coachsense-app-preview.webm",
+  "/healthsense-mark.svg",
 ];
 
 export function middleware(request: NextRequest) {

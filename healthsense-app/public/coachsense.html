@@ -154,20 +154,110 @@
         padding: 28px;
       }
 
-      .preview-video-shell {
-        max-width: 330px;
-        margin: 0 auto;
-        border-radius: 40px;
-        background: #17120f;
-        padding: 12px;
-        box-shadow: 0 28px 80px rgba(42, 33, 27, 0.22);
+      .splash-preview {
+        position: relative;
+        min-height: 520px;
+        overflow: hidden;
+        border-radius: 34px;
+        background: var(--white);
+        box-shadow: 0 28px 80px rgba(42, 33, 27, 0.18);
       }
 
-      .preview-video {
-        display: block;
-        width: 100%;
-        border-radius: 30px;
-        background: #f6f1e7;
+      .splash-preview-logo {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 88px;
+        transform: translate3d(-50%, -50%, 0);
+        animation: splash-logo-flight 4.6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+      }
+
+      .splash-preview-words {
+        position: absolute;
+        inset: 0;
+        color: var(--accent);
+        font-size: clamp(58px, 7vw, 96px);
+        font-weight: 750;
+        line-height: 0.9;
+      }
+
+      .splash-preview-word {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        opacity: 0;
+        transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
+        animation: splash-word-arrive 4.6s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+      }
+
+      .splash-word-find {
+        --from-x: -120%;
+        --from-y: -150%;
+        --to-x: calc(-100% - 0.18em);
+        --to-y: calc(-50% - 0.55em);
+      }
+
+      .splash-word-your {
+        --from-x: 80%;
+        --from-y: 150%;
+        --to-x: 0.18em;
+        --to-y: calc(-50% - 0.55em);
+        animation-delay: 0.13s;
+      }
+
+      .splash-word-own {
+        --from-x: -120%;
+        --from-y: 145%;
+        --to-x: calc(-100% - 0.18em);
+        --to-y: calc(-50% + 0.55em);
+        animation-delay: 0.26s;
+      }
+
+      .splash-word-way {
+        --from-x: 85%;
+        --from-y: -145%;
+        --to-x: 0.18em;
+        --to-y: calc(-50% + 0.55em);
+        animation-delay: 0.39s;
+      }
+
+      @keyframes splash-logo-flight {
+        0% {
+          opacity: 0;
+          transform: translate3d(150%, 160%, 0) scale(0.46);
+        }
+        16% {
+          opacity: 1;
+        }
+        36% {
+          opacity: 1;
+          transform: translate3d(-50%, -50%, 0) scale(1);
+        }
+        50%,
+        100% {
+          opacity: 0;
+          transform: translate3d(-50%, -50%, 0) scale(0.92);
+        }
+      }
+
+      @keyframes splash-word-arrive {
+        0%,
+        34% {
+          opacity: 0;
+          transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
+        }
+        44% {
+          opacity: 1;
+        }
+        62%,
+        88% {
+          opacity: 1;
+          transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
+        }
       }
 
       section {
@@ -419,6 +509,10 @@
           border-radius: 32px;
         }
 
+        .splash-preview {
+          min-height: 430px;
+        }
+
         .section-heading {
           display: block;
         }
@@ -472,10 +566,14 @@
           </div>
 
           <aside class="app-preview" aria-label="CoachSense app preview">
-            <div class="preview-video-shell">
-              <video class="preview-video" autoplay muted loop playsinline>
-                <source src="coachsense-app-preview.webm" type="video/webm" />
-              </video>
+            <div class="splash-preview" aria-label="CoachSense splash animation">
+              <img class="splash-preview-logo" src="healthsense-mark.svg" alt="" />
+              <div class="splash-preview-words" aria-hidden="true">
+                <span class="splash-preview-word splash-word-find">Find</span>
+                <span class="splash-preview-word splash-word-your">your</span>
+                <span class="splash-preview-word splash-word-own">own</span>
+                <span class="splash-preview-word splash-word-way">way.</span>
+              </div>
             </div>
           </aside>
         </section>
