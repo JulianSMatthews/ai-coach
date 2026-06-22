@@ -198,49 +198,131 @@
         font-weight: 600;
       }
 
-      .pillars,
-      .steps {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
+      .queue-rail {
+        display: flex;
+        gap: 18px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        padding: 4px 0 18px;
+        scroll-snap-type: x proximity;
+        scrollbar-color: var(--accent-dark) var(--track);
+        scrollbar-width: thin;
       }
 
-      .pillar,
-      .step {
-        min-height: 240px;
-        border-radius: 28px;
-        background: var(--panel-soft);
+      .queue-rail::-webkit-scrollbar {
+        height: 12px;
+      }
+
+      .queue-rail::-webkit-scrollbar-track {
+        border-radius: 999px;
+        background: var(--track);
+      }
+
+      .queue-rail::-webkit-scrollbar-thumb {
+        border: 3px solid var(--track);
+        border-radius: 999px;
+        background: var(--accent-dark);
+      }
+
+      .queue-card {
+        position: relative;
+        display: flex;
+        min-height: 26rem;
+        width: min(86vw, 22rem);
+        flex: 0 0 min(86vw, 22rem);
+        scroll-snap-align: center;
+        flex-direction: column;
         border: 1px solid var(--line);
-        padding: 22px;
+        border-radius: 30px;
+        background: var(--panel);
+        padding: 28px;
+        color: var(--ink);
+        box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
       }
 
-      .number {
-        width: 46px;
-        height: 46px;
-        display: grid;
-        place-items: center;
-        border-radius: 50%;
-        margin-bottom: 54px;
-        background: var(--white);
-        color: var(--accent-dark);
-        font-size: 13px;
-        font-weight: 900;
+      .queue-card h3 {
+        max-width: 220px;
+        margin: 0;
+        padding-right: 74px;
+        font-size: clamp(38px, 4vw, 46px);
+        font-weight: 750;
+        line-height: 0.98;
+        letter-spacing: 0;
       }
 
-      .pillar h3,
-      .step h3 {
-        margin: 0 0 10px;
-        font-size: 26px;
-        line-height: 1;
-      }
-
-      .pillar p,
-      .step p,
+      .queue-card p,
       .quote p,
       details p {
         margin: 0;
         color: var(--muted);
         font-weight: 600;
+      }
+
+      .queue-card p {
+        margin-top: 2.65rem;
+        font-size: 24px;
+        font-weight: 650;
+        line-height: 1.18;
+      }
+
+      .queue-kicker {
+        display: block;
+        margin-bottom: 20px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .queue-ring {
+        position: absolute;
+        right: 20px;
+        top: 20px;
+        display: grid;
+        width: 84px;
+        height: 84px;
+        place-items: center;
+      }
+
+      .queue-ring svg {
+        position: absolute;
+        inset: 0;
+        transform: rotate(-90deg);
+      }
+
+      .queue-circle {
+        position: relative;
+        display: grid;
+        width: 60px;
+        height: 60px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--circle-bg, #fff2e8);
+        color: var(--circle-fg, #17120f);
+      }
+
+      .queue-circle svg {
+        position: static;
+        width: 34px;
+        height: 34px;
+        transform: none;
+      }
+
+      .queue-pill {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-start;
+        margin-top: auto;
+        border: 1px solid var(--accent-dark);
+        border-radius: 999px;
+        background: var(--accent-dark);
+        padding: 10px 18px;
+        color: var(--white);
+        font-size: 14px;
+        font-weight: 800;
       }
 
       .quote {
@@ -307,9 +389,8 @@
           grid-template-columns: 1fr;
         }
 
-        .pillars,
-        .steps {
-          grid-template-columns: repeat(2, 1fr);
+        .queue-card {
+          flex-basis: min(88vw, 22rem);
         }
       }
 
@@ -346,18 +427,13 @@
           margin-top: 12px;
         }
 
-        .pillars,
-        .steps {
-          grid-template-columns: 1fr;
+        .queue-card {
+          min-height: 24rem;
+          padding: 24px;
         }
 
-        .pillar,
-        .step {
-          min-height: auto;
-        }
-
-        .number {
-          margin-bottom: 34px;
+        .queue-card p {
+          font-size: 22px;
         }
 
         footer {
@@ -409,26 +485,70 @@
             <h2>Four pillars that help life make more sense.</h2>
             <p>CoachSense keeps things simple: daily guidance shaped around the areas that support personal growth.</p>
           </div>
-          <div class="pillars">
-            <article class="pillar">
-              <div class="number">01</div>
+          <div class="queue-rail pillars">
+            <article class="queue-card pillar" style="--tone:#d2553a;--circle-bg:#d2553a;--circle-fg:#fff;">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--tone)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+              </span>
               <h3>Resilience</h3>
               <p>Stay steady, adapt and recover your footing when life pulls you off course.</p>
+              <span class="queue-pill">Selected</span>
             </article>
-            <article class="pillar">
-              <div class="number">02</div>
+            <article class="queue-card pillar" style="--tone:#0f8b8d;--circle-bg:#0f8b8d;--circle-fg:#fff;">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--tone)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+              </span>
               <h3>Recovery</h3>
               <p>Protect your energy, create space to reset and support better decisions.</p>
+              <span class="queue-pill">Selected</span>
             </article>
-            <article class="pillar">
-              <div class="number">03</div>
+            <article class="queue-card pillar" style="--tone:#7c5cff;--circle-bg:#7c5cff;--circle-fg:#fff;">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--tone)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+              </span>
               <h3>Reflection</h3>
               <p>Understand your patterns, learn from experience and build self-awareness.</p>
+              <span class="queue-pill">Selected</span>
             </article>
-            <article class="pillar">
-              <div class="number">04</div>
+            <article class="queue-card pillar" style="--tone:#c48a12;--circle-bg:#c48a12;--circle-fg:#fff;">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--tone)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+              </span>
               <h3>Purpose</h3>
               <p>Reconnect with what matters, where you are heading and why it matters.</p>
+              <span class="queue-pill">Selected</span>
             </article>
           </div>
         </section>
@@ -441,26 +561,83 @@
               forward.
             </p>
           </div>
-          <div class="steps">
-            <article class="step">
-              <div class="number">1</div>
+          <div class="queue-rail steps">
+            <article class="queue-card step">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle" style="--circle-bg:#f5ddce;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 5.5h14v13H5z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 13h3" />
+                    <path d="m13.5 14.2 1.5 1.5 3-3.4" />
+                  </svg>
+                </span>
+              </span>
+              <span class="queue-kicker">Step 1</span>
               <h3>Check in</h3>
               <p>Take a moment to understand where you are today.</p>
             </article>
-            <article class="step">
-              <div class="number">2</div>
-              <h3>Learn</h3>
-              <p>Watch short lessons and answer simple questions.</p>
+            <article class="queue-card step">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle" style="--circle-bg:#f5ddce;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="7.5" />
+                    <circle cx="12" cy="12" r="3.5" />
+                    <path d="M12 12 18.5 5.5" />
+                    <path d="M17.8 4.2h2v2" />
+                  </svg>
+                </span>
+              </span>
+              <span class="queue-kicker">Step 2</span>
+              <h3>Weekly targets</h3>
+              <p>Set a simple rhythm for the week, then adjust it as your routine becomes clearer.</p>
             </article>
-            <article class="step">
-              <div class="number">3</div>
-              <h3>Reflect</h3>
-              <p>Notice the patterns shaping your choices and wellbeing.</p>
+            <article class="queue-card step">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle" style="--circle-bg:#f5ddce;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.5 18.5h15" />
+                    <path d="M7 18.5v-5" />
+                    <path d="M12 18.5v-9" />
+                    <path d="M17 18.5v-12" />
+                    <path d="M6.5 7.5 10 4l3 3 4.5-4.5" />
+                  </svg>
+                </span>
+              </span>
+              <span class="queue-kicker">Step 3</span>
+              <h3>Scoring</h3>
+              <p>Use scores as feedback signals that help shape more relevant reflections.</p>
             </article>
-            <article class="step">
-              <div class="number">4</div>
-              <h3>Keep going</h3>
-              <p>Use one clear action to move forward with confidence.</p>
+            <article class="queue-card step">
+              <span class="queue-ring" aria-hidden="true">
+                <svg viewBox="0 0 84 84">
+                  <circle cx="42" cy="42" r="38" stroke="var(--track)" stroke-width="8" fill="none" />
+                  <circle cx="42" cy="42" r="38" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" />
+                </svg>
+                <span class="queue-circle" style="--circle-bg:#f5ddce;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 5.5h10a3 3 0 0 1 3 3v10H8a3 3 0 0 1-3-3v-10Z" />
+                    <path d="M8.5 9h6" />
+                    <path d="M8.5 12.5h6" />
+                    <path d="M8 18.5V7.5" />
+                  </svg>
+                </span>
+              </span>
+              <span class="queue-kicker">Step 4</span>
+              <h3>Lessons</h3>
+              <p>Move through short concept units linked to the pillars and questions you choose.</p>
             </article>
           </div>
         </section>
