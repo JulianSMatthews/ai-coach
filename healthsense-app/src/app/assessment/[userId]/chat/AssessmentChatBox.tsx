@@ -3861,10 +3861,14 @@ export default function AssessmentChatBox({
                                   </span>
                                 </span>
                                 <span
-                                  className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
+                                  className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full"
                                   style={{ backgroundColor: activePillar.bg, color: "#1e1b16" }}
                                 >
-                                  {concept.lesson_count}
+                                  <ConceptEducationIcon
+                                    conceptKey={concept.concept_key}
+                                    pillarKey={activeEducationExplorerPillarKey}
+                                    className="h-8 w-8"
+                                  />
                                 </span>
                               </button>
                             );
