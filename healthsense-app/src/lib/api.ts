@@ -748,11 +748,13 @@ export type EducationPlanTodayResponse = {
       pillar_key?: string | null;
       pillar_label?: string | null;
       lesson_count?: number | null;
+      completed_lesson_count?: number | null;
       concepts?: Array<{
         programme_id?: number | null;
         concept_key?: string | null;
         concept_label?: string | null;
         lesson_count?: number | null;
+        completed_lesson_count?: number | null;
         lessons?: Array<{
           programme_day_id?: number | null;
           day_index?: number | null;

@@ -107,12 +107,14 @@ type EducationExplorerConcept = {
   concept_key: string;
   concept_label: string;
   lesson_count: number;
+  completed_lesson_count: number;
   lessons: any[];
 };
 type EducationExplorerPillar = {
   pillar_key: string;
   pillar_label: string;
   lesson_count: number;
+  completed_lesson_count: number;
   concepts: EducationExplorerConcept[];
 };
 type ConceptIconProps = {
@@ -1560,21 +1562,31 @@ export default function AssessmentChatBox({
           if (!conceptKey) continue;
           const lessons = Array.isArray(concept?.lessons) ? concept.lessons : [];
           const lessonCount = Number(concept?.lesson_count ?? lessons.length);
+          const conceptProgress = resolveEducationProgrammeProgress({
+            lesson_count: Number.isFinite(lessonCount) ? lessonCount : lessons.length,
+            completed_lesson_count: concept?.completed_lesson_count,
+            lessons,
+          });
           concepts.push({
             programme_id: Number(concept?.programme_id || 0) || null,
             concept_key: conceptKey,
             concept_label: String(concept?.concept_label || conceptKey.replace(/_/g, " ")).trim() || "Concept",
-            lesson_count: Number.isFinite(lessonCount) ? lessonCount : lessons.length,
+            lesson_count: conceptProgress.total,
+            completed_lesson_count: conceptProgress.completed,
             lessons,
           });
         }
         const lessonCount = Number(pillar?.lesson_count ?? concepts.reduce((total, concept) => {
           return total + concept.lesson_count;
         }, 0));
+        const completedLessonCount = Number(pillar?.completed_lesson_count);
         pillars.push({
           pillar_key: pillarKey,
           pillar_label: String(pillar?.pillar_label || getPillarPalette(pillarKey).label || pillarKey).trim(),
           lesson_count: Number.isFinite(lessonCount) ? lessonCount : 0,
+          completed_lesson_count: Number.isFinite(completedLessonCount)
+            ? Math.max(0, Math.min(Number.isFinite(lessonCount) ? lessonCount : 0, Math.round(completedLessonCount)))
+            : concepts.reduce((total, concept) => total + concept.completed_lesson_count, 0),
           concepts,
         });
       }
@@ -1596,6 +1608,7 @@ export default function AssessmentChatBox({
           concept_key: concept.concept_key,
           concept_label: concept.concept_label,
           lesson_count: concept.lesson_count,
+          completed_lesson_count: concept.completed_lesson_count,
           lessons: concept.lessons,
         }));
     }
@@ -3788,6 +3801,8 @@ export default function AssessmentChatBox({
                           educationExplorerPillars.map((pillar) => {
                             const active = pillar.pillar_key === educationExplorerPillarKey;
                             const palette = getPillarPalette(pillar.pillar_key);
+                            const pillarLessonsComplete =
+                              pillar.lesson_count > 0 && pillar.completed_lesson_count >= pillar.lesson_count;
                             return (
                               <button
                                 key={pillar.pillar_key}
@@ -3807,8 +3822,8 @@ export default function AssessmentChatBox({
                                   <EducationProgrammeProgressIcon
                                     pillarKey={pillar.pillar_key}
                                     tone={palette.accent}
-                                    completed={active ? 1 : 0}
-                                    total={1}
+                                    completed={pillarLessonsComplete ? pillar.lesson_count : 0}
+                                    total={pillar.lesson_count}
                                   />
                                 </span>
                                 <span className="min-w-0 pr-24">
