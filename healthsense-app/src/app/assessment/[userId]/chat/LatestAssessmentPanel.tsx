@@ -3499,7 +3499,7 @@ export default function LatestAssessmentPanel({
                   className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] bg-[var(--surface)] px-6 py-6 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7"
                 >
                   <SetupGuideIcon iconKey={card.icon} />
-                  <SetupSwipeHint />
+                  {index === SETUP_GUIDE_CARDS.length - 1 ? null : <SetupSwipeHint />}
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
                     {`Step ${index + 1}`}
                   </p>
