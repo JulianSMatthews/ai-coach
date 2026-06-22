@@ -3431,8 +3431,11 @@ export default function LatestAssessmentPanel({
               <article className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
                 <SetupHealthSenseLogo />
                 <SetupSwipeHint />
-                <p className="pr-16 text-[2.15rem] font-semibold leading-[1.02] tracking-normal text-[var(--text-primary)] sm:text-[2.45rem]">
-                  Set up your CoachSense by choosing the pillars you want to work with first; they shape your check-in cards, weekly objectives, and learning units, and you can change them later in Preferences.
+                <p className="pr-16 text-[2.35rem] font-semibold leading-[0.98] tracking-normal text-[var(--text-primary)] sm:text-[2.7rem]">
+                  Set up your CoachSense
+                </p>
+                <p className="mt-6 pr-4 text-[1.24rem] font-medium leading-[1.25] text-[var(--text-secondary)]">
+                  Choose the pillars you want to work with first. They shape your check-in cards, weekly objectives, and learning units, and you can change them later in Preferences.
                 </p>
               </article>
 
