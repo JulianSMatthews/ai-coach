@@ -157,12 +157,16 @@
 
       .app-preview {
         position: relative;
+        display: flex;
+        justify-content: flex-end;
         min-height: 0;
       }
 
       .splash-preview {
         position: relative;
-        min-height: 520px;
+        width: min(75%, 390px);
+        min-height: 0;
+        aspect-ratio: 1;
         overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 30px;
@@ -676,11 +680,12 @@
         }
 
         .app-preview {
+          justify-content: center;
           min-height: auto;
         }
 
         .splash-preview {
-          min-height: 430px;
+          width: min(75vw, 322px);
         }
 
         .section-heading {
@@ -750,7 +755,7 @@
 
         <section id="pillars">
           <div class="section-heading">
-            <h2>Pillars that help life make more sense.</h2>
+            <h2>Four pillars that help life make more sense.</h2>
             <p>CoachSense keeps things simple: daily guidance shaped around the areas that support personal growth.</p>
           </div>
           <div class="queue-rail pillars">
