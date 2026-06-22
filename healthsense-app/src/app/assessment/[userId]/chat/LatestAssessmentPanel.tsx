@@ -81,18 +81,22 @@ const PILLAR_SETUP_COPY: Record<string, string> = {
 };
 const SETUP_GUIDE_CARDS = [
   {
+    icon: "checkin",
     title: "Check in",
     body: "Each selected pillar becomes a daily cue card. Tap Today, Yesterday, or Last week to answer the pillar questions.",
   },
   {
+    icon: "targets",
     title: "Weekly targets",
     body: "Targets set the weekly context for each question. They can stay simple at first and be adjusted as your routine becomes clearer.",
   },
   {
+    icon: "scoring",
     title: "Scoring",
     body: "Scores are feedback signals, not grades. They help CoachSense notice patterns and generate more relevant reflections.",
   },
   {
+    icon: "lessons",
     title: "Lessons",
     body: "Your learning journey moves through concept units. The units follow the pillars and questions you choose here.",
   },
@@ -1304,23 +1308,144 @@ function SetupHealthSenseLogo() {
   );
 }
 
-function SetupPillarIcon({ pillarKey }: { pillarKey: string }) {
-  const palette = getPillarPalette(pillarKey);
-  const iconSrc = palette.icon;
+function SetupLineIcon({ iconKey, className = "h-9 w-9" }: { iconKey: string; className?: string }) {
+  const key = String(iconKey || "").trim().toLowerCase();
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    className,
+    "aria-hidden": true,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  switch (key) {
+    case "reflection":
+      return (
+        <svg {...commonProps}>
+          <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
+          <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+        </svg>
+      );
+    case "purpose":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
+          <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          <path d="M12 10h2" />
+        </svg>
+      );
+    case "resilience":
+      return (
+        <svg {...commonProps}>
+          <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+          <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+          <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
+          <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
+        </svg>
+      );
+    case "recovery":
+      return (
+        <svg {...commonProps}>
+          <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
+          <path d="M16.5 4.8h3" />
+          <path d="M18 3.3v3" />
+          <path d="M7.5 16.5c1.4 1 3.1 1.5 5 1.2" />
+        </svg>
+      );
+    case "nutrition":
+      return (
+        <svg {...commonProps}>
+          <path d="M6 4.5v15" />
+          <path d="M9 4.5v5a3 3 0 0 1-3 3" />
+          <path d="M15.5 4.5c2.2.7 3.5 2.8 3.5 5.2 0 2.6-1.5 4.8-3.5 5.3v4.5" />
+          <path d="M15.5 4.5v10.5" />
+        </svg>
+      );
+    case "training":
+      return (
+        <svg {...commonProps}>
+          <path d="M4 10v4" />
+          <path d="M7 8v8" />
+          <path d="M17 8v8" />
+          <path d="M20 10v4" />
+          <path d="M7 12h10" />
+        </svg>
+      );
+    case "checkin":
+      return (
+        <svg {...commonProps}>
+          <path d="M5 5.5h14v13H5z" />
+          <path d="M8 9h8" />
+          <path d="M8 13h3" />
+          <path d="m13.5 14.2 1.5 1.5 3-3.4" />
+        </svg>
+      );
+    case "targets":
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="12" r="7.5" />
+          <circle cx="12" cy="12" r="3.5" />
+          <path d="M12 12 18.5 5.5" />
+          <path d="M17.8 4.2h2v2" />
+        </svg>
+      );
+    case "scoring":
+      return (
+        <svg {...commonProps}>
+          <path d="M4.5 18.5h15" />
+          <path d="M7 18.5v-5" />
+          <path d="M12 18.5v-9" />
+          <path d="M17 18.5v-12" />
+          <path d="M6.5 7.5 10 4l3 3 4.5-4.5" />
+        </svg>
+      );
+    case "lessons":
+      return (
+        <svg {...commonProps}>
+          <path d="M5 5.5h10a3 3 0 0 1 3 3v10H8a3 3 0 0 1-3-3v-10Z" />
+          <path d="M8.5 9h6" />
+          <path d="M8.5 12.5h6" />
+          <path d="M8 18.5V7.5" />
+        </svg>
+      );
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path d="M12 3a7 7 0 0 0-4 12.7c.6.4 1 1 1.2 1.7h5.6c.2-.7.6-1.3 1.2-1.7A7 7 0 0 0 12 3Z" />
+      <path d="M9.5 21h5" />
+      <path d="M10 18.5h4" />
+    </svg>
+  );
+}
+
+function SetupCardIcon({ iconKey, tone, background }: { iconKey: string; tone: string; background: string }) {
   return (
     <span className="absolute right-5 top-5 flex h-[84px] w-[84px] shrink-0 items-center justify-center" aria-hidden="true">
       <svg width="84" height="84" className="absolute inset-0 rotate-[-90deg]">
         <circle cx="42" cy="42" r="38" stroke="var(--ring-track)" strokeWidth="8" fill="none" />
-        <circle cx="42" cy="42" r="38" stroke={palette.accent} strokeWidth="8" fill="none" strokeLinecap="round" />
+        <circle cx="42" cy="42" r="38" stroke={tone} strokeWidth="8" fill="none" strokeLinecap="round" />
       </svg>
       <span
-        className="relative flex h-[60px] w-[60px] items-center justify-center rounded-full"
-        style={{ backgroundColor: palette.bg }}
+        className="relative flex h-[60px] w-[60px] items-center justify-center rounded-full text-[#17120f]"
+        style={{ backgroundColor: background }}
       >
-        {iconSrc ? <img src={iconSrc} alt="" className="h-10 w-10 object-contain" /> : null}
+        <SetupLineIcon iconKey={iconKey} />
       </span>
     </span>
   );
+}
+
+function SetupPillarIcon({ pillarKey }: { pillarKey: string }) {
+  const palette = getPillarPalette(pillarKey);
+  return <SetupCardIcon iconKey={pillarKey} tone={palette.accent} background={palette.bg} />;
+}
+
+function SetupGuideIcon({ iconKey }: { iconKey: string }) {
+  return <SetupCardIcon iconKey={iconKey} tone="var(--accent)" background="var(--accent-soft)" />;
 }
 
 function WeeklyObjectiveSectionIcon({ sectionKey }: { sectionKey: string }) {
@@ -3306,20 +3431,9 @@ export default function LatestAssessmentPanel({
               <article className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
                 <SetupHealthSenseLogo />
                 <SetupSwipeHint />
-                <p className="pr-16 text-[2.35rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.7rem]">
-                  Set up your CoachSense
+                <p className="pr-16 text-[2.15rem] font-semibold leading-[1.02] tracking-normal text-[var(--text-primary)] sm:text-[2.45rem]">
+                  Set up your CoachSense by choosing the pillars you want to work with first; they shape your check-in cards, weekly objectives, and learning units, and you can change them later in Preferences.
                 </p>
-                <p className="mt-6 text-[1.24rem] font-medium leading-[1.25] text-[var(--text-secondary)]">
-                  Choose the pillars you want to work with first. You can change them later in Preferences.
-                </p>
-                <div className="mt-auto space-y-3 pt-6">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                    Start simple
-                  </p>
-                  <p className="text-sm leading-6 text-[var(--text-secondary)]">
-                    The selected pillars shape your check-in cards, weekly objectives, and the order of your learning units.
-                  </p>
-                </div>
               </article>
 
               {PILLAR_ORDER.map((pillarKey) => {
@@ -3371,11 +3485,11 @@ export default function LatestAssessmentPanel({
                   key={card.title}
                   className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                 >
-                  <SetupSwipeHint />
+                  <SetupGuideIcon iconKey={card.icon} />
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
                     {`Step ${index + 1}`}
                   </p>
-                  <p className="mt-5 pr-16 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
+                  <p className="mt-5 pr-24 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
                     {card.title}
                   </p>
                   <p className="mt-8 text-[1.24rem] font-medium leading-[1.24] text-[var(--text-secondary)]">
