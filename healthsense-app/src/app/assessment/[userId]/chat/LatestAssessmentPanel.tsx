@@ -3623,7 +3623,7 @@ export default function LatestAssessmentPanel({
                   style={activeDockKey === "checkin" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <BiometricsIcon className="h-4 w-4 text-[var(--chrome-text)]" />
-                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
+                  <span className="text-[12.5px] font-semibold leading-none sm:text-[13.75px]">
                     Checkin
                   </span>
                 </button>
@@ -3648,7 +3648,7 @@ export default function LatestAssessmentPanel({
                   style={activeDockKey === "learn" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <InsightIcon className="h-4 w-4 text-[var(--chrome-text)]" />
-                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
+                  <span className="text-[12.5px] font-semibold leading-none sm:text-[13.75px]">
                     Learn
                   </span>
                 </button>
