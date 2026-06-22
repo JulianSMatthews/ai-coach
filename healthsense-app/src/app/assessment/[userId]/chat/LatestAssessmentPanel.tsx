@@ -1288,10 +1288,37 @@ function BiometricsIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { classN
 function SetupSwipeHint() {
   return (
     <span
-      className="absolute right-5 top-5 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
+      className="absolute bottom-5 right-5 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
       aria-hidden="true"
     >
       <span className="text-3xl leading-none">›</span>
+    </span>
+  );
+}
+
+function SetupHealthSenseLogo() {
+  return (
+    <span className="absolute right-6 top-6 flex h-12 w-12 items-center justify-center" aria-label="HealthSense">
+      <img src="/healthsense-mark.svg" alt="" className="h-12 w-12 object-contain" />
+    </span>
+  );
+}
+
+function SetupPillarIcon({ pillarKey }: { pillarKey: string }) {
+  const palette = getPillarPalette(pillarKey);
+  const iconSrc = palette.icon;
+  return (
+    <span className="absolute right-5 top-5 flex h-[84px] w-[84px] shrink-0 items-center justify-center" aria-hidden="true">
+      <svg width="84" height="84" className="absolute inset-0 rotate-[-90deg]">
+        <circle cx="42" cy="42" r="38" stroke="var(--ring-track)" strokeWidth="8" fill="none" />
+        <circle cx="42" cy="42" r="38" stroke={palette.accent} strokeWidth="8" fill="none" strokeLinecap="round" />
+      </svg>
+      <span
+        className="relative flex h-[60px] w-[60px] items-center justify-center rounded-full"
+        style={{ backgroundColor: palette.bg }}
+      >
+        {iconSrc ? <img src={iconSrc} alt="" className="h-10 w-10 object-contain" /> : null}
+      </span>
     </span>
   );
 }
@@ -3274,9 +3301,10 @@ export default function LatestAssessmentPanel({
     <>
       {appSetupRequired && !selectedPillarKey && !objectivesModalOpen && !streakSectionOpen ? (
         <section className="flex h-full min-h-0 items-center pb-8 pt-6 sm:pt-8">
-          <div className="w-full min-w-0 overflow-x-auto snap-x snap-proximity [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="coach-scrollbar w-full min-w-0 overflow-x-auto snap-x snap-proximity pb-4">
             <div className="flex gap-4 px-4 sm:gap-5 sm:px-5">
               <article className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
+                <SetupHealthSenseLogo />
                 <SetupSwipeHint />
                 <p className="pr-16 text-[2.35rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.7rem]">
                   Set up your CoachSense
@@ -3310,13 +3338,13 @@ export default function LatestAssessmentPanel({
                     aria-pressed={selected}
                     className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] border border-[var(--border)] bg-[var(--surface)] px-7 py-7 text-left text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                   >
-                    <SetupSwipeHint />
+                    <SetupPillarIcon pillarKey={pillarKey} />
                     <span className="flex items-start justify-between gap-4">
-                      <span className="pr-16 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
+                      <span className="pr-24 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
                         {meta?.label || pillarKey}
                       </span>
                       <span
-                        className={`mt-16 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                        className={`mt-24 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                           selected
                             ? "border-[#111111] bg-white text-[#111111]"
                             : "border-[var(--border)] bg-[var(--surface-muted)] text-transparent"
