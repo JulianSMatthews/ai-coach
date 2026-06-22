@@ -3797,25 +3797,27 @@ export default function AssessmentChatBox({
                                   setEducationExplorerConceptKey(null);
                                   setEducationExplorerMode("concepts");
                                 }}
-                                className="flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
+                                className="relative flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[var(--border)] px-5 py-5 text-left transition"
                                 style={{
                                   backgroundColor: active ? "var(--surface)" : "var(--surface-muted)",
                                   boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
                                 }}
                               >
-                                <span className="min-w-0 pr-4">
+                                <span className="absolute right-5 top-5" aria-hidden="true">
+                                  <EducationProgrammeProgressIcon
+                                    pillarKey={pillar.pillar_key}
+                                    tone={palette.accent}
+                                    completed={active ? 1 : 0}
+                                    total={1}
+                                  />
+                                </span>
+                                <span className="min-w-0 pr-24">
                                   <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.8rem]">
                                     {pillar.pillar_label}
                                   </span>
                                   <span className="mt-4 block text-sm text-[var(--text-secondary)]">
                                     {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
                                   </span>
-                                </span>
-                                <span
-                                  className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
-                                  style={{ backgroundColor: palette.bg, color: "#1e1b16" }}
-                                >
-                                  {pillar.lesson_count}
                                 </span>
                               </button>
                             );
@@ -3878,7 +3880,7 @@ export default function AssessmentChatBox({
                         )}
                       </div>
                     ) : (
-                      <div className="overflow-x-auto pb-1">
+                      <div className="coach-scrollbar overflow-x-auto pb-3">
                         <div className="flex gap-3">
                           {educationExplorerLessons.length ? (
                             educationExplorerLessons.map((lesson) => {
@@ -3920,7 +3922,7 @@ export default function AssessmentChatBox({
                     </div>
                   </div>
                   <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-5 sm:pb-52">
-                    <div className="overflow-x-auto pb-2">
+                    <div className="coach-scrollbar overflow-x-auto pb-3">
                       <div className="flex gap-3">
                         {selectedEducationProgrammeLessons.length ? (
                           selectedEducationProgrammeLessons.map((lesson, index) => {

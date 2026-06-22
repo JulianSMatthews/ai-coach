@@ -249,6 +249,11 @@ export default function AssessmentPromptCard({
           : "w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8"
       }
     >
+      {showLeadIntroPreview ? (
+        <div className="mb-2 flex justify-end sm:mb-3">
+          <LeadAssessmentBranding titleLines={[]} logoClassName="h-10 w-10 flex-none sm:h-12 sm:w-12" />
+        </div>
+      ) : null}
       <div className={scorePreviewUsesOuterCard ? "space-y-4" : "space-y-5"}>
         {showLeadIntroHeader ? (
           <div className="border-b border-[#eadfce] pb-5">
@@ -401,7 +406,7 @@ export default function AssessmentPromptCard({
             </div>
 
             {singleOptionPrompt ? (
-              <div className="grid grid-cols-1 gap-3">
+              <div className={showLeadIntroPreview ? "flex justify-end" : "grid grid-cols-1 gap-3"}>
                 {prompt.options.map((option) => {
                   const isSelected = selectedValue === option.value;
                   return (
@@ -410,15 +415,24 @@ export default function AssessmentPromptCard({
                       type="button"
                       onClick={() => onSelect(option)}
                       disabled={busy}
+                      aria-label={showLeadIntroPreview ? option.label : undefined}
                       className={
-                        isSelected
-                          ? "rounded-2xl border border-[var(--accent)] bg-white px-3 py-3.5 text-center text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-5"
-                          : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-3 py-3.5 text-center text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-5"
+                        showLeadIntroPreview
+                          ? isSelected
+                            ? "flex h-14 w-14 items-center justify-center rounded-full border border-[var(--accent)] bg-white text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:h-16 sm:w-16"
+                            : "flex h-14 w-14 items-center justify-center rounded-full border border-[var(--accent)] bg-[var(--accent)] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:h-16 sm:w-16"
+                          : isSelected
+                            ? "rounded-2xl border border-[var(--accent)] bg-white px-3 py-3.5 text-center text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-5"
+                            : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-3 py-3.5 text-center text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-5"
                       }
                     >
-                      <span className={isSelected ? "block text-sm font-semibold text-[var(--accent)] text-center sm:text-lg" : "block text-sm font-semibold text-white text-center sm:text-lg"}>
-                        {option.label}
-                      </span>
+                      {showLeadIntroPreview ? (
+                        <span className="text-3xl leading-none" aria-hidden="true">›</span>
+                      ) : (
+                        <span className={isSelected ? "block text-sm font-semibold text-[var(--accent)] text-center sm:text-lg" : "block text-sm font-semibold text-white text-center sm:text-lg"}>
+                          {option.label}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
