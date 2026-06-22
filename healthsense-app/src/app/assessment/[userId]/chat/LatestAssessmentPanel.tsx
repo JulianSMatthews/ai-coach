@@ -3428,7 +3428,7 @@ export default function LatestAssessmentPanel({
         <section className="flex h-full min-h-0 items-center pb-8 pt-6 sm:pt-8">
           <div className="coach-scrollbar w-full min-w-0 overflow-x-auto snap-x snap-proximity pb-4">
             <div className="flex gap-4 px-4 sm:gap-5 sm:px-5">
-              <article className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8">
+              <article className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] bg-[var(--surface)] px-6 py-6 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7">
                 <SetupHealthSenseLogo />
                 <SetupSwipeHint />
                 <p className="pr-16 text-[2.35rem] font-semibold leading-[0.98] tracking-normal text-[var(--text-primary)] sm:text-[2.7rem]">
@@ -3453,7 +3453,7 @@ export default function LatestAssessmentPanel({
                       }))
                     }
                     aria-pressed={selected}
-                    className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] border border-[var(--border)] bg-[var(--surface)] px-7 py-7 text-left text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                    className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] border border-[var(--border)] bg-[var(--surface)] px-6 py-6 text-left text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7"
                   >
                     <SetupPillarIcon pillarKey={pillarKey} />
                     <span className="flex items-start justify-between gap-4">
@@ -3473,7 +3473,7 @@ export default function LatestAssessmentPanel({
                         </svg>
                       </span>
                     </span>
-                    <span className="mt-8 block text-[1.24rem] font-medium leading-[1.24] text-[var(--text-secondary)]">
+                    <span className="mt-8 block text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
                       {PILLAR_SETUP_COPY[pillarKey] || meta?.note || ""}
                     </span>
                     <span className="mt-auto inline-flex min-h-[2.8rem] items-center justify-center rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)]">
@@ -3486,7 +3486,7 @@ export default function LatestAssessmentPanel({
               {SETUP_GUIDE_CARDS.map((card, index) => (
                 <article
                   key={card.title}
-                  className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col rounded-[34px] bg-[var(--surface)] px-7 py-7 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                  className="relative flex min-h-[25.5rem] w-[min(86vw,22rem)] shrink-0 snap-center flex-col rounded-[30px] bg-[var(--surface)] px-6 py-6 text-[var(--text-primary)] shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:min-h-[27rem] sm:w-[23rem] sm:px-7 sm:py-7"
                 >
                   <SetupGuideIcon iconKey={card.icon} />
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
@@ -3495,7 +3495,7 @@ export default function LatestAssessmentPanel({
                   <p className="mt-5 pr-24 text-[2.45rem] font-semibold leading-[0.98] tracking-normal sm:text-[2.85rem]">
                     {card.title}
                   </p>
-                  <p className="mt-8 text-[1.24rem] font-medium leading-[1.24] text-[var(--text-secondary)]">
+                  <p className="mt-8 text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
                     {card.body}
                   </p>
                   {index === SETUP_GUIDE_CARDS.length - 1 ? (
