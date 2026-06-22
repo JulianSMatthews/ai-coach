@@ -2428,8 +2428,15 @@ export default function LatestAssessmentPanel({
             }
           : null;
 
-  const refreshSummary = useCallback(async ({ skipQuoteGeneration = true }: { skipQuoteGeneration?: boolean } = {}) => {
+  const refreshSummary = useCallback(async ({
+    anchorDate,
+    skipQuoteGeneration = true,
+  }: { anchorDate?: string | null; skipQuoteGeneration?: boolean } = {}) => {
     const params = new URLSearchParams({ userId });
+    const resolvedAnchorDate = String(anchorDate || "").trim();
+    if (resolvedAnchorDate) {
+      params.set("anchorDate", resolvedAnchorDate);
+    }
     if (skipQuoteGeneration) {
       params.set("skipQuoteGeneration", "true");
     }
@@ -2554,16 +2561,17 @@ export default function LatestAssessmentPanel({
     });
   }, []);
 
-  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null, options?: { waitForFresh?: boolean }) => {
+  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null, options?: { anchorDate?: string | null; waitForFresh?: boolean }) => {
     if (typeof window === "undefined") return;
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
+    const anchorDate = String(options?.anchorDate || "").trim();
     const waitForFresh = Boolean(options?.waitForFresh && normalizedPillarKey);
     const delays = [1400, 2400, 3600, 5200, 7600, 10400, 14000, 18000];
     let resolved = false;
     delays.forEach((delay) => {
       window.setTimeout(() => {
         if (resolved) return;
-        void refreshSummary({ skipQuoteGeneration: true })
+        void refreshSummary({ anchorDate, skipQuoteGeneration: true })
           .then((payload) => {
             const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
             const targetPillar = normalizedPillarKey
@@ -3321,6 +3329,7 @@ export default function LatestAssessmentPanel({
     setSaveError(null);
     try {
       const completedPillarKey = String(detail.pillar.pillar_key || "").trim().toLowerCase();
+      const savedScoreDate = activeDate || detail.pillar.today || "";
       const entries = concepts.map((concept) => ({
         concept_key: concept.concept_key,
         value: draft[String(concept.concept_key || "").trim()],
@@ -3330,7 +3339,7 @@ export default function LatestAssessmentPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          score_date: activeDate || detail.pillar.today,
+          score_date: savedScoreDate,
           entries,
           skipQuoteGeneration: true,
         }),
@@ -3344,7 +3353,7 @@ export default function LatestAssessmentPanel({
           new CustomEvent("healthsense-tracker-updated", {
             detail: {
               pillarKey: completedPillarKey,
-              scoreDate: activeDate || detail.pillar.today || null,
+              scoreDate: savedScoreDate || null,
               guided: guidedTrackingActive,
             },
           }),
@@ -3383,10 +3392,10 @@ export default function LatestAssessmentPanel({
       setReturnToPillarKey(completedPillarKey || null);
       closeTracker();
       setSaving(false);
-      void refreshSummary({ skipQuoteGeneration: true })
+      void refreshSummary({ anchorDate: savedScoreDate, skipQuoteGeneration: true })
         .then(() => scrollToPillarCueCard(completedPillarKey))
         .catch(() => undefined);
-      refreshSummaryFromWorkerCache(completedPillarKey, { waitForFresh: true });
+      refreshSummaryFromWorkerCache(completedPillarKey, { anchorDate: savedScoreDate, waitForFresh: true });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
       setSaving(false);
