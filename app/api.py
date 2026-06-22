@@ -22993,9 +22993,7 @@ def admin_delete_user(user_id: int, admin_user: User = Depends(_require_admin)):
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, target)
         if int(getattr(target, "id", 0) or 0) == int(getattr(admin_user, "id", 0) or 0):
-            raise HTTPException(status_code=400, detail="cannot delete your own admin user")
-        if _user_admin_role(target) in {ADMIN_ROLE_CLUB, ADMIN_ROLE_GLOBAL}:
-            raise HTTPException(status_code=400, detail="cannot delete admin users from user management")
+            raise HTTPException(status_code=400, detail="cannot delete the admin account you are currently using")
 
     # Unschedule ongoing coaching jobs and clear fast mode before deletion.
     try:
