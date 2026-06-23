@@ -2153,7 +2153,8 @@ export default function AssessmentChatBox({
       setEducationPlanError(null);
     }
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), isBackgroundLoad ? 2500 : 8000);
+    const requestTimeoutMs = options?.exploreCacheOnly && !options?.prefetch ? 2500 : 8000;
+    const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
       const params = new URLSearchParams({ userId });
       if (options?.includeExplore) {
@@ -3637,7 +3638,7 @@ export default function AssessmentChatBox({
               </div>
             </div>
           ) : homeSurface === "insight" ? (
-            (educationPlanLoading || (!educationPlan && !educationPlanError)) ? (
+            (!educationPlan && (educationPlanLoading || !educationPlanError)) ? (
               <div className="flex min-h-full items-center px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Loading your education programme…
