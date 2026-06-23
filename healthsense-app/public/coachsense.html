@@ -1084,12 +1084,17 @@
 
       function showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer) {
         const mediaUrl = normalizeLessonMediaUrl(url) || fallbackLessonAudioUrl;
+        shell.classList.remove("has-video", "has-audio");
         if (likelyVideoUrl(mediaUrl)) {
+          audioPlayer.pause();
+          audioPlayer.removeAttribute("src");
           videoPlayer.src = mediaUrl;
           videoPlayer.load();
           shell.classList.add("has-video");
           return;
         }
+        videoPlayer.pause();
+        videoPlayer.removeAttribute("src");
         audioPlayer.src = likelyAudioUrl(mediaUrl) ? mediaUrl : fallbackLessonAudioUrl;
         audioPlayer.load();
         shell.classList.add("has-audio");
@@ -1099,23 +1104,28 @@
         const shell = document.querySelector("[data-lesson-video-shell]");
         const videoPlayer = document.querySelector("[data-lesson-video-player]");
         const audioPlayer = document.querySelector("[data-lesson-audio-player]");
-        const status = document.querySelector("[data-lesson-video-status]");
         if (!shell || !videoPlayer || !audioPlayer) return;
+        showEducationProgrammeMedia(fallbackLessonAudioUrl, shell, videoPlayer, audioPlayer);
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 1800);
         try {
           const response = await fetch("/api/education-plan/today?userId=2&includeExplore=true&exploreCacheOnly=true&prefetch=true", {
             cache: "no-store",
+            signal: controller.signal,
           });
           if (!response.ok) {
             throw new Error("video_unavailable");
           }
           const data = await response.json();
           const url = findEmotionLessonMedia(data);
-          if (!url) {
-            throw new Error("video_missing");
+          if (url && normalizeLessonMediaUrl(url) !== fallbackLessonAudioUrl) {
+            showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer);
           }
-          showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer);
         } catch (error) {
-          showEducationProgrammeMedia(fallbackLessonAudioUrl, shell, videoPlayer, audioPlayer);
+          return;
+        } finally {
+          window.clearTimeout(timeoutId);
         }
       }
 
