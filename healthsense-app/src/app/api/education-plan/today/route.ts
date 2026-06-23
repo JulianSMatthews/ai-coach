@@ -85,7 +85,10 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const cookieHeader = request.headers.get("cookie") || "";
-    const userId = String(url.searchParams.get("userId") || getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+    const session = getCookieValue(cookieHeader, "hs_session");
+    const cookieUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+    const queryUserId = String(url.searchParams.get("userId") || "").trim();
+    const userId = (session && cookieUserId ? cookieUserId : queryUserId || cookieUserId).trim();
     const anchorDate = String(url.searchParams.get("anchorDate") || "").trim();
     const includeExplore = String(url.searchParams.get("includeExplore") || url.searchParams.get("include_explore") || "").trim();
     const exploreCacheOnly = String(url.searchParams.get("exploreCacheOnly") || url.searchParams.get("explore_cache_only") || "").trim();
@@ -108,7 +111,6 @@ export async function GET(request: Request) {
     }
     const base = getBaseUrl();
     const upstream = `${base}/api/v1/users/${encodeURIComponent(userId)}/education-plan/today${params.toString() ? `?${params.toString()}` : ""}`;
-    const session = getCookieValue(cookieHeader, "hs_session");
     const headers: Record<string, string> = {};
     if (session) {
       headers["X-Session-Token"] = session;

@@ -2152,6 +2152,8 @@ export default function AssessmentChatBox({
       setEducationPlanLoading(true);
       setEducationPlanError(null);
     }
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), isBackgroundLoad ? 2500 : 8000);
     try {
       const params = new URLSearchParams({ userId });
       if (options?.includeExplore) {
@@ -2166,6 +2168,7 @@ export default function AssessmentChatBox({
       const res = await fetch(`/api/education-plan/today?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
+        signal: controller.signal,
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
@@ -2185,9 +2188,12 @@ export default function AssessmentChatBox({
         return;
       }
       if (!isBackgroundLoad) {
-        setEducationPlanError(error instanceof Error ? error.message : String(error));
+        setEducationPlanError(error instanceof DOMException && error.name === "AbortError"
+          ? "Education programme is taking too long to load. Please try again."
+          : error instanceof Error ? error.message : String(error));
       }
     } finally {
+      window.clearTimeout(timeoutId);
       if (!isBackgroundLoad && requestId === educationPlanRequestIdRef.current) {
         setEducationPlanLoading(false);
       }
