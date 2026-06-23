@@ -558,7 +558,15 @@ function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
   try {
     const parsed = JSON.parse(text) as { error?: string; detail?: string };
-    const message = parsed.error || parsed.detail || text;
+    let message = parsed.error || parsed.detail || text;
+    if (typeof message === "string") {
+      try {
+        const nested = JSON.parse(message) as { error?: string; detail?: string };
+        message = nested.error || nested.detail || message;
+      } catch {
+        // Keep the original message when it is not a nested JSON error.
+      }
+    }
     const normalized = String(message || "").trim().toLowerCase();
     if (!normalized || normalized === "internal server error") {
       return fallback;

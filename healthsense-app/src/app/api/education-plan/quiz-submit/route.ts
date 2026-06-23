@@ -85,12 +85,14 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
-    const userId = String(body.userId || getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+    const session = getCookieValue(cookieHeader, "hs_session");
+    const cookieUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+    const bodyUserId = String(body.userId || "").trim();
+    const userId = (session && cookieUserId ? cookieUserId : bodyUserId || cookieUserId).trim();
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
     const base = getBaseUrl();
-    const session = getCookieValue(cookieHeader, "hs_session");
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -102,7 +104,7 @@ export async function POST(request: Request) {
     const res = await fetch(`${base}/api/v1/users/${encodeURIComponent(userId)}/education-plan/quiz-submit`, {
       method: "POST",
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, userId }),
       cache: "no-store",
     });
     const text = await res.text().catch(() => "");
