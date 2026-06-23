@@ -8354,6 +8354,11 @@ def api_user_education_plan_quiz_submit(
         programme_day_id=_safe_int((body or {}).get("programme_day_id") or (body or {}).get("programmeDayId")),
         lesson_variant_id=_safe_int((body or {}).get("lesson_variant_id") or (body or {}).get("lessonVariantId")),
     )
+    if result.get("quiz_submit_applied") is False:
+        raise HTTPException(
+            status_code=400,
+            detail=str(result.get("quiz_submit_error") or "Quiz could not be submitted for this lesson."),
+        )
     _log_app_engagement_event(
         user_id=user_id,
         unit_type="education_quiz_submit",

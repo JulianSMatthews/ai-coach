@@ -1797,6 +1797,9 @@ export default function AssessmentChatBox({
         throw new Error(parseApiError(text, "Failed to submit quiz."));
       }
       const payload = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
+      if ((payload as any)?.quiz_submit_applied === false) {
+        throw new Error(String((payload as any)?.quiz_submit_error || "Quiz could not be submitted for this lesson."));
+      }
       setEducationPlan((current) => ({
         ...(current || {}),
         ...payload,

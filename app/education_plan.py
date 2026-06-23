@@ -4413,6 +4413,8 @@ def submit_education_quiz(
                     anchor=resolved_anchor,
                     refresh_avatar_media=False,
                 )
+                state["quiz_submit_applied"] = False
+                state["quiz_submit_error"] = "Selected lesson is not available in the app."
                 session.commit()
                 return state
             plan = _get_or_create_programme_plan(
@@ -4472,6 +4474,8 @@ def submit_education_quiz(
                     anchor=resolved_anchor,
                     refresh_avatar_media=False,
                 )
+                state["quiz_submit_applied"] = False
+                state["quiz_submit_error"] = "No quiz is available for the selected lesson."
                 session.commit()
                 return state
             if _plan_last_programme_day_completed(session, plan=plan, programme=programme):
@@ -4501,6 +4505,7 @@ def submit_education_quiz(
                 refresh_avatar_media=False,
             )
             state["submitted_lesson"] = submitted_lesson
+            state["quiz_submit_applied"] = True
             session.commit()
             return state
 
@@ -4511,6 +4516,8 @@ def submit_education_quiz(
             refresh_avatar_media=False,
         )
         if not state.get("available"):
+            state["quiz_submit_applied"] = False
+            state["quiz_submit_error"] = "No current education lesson is available."
             session.commit()
             return state
         progress_id = int(((state.get("progress") or {}).get("id") or 0) or 0)
@@ -4518,6 +4525,8 @@ def submit_education_quiz(
         progress = session.get(UserEducationDayProgress, progress_id)
         lesson_variant = session.get(EducationLessonVariant, lesson_variant_id) if lesson_variant_id else None
         if progress is None:
+            state["quiz_submit_applied"] = False
+            state["quiz_submit_error"] = "No progress record is available for this lesson."
             session.commit()
             return state
         applied = _apply_education_quiz_submission(
@@ -4527,6 +4536,8 @@ def submit_education_quiz(
             answers=answers,
         )
         if not applied:
+            state["quiz_submit_applied"] = False
+            state["quiz_submit_error"] = "No quiz is available for the current lesson."
             session.commit()
             return state
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
@@ -4547,5 +4558,6 @@ def submit_education_quiz(
             anchor=resolved_anchor,
             refresh_avatar_media=False,
         )
+        state["quiz_submit_applied"] = True
         session.commit()
         return state
