@@ -180,7 +180,7 @@
         top: 50%;
         width: 88px;
         transform: translate3d(-50%, -50%, 0);
-        animation: splash-logo-flight 4.6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+        animation: splash-logo-flight 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
       }
 
       .splash-preview-words {
@@ -199,7 +199,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
-        animation: splash-word-arrive 4.6s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: splash-word-arrive 8s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -233,19 +233,46 @@
         animation-delay: 0.39s;
       }
 
+      .splash-preview-copy {
+        position: absolute;
+        left: 50%;
+        bottom: 28px;
+        width: min(82%, 320px);
+        margin: 0;
+        color: var(--ink);
+        font-size: clamp(17px, 2vw, 21px);
+        font-weight: 400;
+        line-height: 1.35;
+        text-align: center;
+        opacity: 0;
+        transform: translate3d(-50%, 42px, 0);
+        animation: splash-copy-rise 8s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+      }
+
+      .splash-preview-brand {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(68%, 270px);
+        height: auto;
+        opacity: 0;
+        transform: translate3d(-50%, -44%, 0) scale(0.96);
+        animation: splash-brand-reveal 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+      }
+
       @keyframes splash-logo-flight {
         0% {
           opacity: 0;
           transform: translate3d(150%, 160%, 0) scale(0.46);
         }
-        16% {
+        10% {
           opacity: 1;
         }
-        36% {
+        22% {
           opacity: 1;
           transform: translate3d(-50%, -50%, 0) scale(1);
         }
-        50%,
+        31%,
         100% {
           opacity: 0;
           transform: translate3d(-50%, -50%, 0) scale(0.92);
@@ -254,21 +281,57 @@
 
       @keyframes splash-word-arrive {
         0%,
-        34% {
+        20% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
         }
-        44% {
+        28% {
           opacity: 1;
         }
-        62%,
-        88% {
+        41%,
+        52% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
+        61%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
+        }
+      }
+
+      @keyframes splash-copy-rise {
+        0%,
+        52% {
+          opacity: 0;
+          transform: translate3d(-50%, 42px, 0);
+        }
+        62%,
+        76% {
+          opacity: 1;
+          transform: translate3d(-50%, 0, 0);
+        }
+        84%,
+        100% {
+          opacity: 0;
+          transform: translate3d(-50%, -10px, 0);
+        }
+      }
+
+      @keyframes splash-brand-reveal {
+        0%,
+        76% {
+          opacity: 0;
+          transform: translate3d(-50%, -44%, 0) scale(0.96);
+        }
+        86%,
+        94% {
+          opacity: 1;
+          transform: translate3d(-50%, -50%, 0) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(-50%, -50%, 0) scale(0.98);
         }
       }
 
@@ -778,6 +841,11 @@
                 <span class="splash-preview-word splash-word-own">own</span>
                 <span class="splash-preview-word splash-word-way">way.</span>
               </div>
+              <p class="splash-preview-copy">
+                Build resilience, recovery, reflection and purpose to strengthen your inner sense, one small step at a
+                time.
+              </p>
+              <img class="splash-preview-brand" src="coachsense-logo.svg" alt="" />
             </div>
           </aside>
         </section>
