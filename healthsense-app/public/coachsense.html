@@ -8,6 +8,8 @@
       name="description"
       content="CoachSense helps you find your own way by strengthening resilience, recovery, reflection and purpose."
     />
+    <link rel="icon" type="image/svg+xml" href="/coachsense-icon.svg" />
+    <link rel="shortcut icon" href="/coachsense-icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,14 +18,17 @@
     />
     <style>
       :root {
-        --bg: #fbf4ea;
+        --bg: #f6f1e7;
         --panel: #fffdf9;
-        --panel-soft: #fff8ee;
-        --ink: #241d18;
-        --muted: #72665c;
-        --accent: #c54817;
+        --panel-soft: #fffaf0;
+        --surface-muted: #fffaf0;
+        --ink: #1e1b16;
+        --muted: #6b6257;
+        --tertiary: #8c7f70;
+        --accent: #d3541b;
         --accent-dark: #a83b0c;
-        --line: rgba(42, 33, 27, 0.14);
+        --orange: #c54817;
+        --line: #e7e1d6;
         --track: #eadfce;
         --white: #ffffff;
         --shadow: 0 24px 70px rgba(168, 59, 12, 0.14);
@@ -66,6 +71,7 @@
       }
 
       .nav {
+        position: relative;
         min-height: 90px;
         display: flex;
         align-items: center;
@@ -106,6 +112,58 @@
         background: var(--white);
         color: var(--accent-dark);
         border-color: var(--line);
+      }
+
+      .mobile-menu {
+        display: none;
+      }
+
+      .mobile-menu summary {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--white);
+        color: var(--ink);
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .mobile-menu summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .mobile-menu svg {
+        width: 24px;
+        height: 24px;
+      }
+
+      .mobile-menu-panel {
+        position: absolute;
+        top: calc(100% - 10px);
+        right: 0;
+        z-index: 20;
+        display: grid;
+        width: min(280px, calc(100vw - 32px));
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        padding: 12px;
+        box-shadow: var(--shadow);
+      }
+
+      .mobile-menu-panel a:not(.button) {
+        display: flex;
+        min-height: 44px;
+        align-items: center;
+        border-radius: 12px;
+        padding: 0 12px;
+        color: var(--muted);
+        font-size: 15px;
+        font-weight: 600;
       }
 
       .hero {
@@ -234,34 +292,6 @@
         animation-delay: 0.39s;
       }
 
-      .splash-preview-copy {
-        position: absolute;
-        left: 50%;
-        bottom: 28px;
-        width: min(82%, 320px);
-        margin: 0;
-        color: var(--ink);
-        font-family: Outfit, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        font-size: clamp(17px, 2vw, 21px);
-        font-weight: 400;
-        line-height: 1.35;
-        text-align: center;
-        opacity: 0;
-        transform: translate3d(-50%, 42px, 0);
-        animation: splash-copy-rise 8s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
-      }
-
-      .splash-preview-brand {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: min(68%, 270px);
-        height: auto;
-        opacity: 0;
-        transform: translate3d(-50%, -44%, 0) scale(0.96);
-        animation: splash-brand-reveal 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
-      }
-
       @keyframes splash-logo-flight {
         0% {
           opacity: 0;
@@ -299,41 +329,6 @@
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
-        }
-      }
-
-      @keyframes splash-copy-rise {
-        0%,
-        52% {
-          opacity: 0;
-          transform: translate3d(-50%, 42px, 0);
-        }
-        62%,
-        76% {
-          opacity: 1;
-          transform: translate3d(-50%, 0, 0);
-        }
-        84%,
-        100% {
-          opacity: 0;
-          transform: translate3d(-50%, -10px, 0);
-        }
-      }
-
-      @keyframes splash-brand-reveal {
-        0%,
-        76% {
-          opacity: 0;
-          transform: translate3d(-50%, -44%, 0) scale(0.96);
-        }
-        86%,
-        94% {
-          opacity: 1;
-          transform: translate3d(-50%, -50%, 0) scale(1);
-        }
-        100% {
-          opacity: 0;
-          transform: translate3d(-50%, -50%, 0) scale(0.98);
         }
       }
 
@@ -416,6 +411,10 @@
         flex: 0 0 min(86vw, 22rem);
       }
 
+      .pillars .queue-card {
+        min-height: 20.8rem;
+      }
+
       .queue-card h3 {
         max-width: 220px;
         margin: 0;
@@ -454,7 +453,7 @@
       }
 
       .pillars .queue-card p {
-        margin-top: 5rem;
+        margin-top: 3.25rem;
       }
 
       .steps .queue-card p {
@@ -466,12 +465,12 @@
         right: 20px;
         top: 20px;
         display: grid;
-        width: 69px;
-        height: 69px;
+        width: 56px;
+        height: 56px;
         place-items: center;
       }
 
-      .queue-ring svg {
+      .queue-ring > svg {
         position: absolute;
         inset: 0;
         transform: rotate(-90deg);
@@ -480,18 +479,18 @@
       .queue-circle {
         position: relative;
         display: grid;
-        width: 50px;
-        height: 50px;
+        width: 56px;
+        height: 56px;
         place-items: center;
         border-radius: 50%;
         background: var(--circle-bg, #fff2e8);
-        color: var(--circle-fg, #17120f);
+        color: var(--circle-fg, var(--tone, #17120f));
       }
 
       .queue-circle svg {
         position: static;
-        width: 29px;
-        height: 29px;
+        width: 35px;
+        height: 35px;
         transform: none;
       }
 
@@ -502,9 +501,9 @@
         justify-content: center;
         align-self: flex-start;
         margin-top: auto;
-        border: 1px solid #111111;
+        border: 1px solid var(--accent-dark);
         border-radius: 999px;
-        background: #111111;
+        background: var(--accent-dark);
         padding: 10px 18px;
         color: var(--white);
         font-size: 14px;
@@ -516,10 +515,12 @@
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 18px;
+        align-items: start;
+        justify-items: center;
       }
 
       .demo-card {
-        border: 1px solid rgba(17, 17, 17, 0.12);
+        border: 1px solid rgba(42, 33, 27, 0.12);
         border-radius: 30px;
         background: var(--white);
         padding: 28px;
@@ -587,13 +588,673 @@
       .demo-feedback {
         min-height: 56px;
         margin-top: 16px;
-        border: 1px solid rgba(17, 17, 17, 0.1);
+        border: 1px solid var(--line);
         border-radius: 18px;
-        background: #f7f7f7;
+        background: var(--panel);
         padding: 14px 16px;
-        color: var(--ink);
+        color: var(--muted);
         font-size: 15px;
         line-height: 1.45;
+      }
+
+      .app-sample {
+        position: relative;
+        display: grid;
+        width: min(100%, 390px);
+        height: 780px;
+        max-height: min(780px, 86vh);
+        gap: 14px;
+        grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+        align-content: stretch;
+        overflow: hidden;
+        border: 10px solid #241f1b;
+        border-radius: 46px;
+        background: var(--bg);
+        padding: 22px 14px 26px;
+        box-shadow: 0 30px 70px -34px rgba(30, 27, 22, 0.76);
+        scrollbar-width: none;
+      }
+
+      .demo-grid:has(.app-sample-single) {
+        grid-template-columns: 1fr;
+      }
+
+      .app-sample-single {
+        justify-self: center;
+      }
+
+      .mock-guide {
+        display: grid;
+        width: min(100%, 920px);
+        grid-template-columns: minmax(0, 220px) minmax(0, 390px) minmax(0, 220px);
+        gap: 24px;
+        align-items: start;
+        justify-content: center;
+      }
+
+      .mock-guide-note {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--panel);
+        padding: 16px 18px;
+        color: var(--ink);
+        box-shadow: 0 18px 42px -34px rgba(30, 27, 22, 0.48);
+      }
+
+      .mock-guide-note strong {
+        display: block;
+        color: var(--accent-dark);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .mock-guide-note span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.45;
+      }
+
+      .mock-guide-note::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        width: 34px;
+        height: 1.5px;
+        background: var(--accent-dark);
+      }
+
+      .mock-guide-note::before {
+        content: "";
+        position: absolute;
+        top: calc(50% - 5px);
+        width: 10px;
+        height: 10px;
+        border-top: 1.5px solid var(--accent-dark);
+        border-right: 1.5px solid var(--accent-dark);
+      }
+
+      .mock-guide-note.left {
+        justify-self: end;
+        margin-top: 564px;
+        margin-right: 38px;
+      }
+
+      .mock-guide-note.left::after {
+        right: -34px;
+      }
+
+      .mock-guide-note.left::before {
+        right: -34px;
+        transform: rotate(45deg);
+      }
+
+      .mock-guide-note.right {
+        justify-self: start;
+        margin-top: 583px;
+        margin-left: 28px;
+      }
+
+      .mock-guide-note.right::after {
+        left: -34px;
+      }
+
+      .mock-guide-note.right::before {
+        left: -34px;
+        transform: rotate(225deg);
+      }
+
+      .mock-screen {
+        display: grid;
+        gap: 14px;
+        min-height: 0;
+        overflow-y: auto;
+        padding-right: 2px;
+        scrollbar-width: none;
+      }
+
+      .mock-screen::-webkit-scrollbar {
+        display: none;
+      }
+
+      .mock-screen[hidden] {
+        display: none;
+      }
+
+      .mock-surface {
+        display: grid;
+        gap: 14px;
+      }
+
+      .mock-surface[hidden] {
+        display: none;
+      }
+
+      .mock-back {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--panel);
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 30px;
+        line-height: 1;
+        box-shadow: 0 10px 26px -22px rgba(30, 27, 22, 0.45);
+      }
+
+      .app-sample::-webkit-scrollbar {
+        display: none;
+      }
+
+      .app-sample::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 0;
+        z-index: 4;
+        width: 116px;
+        height: 22px;
+        border-radius: 0 0 18px 18px;
+        background: #241f1b;
+        transform: translateX(-50%);
+      }
+
+      .phone-status {
+        display: flex;
+        min-height: 24px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .phone-status-icons {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .phone-signal,
+      .phone-wifi,
+      .phone-battery {
+        display: block;
+        height: 10px;
+      }
+
+      .phone-signal {
+        width: 16px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #241f1b 0 3px, transparent 3px 5px, #241f1b 5px 9px, transparent 9px 11px, #241f1b 11px 16px);
+      }
+
+      .phone-wifi {
+        width: 14px;
+        border: 2px solid #241f1b;
+        border-top: 0;
+        border-left-color: transparent;
+        border-right-color: transparent;
+        border-radius: 0 0 14px 14px;
+      }
+
+      .phone-battery {
+        position: relative;
+        width: 22px;
+        border: 1.5px solid #241f1b;
+        border-radius: 4px;
+      }
+
+      .phone-battery::after {
+        content: "";
+        position: absolute;
+        right: -4px;
+        top: 3px;
+        width: 2px;
+        height: 4px;
+        border-radius: 0 2px 2px 0;
+        background: #241f1b;
+      }
+
+      .phone-battery span {
+        display: block;
+        width: 14px;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--accent-dark);
+      }
+
+      .phone-app-top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-radius: 0;
+        background: transparent;
+        padding: 8px 4px 10px;
+      }
+
+      .phone-avatar {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--panel);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .phone-app-top p,
+      .phone-app-top strong {
+        display: block;
+        margin: 0;
+      }
+
+      .phone-app-top p {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .phone-app-top strong {
+        margin-top: 2px;
+        color: var(--ink);
+        font-size: 19px;
+        line-height: 1.1;
+      }
+
+      .phone-home {
+        display: block;
+        justify-self: center;
+        width: 112px;
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(36, 31, 27, 0.32);
+      }
+
+      .phone-tabbar {
+        position: relative;
+        z-index: 5;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        border: 1px solid #efe7db;
+        border-radius: 30px;
+        background: #fffdf9;
+        padding: 4px;
+        box-shadow: 0 18px 40px -30px rgba(30, 27, 22, 0.35);
+        backdrop-filter: blur(12px);
+      }
+
+      .phone-tab {
+        display: flex;
+        min-height: 60px;
+        min-width: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        border: 1px solid #efe7db;
+        border-radius: 22px;
+        background: #fffdf9;
+        color: #000000;
+        font-family: var(--font-body);
+        font-size: 12.5px;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .phone-tab.is-active {
+        border-color: #d9d0c3;
+        background: #ececec;
+        color: #000000;
+      }
+
+      .phone-tab svg {
+        width: 16px;
+        height: 16px;
+        color: #000000;
+      }
+
+      .app-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 34px;
+        background: var(--panel);
+        padding: 28px;
+        color: var(--ink);
+        box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
+      }
+
+      .app-card-muted {
+        background: var(--surface-muted);
+      }
+
+      .app-sample .app-card {
+        border: 0;
+        border-radius: 34px;
+        padding: 24px;
+        box-shadow: 0 20px 44px -38px rgba(30, 27, 22, 0.4);
+      }
+
+      .app-eyebrow {
+        margin: 0;
+        color: var(--orange);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .app-card h3,
+      .app-card h4 {
+        margin: 12px 0 0;
+        font-family: var(--font-display);
+        font-size: clamp(34px, 4vw, 48px);
+        font-weight: 600;
+        letter-spacing: 0;
+        line-height: 0.98;
+      }
+
+      .app-card h4 {
+        font-size: clamp(31px, 3.6vw, 42px);
+      }
+
+      .app-sample .app-card h3,
+      .app-sample .app-card h4 {
+        font-size: clamp(30px, 8vw, 39px);
+      }
+
+      .app-copy {
+        max-width: 20rem;
+        margin: 20px 0 0;
+        color: var(--ink);
+        font-size: 19px;
+        line-height: 1.6;
+      }
+
+      .app-score {
+        position: absolute;
+        right: 22px;
+        top: 22px;
+        display: grid;
+        width: 58px;
+        height: 58px;
+        place-items: center;
+        border: 8px solid var(--track);
+        border-top-color: var(--orange);
+        border-right-color: var(--orange);
+        border-radius: 50%;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .app-progress-score {
+        border: 0;
+        background:
+          radial-gradient(circle at center, var(--panel) 0 58%, transparent 60%),
+          conic-gradient(var(--accent) 0 90deg, var(--track) 90deg 360deg);
+      }
+
+      .app-date-options,
+      .app-choice-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .app-date-options {
+        max-width: 17rem;
+        margin-top: 36px;
+      }
+
+      .app-pill {
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        padding: 0 14px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .app-pill.primary {
+        border-color: var(--accent-dark);
+        background: var(--accent-dark);
+        color: var(--white);
+      }
+
+      .app-pill.is-selected {
+        border-color: var(--accent-dark);
+        background: var(--accent-dark);
+        color: var(--white);
+      }
+
+      .app-checkin-status {
+        min-height: 1.4em;
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .app-week {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 24px;
+      }
+
+      .app-day {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--white);
+        color: var(--tertiary);
+        padding: 8px 4px;
+        text-align: center;
+        font-size: 10px;
+      }
+
+      .app-day.is-complete {
+        border-color: #79b84a;
+        background: #dff5cf;
+        color: #1f5a14;
+      }
+
+      .app-day.is-partial {
+        border-color: #d28a35;
+        background: #ffead1;
+        color: #794712;
+      }
+
+      .app-day.is-empty {
+        background: #ffffff;
+        color: #777777;
+      }
+
+      .app-day strong,
+      .app-day span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .app-choice-grid {
+        margin-top: 20px;
+      }
+
+      .app-question-list {
+        display: grid;
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .app-question {
+        display: flex;
+        min-height: 21rem;
+        flex-direction: column;
+        border-top: 0;
+        border-radius: 30px;
+        background: var(--surface-muted);
+        padding: 20px;
+        box-shadow: 0 20px 44px -38px rgba(30, 27, 22, 0.4);
+      }
+
+      .app-question:first-child {
+        border-top: 0;
+      }
+
+      .app-question h5 {
+        margin: 12px 0 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 31px;
+        font-weight: 600;
+        letter-spacing: 0;
+        line-height: 0.98;
+      }
+
+      .app-question .app-copy {
+        max-width: none;
+        margin-top: 18px;
+        font-size: 19px;
+        font-weight: 500;
+        line-height: 1.45;
+      }
+
+      .app-question .app-week {
+        margin-top: 24px;
+      }
+
+      .app-question .app-choice-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 18px;
+      }
+
+      .app-complete {
+        width: 100%;
+        margin-top: 18px;
+      }
+
+      .lesson-card-preview {
+        min-height: 25rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .lesson-card-preview-content {
+        padding-top: 68px;
+      }
+
+      .lesson-card-preview h3 {
+        max-width: 10ch;
+      }
+
+      .lesson-open-preview {
+        display: grid;
+        gap: 18px;
+      }
+
+      .lesson-open-preview h4 {
+        margin: 12px 0 0;
+        font-family: var(--font-display);
+        font-size: clamp(31px, 8vw, 42px);
+        font-weight: 600;
+        letter-spacing: 0;
+        line-height: 0.98;
+      }
+
+      .quiz-box {
+        border-radius: 24px;
+        background: var(--surface-muted);
+        padding: 18px;
+      }
+
+      .quiz-question {
+        margin: 14px 0 0;
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .quiz-question-block + .quiz-question-block {
+        margin-top: 18px;
+      }
+
+      .quiz-option {
+        display: flex;
+        width: 100%;
+        min-height: 50px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border: 0;
+        border-radius: 18px;
+        background: var(--white);
+        padding: 12px 14px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .quiz-radio {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--white);
+      }
+
+      .quiz-option.is-selected .quiz-radio {
+        border-color: #111111;
+        background: #111111;
+      }
+
+      .quiz-option.is-correct {
+        background: #dff5cf;
+        color: #1f5a14;
+      }
+
+      .quiz-option.is-correct .quiz-radio {
+        border-color: #79b84a;
+        background: #79b84a;
+      }
+
+      .quiz-option.is-incorrect {
+        background: #f8d8d3;
+        color: #8a2418;
+      }
+
+      .quiz-option.is-incorrect .quiz-radio {
+        border-color: #c54817;
+        background: #c54817;
       }
 
       .lesson-video {
@@ -617,28 +1278,11 @@
         object-fit: cover;
       }
 
-      .lesson-audio-player {
-        position: relative;
-        z-index: 1;
-        display: none;
-        width: min(100%, 520px);
-      }
-
       .lesson-video.has-video .lesson-video-player {
         display: block;
       }
 
-      .lesson-video.has-audio {
-        padding: 24px;
-      }
-
-      .lesson-video.has-audio .lesson-audio-player {
-        display: block;
-      }
-
       .lesson-video.has-video .lesson-video-content,
-      .lesson-video.has-audio .lesson-video-content,
-      .lesson-video.has-audio::before,
       .lesson-video.has-video::before {
         display: none;
       }
@@ -677,7 +1321,7 @@
         gap: 24px;
         align-items: center;
         border-radius: 36px;
-        background: #2a211b;
+        background: #111111;
         color: #fff;
         padding: clamp(28px, 5vw, 56px);
       }
@@ -739,6 +1383,18 @@
         line-height: 1.5;
       }
 
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 18px;
+        justify-content: flex-end;
+      }
+
+      .footer-links a {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
       @media (max-width: 920px) {
         .hero,
         .quote {
@@ -752,16 +1408,71 @@
         .demo-grid {
           grid-template-columns: 1fr;
         }
+
+        .mock-guide {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 12px;
+          justify-items: center;
+        }
+
+        .mock-guide-note {
+          width: min(100%, 390px);
+          justify-self: center;
+          margin-top: 0;
+          border-radius: 16px;
+          padding: 12px 14px;
+          box-shadow: 0 12px 30px -28px rgba(30, 27, 22, 0.44);
+        }
+
+        .mock-guide-note strong,
+        .mock-guide-note span {
+          display: inline;
+        }
+
+        .mock-guide-note strong {
+          margin-right: 8px;
+          font-size: 11px;
+        }
+
+        .mock-guide-note span {
+          margin-top: 0;
+          font-size: 13px;
+        }
+
+        .mock-guide-note.left {
+          order: 1;
+          margin-top: 0;
+          margin-right: 0;
+        }
+
+        .mock-guide-note.right {
+          order: 2;
+          margin-top: 0;
+          margin-left: 0;
+        }
+
+        .mock-guide .app-sample {
+          order: 3;
+        }
+
+        .mock-guide-note::before,
+        .mock-guide-note::after {
+          display: none;
+        }
       }
 
       @media (max-width: 680px) {
         .nav {
-          align-items: flex-start;
+          align-items: center;
         }
 
         .nav-links,
         .nav > .button {
           display: none;
+        }
+
+        .mobile-menu {
+          display: block;
         }
 
         .hero {
@@ -776,10 +1487,11 @@
         .app-preview {
           justify-content: center;
           min-height: auto;
+          width: 100%;
         }
 
         .splash-preview {
-          width: min(82.5vw, 354px);
+          width: min(100%, 390px);
         }
 
         .section-heading {
@@ -793,6 +1505,10 @@
         .queue-card {
           min-height: 24rem;
           padding: 24px;
+        }
+
+        .pillars .queue-card {
+          min-height: 19.2rem;
         }
 
         .queue-card p {
@@ -817,6 +1533,21 @@
           <a href="#faq">FAQ</a>
         </nav>
         <a class="button" href="#download">Download the App</a>
+        <details class="mobile-menu">
+          <summary aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M4 7h16" />
+              <path d="M4 12h16" />
+              <path d="M4 17h16" />
+            </svg>
+          </summary>
+          <div class="mobile-menu-panel">
+            <a href="#pillars">Pillars</a>
+            <a href="#how">How it works</a>
+            <a href="#faq">FAQ</a>
+            <a class="button" href="#download">Download the App</a>
+          </div>
+        </details>
       </header>
 
       <main id="top">
@@ -828,10 +1559,6 @@
               Build resilience, recovery, reflection and purpose to strengthen your inner sense, one small step at a
               time.
             </p>
-            <div class="hero-actions">
-              <a class="button" href="#download">Download the App</a>
-              <a class="button light" href="#pillars">Explore the pillars</a>
-            </div>
           </div>
 
           <aside class="app-preview" aria-label="CoachSense app preview">
@@ -843,11 +1570,6 @@
                 <span class="splash-preview-word splash-word-own">own</span>
                 <span class="splash-preview-word splash-word-way">way.</span>
               </div>
-              <p class="splash-preview-copy">
-                Build resilience, recovery, reflection and purpose to strengthen your inner sense, one small step at a
-                time.
-              </p>
-              <img class="splash-preview-brand" src="coachsense-logo.svg" alt="" />
             </div>
           </aside>
         </section>
@@ -858,60 +1580,53 @@
             <p>CoachSense keeps things simple: daily guidance shaped around the areas that support personal growth.</p>
           </div>
           <div class="queue-rail pillars">
-            <article class="queue-card pillar" style="--tone:#7c5cff;--circle-bg:#7c5cff;--circle-fg:#fff;">
+            <article class="queue-card pillar" style="--tone:#44abc3;--circle-bg:#e9f6fa;--circle-fg:#44abc3;">
               <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--tone)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
                 <span class="queue-circle">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 12.5 10 17l9-10" />
-                  </svg>
-                </span>
-              </span>
-              <h3>Reflection</h3>
-              <p>Understand your patterns, learn from experience and build self-awareness.</p>
-            </article>
-            <article class="queue-card pillar" style="--tone:#c48a12;--circle-bg:#c48a12;--circle-fg:#fff;">
-              <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--tone)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
-                <span class="queue-circle">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 12.5 10 17l9-10" />
-                  </svg>
-                </span>
-              </span>
-              <h3>Purpose</h3>
-              <p>Reconnect with what matters, where you are heading and why it matters.</p>
-            </article>
-            <article class="queue-card pillar" style="--tone:#d2553a;--circle-bg:#d2553a;--circle-fg:#fff;">
-              <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--tone)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
-                <span class="queue-circle">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 12.5 10 17l9-10" />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                    <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                    <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
+                    <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
                   </svg>
                 </span>
               </span>
               <h3>Resilience</h3>
               <p>Stay steady, adapt and recover your footing when life pulls you off course.</p>
             </article>
-            <article class="queue-card pillar" style="--tone:#0f8b8d;--circle-bg:#0f8b8d;--circle-fg:#fff;">
+            <article class="queue-card pillar" style="--tone:#0f8b8d;--circle-bg:#e8f7f7;--circle-fg:#0f8b8d;">
               <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--tone)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
                 <span class="queue-circle">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 12.5 10 17l9-10" />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
+                    <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                    <path d="M12 10h2" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Purpose</h3>
+              <p>Reconnect with what matters, where you are heading and why it matters.</p>
+            </article>
+            <article class="queue-card pillar" style="--tone:#7c5cff;--circle-bg:#f2efff;--circle-fg:#7c5cff;">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
+                    <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Reflection</h3>
+              <p>Understand your patterns, learn from experience and build self-awareness.</p>
+            </article>
+            <article class="queue-card pillar" style="--tone:#c9764f;--circle-bg:#fff1ea;--circle-fg:#c9764f;">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
+                    <path d="M16.5 4.8h3" />
+                    <path d="M18 3.3v3" />
+                    <path d="M7.5 16.5c1.4 1 3.1 1.5 5 1.2" />
                   </svg>
                 </span>
               </span>
@@ -932,11 +1647,7 @@
           <div class="queue-rail steps">
             <article class="queue-card step">
               <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--accent)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
-                <span class="queue-circle" style="--circle-bg:#f5ddce;">
+                <span class="queue-circle" style="--circle-bg:#fff2e8;--circle-fg:#d3541b;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M5 5.5h14v13H5z" />
                     <path d="M8 9h8" />
@@ -947,15 +1658,11 @@
               </span>
               <h3>Check in</h3>
               <p>Each selected pillar becomes a daily cue card. Choose Today, Yesterday, or Last week and answer a short check-in.</p>
-              <a class="queue-try" href="#purpose-checkin-demo">Try it</a>
+              <a class="queue-try" href="#resilience-checkin-demo">Try it</a>
             </article>
             <article class="queue-card step">
               <span class="queue-ring" aria-hidden="true">
-                <svg viewBox="0 0 69 69">
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--track)" stroke-width="6" fill="none" />
-                  <circle cx="34.5" cy="34.5" r="31.5" stroke="var(--accent)" stroke-width="6" fill="none" stroke-linecap="round" />
-                </svg>
-                <span class="queue-circle" style="--circle-bg:#f5ddce;">
+                <span class="queue-circle" style="--circle-bg:#fff2e8;--circle-fg:#d3541b;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M5 5.5h10a3 3 0 0 1 3 3v10H8a3 3 0 0 1-3-3v-10Z" />
                     <path d="M8.5 9h6" />
@@ -966,51 +1673,247 @@
               </span>
               <h3>Learn</h3>
               <p>Lessons move through short concept units linked to your pillars, with simple questions to help the idea stick.</p>
-              <a class="queue-try" href="#emotion-lesson-demo">Try it</a>
+              <a class="queue-try" href="#resilience-checkin-demo" data-jump-tab="learn">Try it</a>
             </article>
           </div>
         </section>
 
         <section id="try-it">
           <div class="section-heading">
-            <h2>Try a sample.</h2>
+            <h2>Try it.</h2>
             <p>These website demos show the feel of CoachSense without saving data or creating an account.</p>
           </div>
           <div class="demo-grid">
-            <article class="demo-card" id="purpose-checkin-demo">
-              <h3>Purpose check-in</h3>
-              <p>A short question to help you reconnect with what matters today.</p>
-              <div class="demo-prompt">
-                <strong>What would make today feel more aligned with your purpose?</strong>
-                <div class="demo-options" data-demo-group="purpose">
-                  <button class="demo-option" type="button" data-feedback="A small useful action is enough. CoachSense would turn this into a gentle next step for today.">Do one useful thing I have been avoiding</button>
-                  <button class="demo-option" type="button" data-feedback="That is a clear purpose signal. CoachSense would help you protect time for the person or commitment that matters.">Make time for someone important</button>
-                  <button class="demo-option" type="button" data-feedback="Good. Purpose often starts with attention. CoachSense would help you name one value to carry into the day.">Pause and notice what matters most</button>
-                </div>
-                <div class="demo-feedback" data-feedback-for="purpose">Choose an answer to see how a check-in responds.</div>
+            <div class="mock-guide">
+              <aside class="mock-guide-note left" aria-label="Check-in interaction tip">
+                <strong>Check in</strong>
+                <span>Press Today, Yesterday or Last week, then answer the Yes / No questions.</span>
+              </aside>
+            <div class="app-sample app-sample-single" id="resilience-checkin-demo" data-app-shell>
+              <div class="phone-status" aria-hidden="true">
+                <span>9:41</span>
+                <span class="phone-status-icons">
+                  <span class="phone-signal"></span>
+                  <span class="phone-wifi"></span>
+                  <span class="phone-battery"><span></span></span>
+                </span>
               </div>
-            </article>
+              <div class="phone-app-top">
+                <span class="phone-avatar">CS</span>
+                <div>
+                  <p>CoachSense</p>
+                  <strong data-phone-title>Check-in</strong>
+                </div>
+              </div>
+              <div class="mock-screen" data-mock-screen="checkin">
+                <div class="mock-surface" data-checkin-home>
+                  <article class="app-card">
+                    <span class="app-score">75</span>
+                    <p class="app-eyebrow">Calm &amp; Control insight</p>
+                    <h3>Resilience</h3>
+                    <p class="app-copy">
+                      Notice stress early and use a settling skill in the moment, such as slower breathing, relaxing your jaw or shoulders, or taking a brief pause before responding.
+                    </p>
+                    <div class="app-date-options" data-checkin-dates>
+                      <button class="app-pill" type="button" data-checkin-date="Last week">Last week</button>
+                      <button class="app-pill" type="button" data-checkin-date="Yesterday">Yesterday</button>
+                      <button class="app-pill is-selected" type="button" data-checkin-date="Today">Today</button>
+                    </div>
+                  </article>
+                </div>
 
-            <article class="demo-card" id="emotion-lesson-demo">
-              <h3>Why emotions matter</h3>
-              <div class="lesson-video" aria-label="Education programme lesson media" data-lesson-video-shell>
-                <video class="lesson-video-player" controls playsinline preload="metadata" data-lesson-video-player></video>
-                <audio class="lesson-audio-player" controls preload="metadata" data-lesson-audio-player></audio>
-                <div class="lesson-video-content">
-                  <span class="play-dot" aria-hidden="true">▶</span>
-                  <p data-lesson-video-status>Loading education programme lesson...</p>
+                <div class="mock-surface" data-tracker-detail hidden>
+                  <button class="mock-back" type="button" data-tracker-back aria-label="Back">‹</button>
+                  <div class="app-question-list">
+                    <section class="app-question" data-checkin-question="Calm & Control">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 1 of 3</p>
+                      <h5>Calm &amp; Control</h5>
+                      <p class="app-copy" data-checkin-copy="Did you feel calm and in control for most of today?">
+                        Did you feel calm and in control for most of today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly calm and control tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Tue</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill" type="button" data-checkin-value="No">No</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="Yes">Yes</button>
+                      </div>
+                    </section>
+                    <section class="app-question" data-checkin-question="Enjoyment / Restoration">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 2 of 3</p>
+                      <h5>Enjoyment / Restoration</h5>
+                      <p class="app-copy" data-checkin-copy="Did you make time for something enjoyable or restorative today?">
+                        Did you make time for something enjoyable or restorative today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly enjoyment and restoration tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-partial"><strong>Tue</strong><span>No</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill is-selected" type="button" data-checkin-value="No">No</button>
+                        <button class="app-pill" type="button" data-checkin-value="Yes">Yes</button>
+                      </div>
+                    </section>
+                    <section class="app-question" data-checkin-question="Stress Recovery">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 3 of 3</p>
+                      <h5>Stress Recovery</h5>
+                      <p class="app-copy" data-checkin-copy="Did you use a reset or recovery strategy today?">
+                        Did you use a reset or recovery strategy today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly stress recovery tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Tue</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill" type="button" data-checkin-value="No">No</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="Yes">Yes</button>
+                      </div>
+                    </section>
+                  </div>
+                  <p class="app-checkin-status" data-checkin-status>Selected: 2 of 3 marked Yes</p>
+                  <button class="button app-complete" type="button" data-checkin-complete>Complete check-in</button>
                 </div>
               </div>
-              <div class="demo-prompt">
-                <strong>What is the main role of emotions?</strong>
-                <div class="demo-options" data-demo-group="lesson">
-                  <button class="demo-option" type="button" data-feedback="Not quite. Emotions can feel uncomfortable, but they are signals rather than problems to ignore.">They get in the way of clear thinking</button>
-                  <button class="demo-option" type="button" data-feedback="Yes. Emotions are signals that help you notice needs, threats, values and choices.">They give useful signals about what needs attention</button>
-                  <button class="demo-option" type="button" data-feedback="Not always. The skill is to listen to emotions without letting them make every decision.">They should always decide what you do next</button>
+
+              <div class="mock-screen" data-mock-screen="learn" hidden>
+                <div class="mock-surface" data-learn-home>
+                  <article class="app-card lesson-card-preview">
+                    <span class="app-score app-progress-score">1/4</span>
+                    <div class="lesson-card-preview-content">
+                      <p class="app-eyebrow">Emotional Awareness</p>
+                      <h3>Why Emotions Matter: Signals, Not Problems</h3>
+                      <p class="app-copy">
+                        Explore the purpose of emotions and how every feeling carries useful information, rather than being something to fight or fix.
+                      </p>
+                    </div>
+                    <button class="button" type="button" data-open-lesson>Start lesson</button>
+                  </article>
                 </div>
-                <div class="demo-feedback" data-feedback-for="lesson">Answer the lesson question to see feedback.</div>
+
+                <div class="mock-surface" data-lesson-detail hidden>
+                  <button class="mock-back" type="button" data-lesson-back aria-label="Back">‹</button>
+                  <article class="lesson-open-preview">
+                    <div>
+                      <p class="app-eyebrow">Emotional Awareness · Lesson 1</p>
+                      <h4>Why Emotions Matter: Signals, Not Problems</h4>
+                    </div>
+                    <div class="lesson-video" aria-label="Education programme lesson media" data-lesson-video-shell>
+                      <video class="lesson-video-player" controls playsinline preload="metadata" data-lesson-video-player src="https://healthsense-mear.onrender.com/reports/content/education/education-avatar-101-edu-avatar-101-435864b1ffce.mp4"></video>
+                      <div class="lesson-video-content">
+                        <span class="play-dot" aria-hidden="true">▶</span>
+                        <p data-lesson-video-status>Loading education programme lesson...</p>
+                      </div>
+                    </div>
+                  <div class="quiz-box">
+                    <p class="app-eyebrow">Quiz</p>
+                    <div class="demo-options" data-demo-group="lesson">
+                      <div class="quiz-question-block" data-quiz-question>
+                        <p class="quiz-question">In this lesson, how are emotions described?</p>
+                        <button class="quiz-option" type="button" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As proof of weakness</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As problems to solve immediately</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-correct="true" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As signals that carry information</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As flaws to remove</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                      </div>
+                      <div class="quiz-question-block" data-quiz-question>
+                        <p class="quiz-question">In the example of feeling anxious before a meeting, what can that emotion point to?</p>
+                        <button class="quiz-option" type="button" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>That you should cancel the meeting</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>That the meeting does not matter</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>That emotions are dangerous</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-correct="true" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>A wish to do well or protect something</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                      </div>
+                      <div class="quiz-question-block" data-quiz-question>
+                        <p class="quiz-question">What is the suggested attitude towards emotions in this programme?</p>
+                        <button class="quiz-option" type="button" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Judge them as good or bad</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Ignore them completely</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Force them to disappear</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-correct="true" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Listen to them as messages</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                      </div>
+                    </div>
+                      <div class="demo-feedback" data-feedback-for="lesson">Answer the lesson question to see feedback.</div>
+                      <button class="button app-complete" type="button" data-submit-quiz>Submit quiz</button>
+                    </div>
+                  </article>
+                </div>
               </div>
-            </article>
+              <nav class="phone-tabbar" aria-label="Mock app navigation">
+                <button class="phone-tab is-active" type="button" data-mock-tab="checkin" aria-pressed="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 5.5h14v13H5z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 13h3" />
+                    <path d="m13.5 14.2 1.5 1.5 3-3.4" />
+                  </svg>
+                  <span>Checkin</span>
+                </button>
+                <button class="phone-tab" type="button" data-mock-tab="learn" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 5.5h10a3 3 0 0 1 3 3v10H8a3 3 0 0 1-3-3v-10Z" />
+                    <path d="M8.5 9h6" />
+                    <path d="M8.5 12.5h6" />
+                    <path d="M8 18.5V7.5" />
+                  </svg>
+                  <span>Learn</span>
+                </button>
+              </nav>
+              <span class="phone-home" aria-hidden="true"></span>
+            </div>
+              <aside class="mock-guide-note right" aria-label="Learn interaction tip">
+                <strong>Learn</strong>
+                <span>Use the Checkin / Learn buttons, start the lesson, then submit the quiz.</span>
+              </aside>
+            </div>
           </div>
         </section>
 
@@ -1029,7 +1932,7 @@
 
         <section id="faq">
           <div class="section-heading">
-            <h2>Simple questions.</h2>
+            <h2>Frequently asked questions.</h2>
             <p>CoachSense is designed to be easy to start and easy to return to.</p>
           </div>
           <div class="faq">
@@ -1064,15 +1967,20 @@
 
       <footer>
         <div>© 2026 CoachSense Group Limited</div>
-        <div>Find your own way. Build your inner sense.</div>
+        <nav class="footer-links" aria-label="Legal and support links">
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms</a>
+          <a href="/support">Support</a>
+          <a href="/delete-account">Delete Account</a>
+        </nav>
         <div class="footer-legal">
-          CoachSense is a trading name of CoachSense Group Limited. Registered in England & Wales. Company No. 16877998
+          CoachSense is a trading name of CoachSense Group Limited. Registered in England & Wales. Company No. 16877998.
+          CoachSense provides wellbeing coaching, check-ins, habit support, education and reflection tools. It does not
+          replace medical, mental health or emergency support.
         </div>
       </footer>
     </div>
     <script>
-      const fallbackLessonAudioUrl = "/reports/1/content-gen-34.mp3";
-
       function firstText() {
         for (const value of arguments) {
           const token = String(value || "").trim();
@@ -1086,41 +1994,28 @@
         return [".mp4", ".webm", ".mov", ".m4v"].some((extension) => token.endsWith(extension));
       }
 
-      function likelyAudioUrl(value) {
-        const token = firstText(value).toLowerCase().split("?")[0];
-        return [".mp3", ".m4a", ".aac", ".wav", ".ogg"].some((extension) => token.endsWith(extension));
-      }
-
       function normalizeLessonMediaUrl(value) {
         const token = firstText(value);
         if (!token) return "";
-        try {
-          const parsed = new URL(token, window.location.href);
-          if (parsed.hostname === "healthsenseapi.ngrok.app" && parsed.pathname === fallbackLessonAudioUrl) {
-            return fallbackLessonAudioUrl;
-          }
-        } catch (error) {
-          return token;
-        }
         return token;
       }
 
-      function lessonMediaUrl(lesson) {
+      function lessonVideoUrl(lesson) {
         const content = lesson && typeof lesson === "object" ? lesson.content || {} : {};
         const avatar = content && typeof content === "object" ? content.avatar || {} : {};
         const explicitVideo = firstText(
-          avatar.url,
           avatar.video_url,
           avatar.videoUrl,
+          avatar.url,
           avatar.result_url,
           avatar.resultUrl,
           content.video_url,
         );
-        const podcastUrl = firstText(content.podcast_url);
-        return normalizeLessonMediaUrl(explicitVideo || podcastUrl);
+        const normalized = normalizeLessonMediaUrl(explicitVideo);
+        return likelyVideoUrl(normalized) ? normalized : "";
       }
 
-      function findEmotionLessonMedia(data) {
+      function collectEducationLessons(data) {
         const candidates = [];
         const pushLesson = (lesson) => {
           if (lesson && typeof lesson === "object") candidates.push(lesson);
@@ -1137,45 +2032,63 @@
             (Array.isArray(concept && concept.lessons) ? concept.lessons : []).forEach(pushLesson);
           });
         });
-        const emotionMatch = candidates.find((lesson) => {
-          const haystack = [
-            lesson.title,
-            lesson.summary,
-            lesson.goal,
-            lesson.concept_key,
-            lesson.concept_label,
-            lesson.pillar_key,
-            lesson.pillar_label,
-          ].join(" ").toLowerCase();
-          return haystack.includes("emotion") || haystack.includes("calm") || haystack.includes("control");
-        });
-        return lessonMediaUrl(emotionMatch) || candidates.map(lessonMediaUrl).find(Boolean) || "";
+        return candidates;
       }
 
-      function showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer) {
-        const mediaUrl = normalizeLessonMediaUrl(url) || fallbackLessonAudioUrl;
-        shell.classList.remove("has-video", "has-audio");
-        if (likelyVideoUrl(mediaUrl)) {
-          audioPlayer.pause();
-          audioPlayer.removeAttribute("src");
-          videoPlayer.src = mediaUrl;
-          videoPlayer.load();
-          shell.classList.add("has-video");
-          return;
-        }
+      function findPreviewEducationLessonVideo(data) {
+        const lessons = collectEducationLessons(data);
+        const matchingPreviewLesson = lessons.find((lesson) => {
+          const haystack = [
+            lesson && lesson.title,
+            lesson && lesson.summary,
+            lesson && lesson.goal,
+            lesson && lesson.concept_key,
+            lesson && lesson.concept_label,
+            lesson && lesson.pillar_key,
+            lesson && lesson.pillar_label,
+          ].join(" ").toLowerCase();
+          return (
+            haystack.includes("why emotions matter") ||
+            haystack.includes("signals, not problems") ||
+            haystack.includes("emotional awareness") ||
+            haystack.includes("emotional_awareness")
+          );
+        });
+        const fallbackLesson =
+          (data && data.lesson && typeof data.lesson === "object" ? data.lesson : null) ||
+          lessons.find((lesson) => lesson && lesson.is_current === true) ||
+          lessons.find((lesson) => String(lesson && lesson.status || "").trim().toLowerCase() === "current") ||
+          lessons[0];
+        return lessonVideoUrl(matchingPreviewLesson) || lessonVideoUrl(fallbackLesson) || lessons.map(lessonVideoUrl).find(Boolean) || "";
+      }
+
+      function showLessonVideo(url, shell, videoPlayer) {
+        const mediaUrl = normalizeLessonMediaUrl(url);
+        shell.classList.remove("has-video");
         videoPlayer.pause();
         videoPlayer.removeAttribute("src");
-        audioPlayer.src = likelyAudioUrl(mediaUrl) ? mediaUrl : fallbackLessonAudioUrl;
-        audioPlayer.load();
-        shell.classList.add("has-audio");
+        if (!likelyVideoUrl(mediaUrl)) return false;
+        videoPlayer.src = mediaUrl;
+        videoPlayer.load();
+        shell.classList.add("has-video");
+        return true;
+      }
+
+      function setLessonVideoStatus(message) {
+        const status = document.querySelector("[data-lesson-video-status]");
+        if (status) {
+          status.textContent = message;
+        }
       }
 
       async function loadEducationProgrammeMedia() {
         const shell = document.querySelector("[data-lesson-video-shell]");
         const videoPlayer = document.querySelector("[data-lesson-video-player]");
-        const audioPlayer = document.querySelector("[data-lesson-audio-player]");
-        if (!shell || !videoPlayer || !audioPlayer) return;
-        showEducationProgrammeMedia(fallbackLessonAudioUrl, shell, videoPlayer, audioPlayer);
+        if (!shell || !videoPlayer) return;
+        const renderEmotionalAwarenessLessonOneVideoUrl =
+          "https://healthsense-mear.onrender.com/reports/content/education/education-avatar-101-edu-avatar-101-435864b1ffce.mp4";
+        showLessonVideo(renderEmotionalAwarenessLessonOneVideoUrl, shell, videoPlayer);
+        setLessonVideoStatus("Emotional Awareness lesson video from the education programme.");
 
         const controller = new AbortController();
         const timeoutId = window.setTimeout(() => controller.abort(), 1800);
@@ -1188,12 +2101,12 @@
             throw new Error("video_unavailable");
           }
           const data = await response.json();
-          const url = findEmotionLessonMedia(data);
-          if (url && normalizeLessonMediaUrl(url) !== fallbackLessonAudioUrl) {
-            showEducationProgrammeMedia(url, shell, videoPlayer, audioPlayer);
+          const url = findPreviewEducationLessonVideo(data);
+          if (!showLessonVideo(url, shell, videoPlayer)) {
+            showLessonVideo(renderEmotionalAwarenessLessonOneVideoUrl, shell, videoPlayer);
           }
         } catch (error) {
-          return;
+          showLessonVideo(renderEmotionalAwarenessLessonOneVideoUrl, shell, videoPlayer);
         } finally {
           window.clearTimeout(timeoutId);
         }
@@ -1202,9 +2115,11 @@
       document.querySelectorAll("[data-demo-group]").forEach((group) => {
         const groupName = group.getAttribute("data-demo-group");
         const feedback = document.querySelector(`[data-feedback-for="${groupName}"]`);
-        group.querySelectorAll(".demo-option").forEach((button) => {
+        group.querySelectorAll(".demo-option, .quiz-option").forEach((button) => {
           button.addEventListener("click", () => {
-            group.querySelectorAll(".demo-option").forEach((option) => option.classList.remove("is-selected"));
+            const optionScope = button.closest("[data-quiz-question]") || group;
+            optionScope.querySelectorAll(".demo-option, .quiz-option").forEach((option) => option.classList.remove("is-selected"));
+            optionScope.querySelectorAll(".quiz-option").forEach((option) => option.classList.remove("is-correct", "is-incorrect"));
             button.classList.add("is-selected");
             if (feedback) {
               feedback.textContent = button.getAttribute("data-feedback") || "";
@@ -1212,6 +2127,184 @@
           });
         });
       });
+
+      document.querySelectorAll("[data-submit-quiz]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const quizBox = button.closest(".quiz-box");
+          if (!quizBox) return;
+          const questions = Array.from(quizBox.querySelectorAll("[data-quiz-question]"));
+          let correctCount = 0;
+          let answeredCount = 0;
+          questions.forEach((question) => {
+            const selected = question.querySelector(".quiz-option.is-selected");
+            const correct = question.querySelector('.quiz-option[data-correct="true"]');
+            question.querySelectorAll(".quiz-option").forEach((option) => option.classList.remove("is-correct", "is-incorrect"));
+            if (selected) {
+              answeredCount += 1;
+              if (selected === correct) {
+                correctCount += 1;
+              } else {
+                selected.classList.add("is-incorrect");
+              }
+            }
+            if (correct) {
+              correct.classList.add("is-correct");
+            }
+          });
+          const feedback = quizBox.querySelector('[data-feedback-for="lesson"]');
+          if (feedback) {
+            feedback.textContent =
+              answeredCount === questions.length
+                ? `You got ${correctCount} of ${questions.length} correct. Correct answers are shown in green.`
+                : `You answered ${answeredCount} of ${questions.length}. Correct answers are shown in green.`;
+          }
+        });
+      });
+
+      function setMockAppScreen(screenName) {
+        const shell = document.querySelector("[data-app-shell]");
+        if (!shell) return;
+        const nextScreen = screenName === "learn" ? "learn" : "checkin";
+        shell.querySelectorAll("[data-mock-screen]").forEach((screen) => {
+          screen.hidden = screen.getAttribute("data-mock-screen") !== nextScreen;
+        });
+        shell.querySelectorAll("[data-mock-tab]").forEach((button) => {
+          const active = button.getAttribute("data-mock-tab") === nextScreen;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+        const title = shell.querySelector("[data-phone-title]");
+        if (title) {
+          title.textContent = nextScreen === "learn" ? "Education" : "Check-in";
+        }
+        showTrackerDetail(false);
+        showLessonDetail(false);
+        const activeScreen = shell.querySelector(`[data-mock-screen="${nextScreen}"]`);
+        if (activeScreen) {
+          activeScreen.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function showTrackerDetail(open) {
+        const home = document.querySelector("[data-checkin-home]");
+        const detail = document.querySelector("[data-tracker-detail]");
+        if (!home || !detail) return;
+        home.hidden = Boolean(open);
+        detail.hidden = !open;
+        const screen = document.querySelector('[data-mock-screen="checkin"]');
+        if (screen) {
+          screen.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function showLessonDetail(open) {
+        const home = document.querySelector("[data-learn-home]");
+        const detail = document.querySelector("[data-lesson-detail]");
+        if (!home || !detail) return;
+        home.hidden = Boolean(open);
+        detail.hidden = !open;
+        const screen = document.querySelector('[data-mock-screen="learn"]');
+        if (screen) {
+          screen.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      document.querySelectorAll("[data-mock-tab]").forEach((button) => {
+        button.addEventListener("click", () => {
+          setMockAppScreen(button.getAttribute("data-mock-tab") || "checkin");
+        });
+      });
+
+      document.querySelectorAll("[data-jump-tab]").forEach((link) => {
+        link.addEventListener("click", () => {
+          setMockAppScreen(link.getAttribute("data-jump-tab") || "checkin");
+        });
+      });
+
+      document.querySelectorAll("[data-tracker-back]").forEach((button) => {
+        button.addEventListener("click", () => showTrackerDetail(false));
+      });
+
+      document.querySelectorAll("[data-open-lesson]").forEach((button) => {
+        button.addEventListener("click", () => showLessonDetail(true));
+      });
+
+      document.querySelectorAll("[data-lesson-back]").forEach((button) => {
+        button.addEventListener("click", () => showLessonDetail(false));
+      });
+
+      const checkinQuestions = Array.from(document.querySelectorAll("[data-checkin-question]"));
+      const checkinStatus = document.querySelector("[data-checkin-status]");
+      let selectedCheckinDate = "Today";
+
+      function updateCheckinStatus(message) {
+        if (!checkinStatus) return;
+        const yesCount = checkinQuestions.filter((question) =>
+          question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
+        ).length;
+        checkinStatus.textContent = message || `${selectedCheckinDate}: ${yesCount} of ${checkinQuestions.length} marked Yes`;
+      }
+
+      function contextualizeCheckinCopy(copy) {
+        const text = String(copy || "");
+        if (selectedCheckinDate === "Yesterday") {
+          return text
+            .replace(" today?", " yesterday?")
+            .replace(" today", " yesterday");
+        }
+        if (selectedCheckinDate === "Last week") {
+          return text
+            .replace(" today?", " last week?")
+            .replace(" today", " last week");
+        }
+        return text;
+      }
+
+      function updateCheckinQuestions() {
+        checkinQuestions.forEach((question, index) => {
+          const heading = question.querySelector("[data-checkin-heading]");
+          const copy = question.querySelector("[data-checkin-copy]");
+          if (heading) {
+            heading.textContent = `${selectedCheckinDate} · ${index + 1} of ${checkinQuestions.length}`;
+          }
+          if (copy) {
+            copy.textContent = contextualizeCheckinCopy(copy.getAttribute("data-checkin-copy"));
+          }
+        });
+      }
+
+      document.querySelectorAll("[data-checkin-date]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedCheckinDate = button.getAttribute("data-checkin-date") || "Today";
+          document.querySelectorAll("[data-checkin-date]").forEach((option) => option.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          updateCheckinQuestions();
+          updateCheckinStatus();
+          showTrackerDetail(true);
+        });
+      });
+
+      document.querySelectorAll("[data-checkin-value]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const question = button.closest("[data-checkin-question]");
+          if (!question) return;
+          question.querySelectorAll("[data-checkin-value]").forEach((option) => option.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          updateCheckinStatus();
+        });
+      });
+
+      const completeCheckinButton = document.querySelector("[data-checkin-complete]");
+      if (completeCheckinButton) {
+        completeCheckinButton.addEventListener("click", () => {
+          const yesCount = checkinQuestions.filter((question) =>
+            question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
+          ).length;
+          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, ${yesCount} of ${checkinQuestions.length} marked Yes.`);
+          showTrackerDetail(false);
+        });
+      }
+
       loadEducationProgrammeMedia();
     </script>
   </body>

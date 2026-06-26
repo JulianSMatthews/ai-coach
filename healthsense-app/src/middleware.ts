@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/support",
   "/delete-account",
   "/coachsense.html",
+  "/coachsense-icon.svg",
   "/coachsense-logo.svg",
   "/healthsense-mark.svg",
 ];
@@ -21,7 +22,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
     pathname.startsWith("/favicon") ||
-    pathname.startsWith("/assets")
+    pathname.startsWith("/assets") ||
+    pathname.startsWith("/reports")
   ) {
     return NextResponse.next();
   }
