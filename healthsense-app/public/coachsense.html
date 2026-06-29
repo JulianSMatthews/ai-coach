@@ -351,7 +351,18 @@
         width: min(80%, 456px);
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
-        animation: coach-logo-reveal 7.2s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-logo-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+      }
+
+      .splash-preview-icon {
+        position: absolute;
+        left: 50%;
+        top: 47%;
+        z-index: 1;
+        width: min(43%, 238px);
+        transform: translate(-50%, -50%) scale(0.68);
+        opacity: 0;
+        animation: coach-icon-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-flowers {
@@ -382,7 +393,7 @@
           radial-gradient(ellipse at 25% 75%, color-mix(in srgb, var(--flower-color), white 12%) 0 17%, transparent 18%),
           radial-gradient(ellipse at 25% 25%, color-mix(in srgb, var(--flower-color), white 12%) 0 17%, transparent 18%);
         filter: blur(0.15px);
-        animation: coach-flower-bloom 7.2s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-flower-bloom 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-flower-one {
@@ -430,7 +441,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 7.2s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-word-arrive 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -438,7 +449,7 @@
         --from-y: -170%;
         --to-x: calc(-100% - 0.18em);
         --to-y: calc(-50% - 0.56em);
-        animation-delay: 2.42s;
+        animation-delay: 3.3s;
       }
 
       .splash-word-your {
@@ -447,7 +458,7 @@
         --to-x: 0.18em;
         --to-y: calc(-50% - 0.56em);
         color: var(--accent);
-        animation-delay: 2.54s;
+        animation-delay: 3.42s;
       }
 
       .splash-word-own {
@@ -455,7 +466,7 @@
         --from-y: 120%;
         --to-x: calc(-100% - 0.18em);
         --to-y: calc(-50% + 0.56em);
-        animation-delay: 2.66s;
+        animation-delay: 3.54s;
       }
 
       .splash-word-way {
@@ -463,39 +474,57 @@
         --from-y: 120%;
         --to-x: 0.18em;
         --to-y: calc(-50% + 0.56em);
-        animation-delay: 2.78s;
+        animation-delay: 3.66s;
       }
 
       @keyframes coach-logo-reveal {
         0%,
-        8% {
+        7% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.82);
         }
-        18%,
-        30% {
+        15%,
+        24% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
-        40%,
+        31%,
         100% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.94);
         }
       }
 
+      @keyframes coach-icon-reveal {
+        0%,
+        27% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.68);
+        }
+        36%,
+        46% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        55%,
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.9);
+        }
+      }
+
       @keyframes coach-flower-bloom {
         0%,
-        26% {
+        45% {
           opacity: 0;
           transform: translate(var(--flower-x), var(--flower-y)) scale(0.42) rotate(-12deg);
         }
-        39%,
-        53% {
+        56%,
+        67% {
           opacity: 0.78;
           transform: translate(var(--flower-x), var(--flower-y)) scale(1) rotate(18deg);
         }
-        64%,
+        76%,
         100% {
           opacity: 0;
           transform: translate(var(--flower-x), var(--flower-y)) scale(0.9) rotate(28deg);
@@ -2077,6 +2106,7 @@
           <aside class="app-preview" aria-label="CoachSense app preview">
             <div class="splash-preview" aria-label="CoachSense splash animation">
               <img class="splash-preview-logo" src="coachsense-logo.svg" alt="" />
+              <img class="splash-preview-icon" src="coachsense-icon.svg" alt="" />
               <div class="splash-preview-flowers" aria-hidden="true">
                 <span class="splash-flower splash-flower-one"></span>
                 <span class="splash-flower splash-flower-two"></span>
