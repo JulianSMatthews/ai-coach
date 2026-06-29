@@ -669,9 +669,8 @@
       .app-sample {
         position: relative;
         display: grid;
-        width: min(100%, 390px);
-        height: 780px;
-        max-height: min(780px, 86vh);
+        width: min(100%, 390px, calc(92vh * 390 / 844));
+        aspect-ratio: 390 / 844;
         gap: 14px;
         grid-template-rows: auto auto minmax(0, 1fr) auto auto;
         align-content: stretch;
@@ -750,7 +749,7 @@
 
       .mock-guide-note.left {
         justify-self: end;
-        margin-top: 564px;
+        margin-top: 628px;
         margin-right: 38px;
       }
 
@@ -765,7 +764,7 @@
 
       .mock-guide-note.right {
         justify-self: start;
-        margin-top: 583px;
+        margin-top: 647px;
         margin-left: 28px;
       }
 
