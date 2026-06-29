@@ -849,14 +849,14 @@
         display: grid;
         width: min(100%, 390px, calc(92vh * 390 / 844));
         aspect-ratio: 390 / 844;
-        gap: 22px;
+        gap: 16px;
         grid-template-rows: auto auto minmax(0, 1fr) auto;
         align-content: stretch;
         overflow: hidden;
         border: 0;
         border-radius: 42px;
         background: var(--bg);
-        padding: 24px 16px 24px;
+        padding: 24px 16px 20px;
         box-shadow: 0 30px 70px -42px rgba(30, 27, 22, 0.52);
         scrollbar-width: none;
       }
@@ -1086,14 +1086,14 @@
         gap: 14px;
         border-radius: 0;
         background: transparent;
-        padding: 36px 0 28px;
+        padding: 20px 0 16px;
       }
 
       .phone-greeting {
         margin: 0;
         color: var(--ink);
         font-family: var(--font-display);
-        font-size: 22px;
+        font-size: 21px;
         font-weight: 600;
         line-height: 1.1;
         letter-spacing: 0;
@@ -1216,7 +1216,7 @@
       .app-sample .app-card {
         border: 1px solid #e8dfd2;
         border-radius: 30px;
-        padding: 32px 28px 28px;
+        padding: 28px 26px 26px;
         box-shadow: 0 22px 46px -42px rgba(30, 27, 22, 0.42);
       }
 
@@ -1245,39 +1245,40 @@
 
       .app-sample .app-card h3,
       .app-sample .app-card h4 {
-        font-size: 37px;
+        max-width: calc(100% - 94px);
+        font-size: 32px;
         font-weight: 600;
-        line-height: 1.05;
+        line-height: 1.08;
       }
 
       .app-copy {
-        max-width: 17rem;
-        margin: 34px 0 0;
+        max-width: 16rem;
+        margin: 28px 0 0;
         color: #55514d;
-        font-size: 20px;
-        line-height: 1.72;
+        font-size: 17px;
+        line-height: 1.68;
       }
 
       .app-score {
         position: absolute;
         right: 22px;
-        top: 22px;
+        top: 24px;
         display: grid;
-        width: 82px;
-        height: 82px;
+        width: 70px;
+        height: 70px;
         place-items: center;
-        border: 9px solid #eadfce;
+        border: 8px solid #eadfce;
         border-radius: 50%;
         color: var(--ink);
         background: #ffffff;
-        font-size: 26px;
+        font-size: 23px;
         font-weight: 700;
       }
 
       .app-progress-score {
-        width: 86px;
-        height: 86px;
-        border: 9px solid #eadfce;
+        width: 74px;
+        height: 74px;
+        border: 8px solid #eadfce;
         background:
           radial-gradient(circle at center, #7c5cff 0 47%, transparent 49%),
           conic-gradient(#eadfce 0 360deg);
@@ -1285,8 +1286,8 @@
       }
 
       .app-progress-score svg {
-        width: 38px;
-        height: 38px;
+        width: 32px;
+        height: 32px;
       }
 
       .app-date-options,
@@ -1298,11 +1299,28 @@
 
       .app-date-options {
         max-width: 17rem;
-        margin-top: 40px;
+        margin-top: 34px;
       }
 
       .app-date-options .app-pill:nth-child(3) {
         grid-column: 1 / 2;
+      }
+
+      [data-checkin-home] .app-card {
+        min-height: 28rem;
+      }
+
+      [data-checkin-home] .app-card h3 {
+        margin-top: 0;
+      }
+
+      [data-checkin-home] .app-eyebrow {
+        margin-top: 4px;
+      }
+
+      [data-checkin-home] .app-copy {
+        max-height: 14.5rem;
+        overflow: hidden;
       }
 
       .app-pill {
@@ -1438,7 +1456,7 @@
       }
 
       .lesson-card-preview {
-        min-height: 36rem;
+        min-height: 29rem;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -1448,23 +1466,23 @@
         padding-top: 0;
       }
 
-      .lesson-card-preview h3 {
+      .app-sample .lesson-card-preview h3 {
         max-width: 12ch;
       }
 
       .lesson-card-preview .app-copy {
-        max-width: 16rem;
-        margin-top: 28px;
+        max-width: 15rem;
+        margin-top: 24px;
       }
 
       .lesson-card-preview .button {
         align-self: flex-start;
-        min-height: 58px;
+        min-height: 52px;
         border-radius: 999px;
         background: #111111;
         padding: 0 26px;
         color: #ffffff;
-        font-size: 20px;
+        font-size: 18px;
       }
 
       .lesson-open-preview {
