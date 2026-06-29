@@ -20,7 +20,7 @@
       :root {
         --bg: #fffcf6;
         --panel: #fffdfacc;
-        --hero-visual-bg: #ebcfc3;
+        --hero-visual-bg: #f9ebdb;
         --panel-soft: #fffdfacc;
         --surface-muted: #fffdfacc;
         --ink: #251208;
@@ -283,6 +283,7 @@
 
       .splash-preview {
         position: relative;
+        flex: 0 0 auto;
         width: min(100%, 563px);
         min-height: 0;
         aspect-ratio: 563 / 526;
@@ -1771,7 +1772,9 @@
         }
 
         .splash-preview {
-          width: min(100%, 390px);
+          width: min(100%, 343px);
+          aspect-ratio: 343 / 330;
+          border-radius: 24px;
         }
 
         .section-heading {
