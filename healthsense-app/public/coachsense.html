@@ -1375,7 +1375,7 @@
         border-top: 1px solid var(--line);
       }
 
-      details {
+      .faq details {
         counter-increment: faq;
         margin-top: -1px;
         border: 0;
@@ -1385,7 +1385,7 @@
         padding: 0;
       }
 
-      summary {
+      .faq summary {
         display: grid;
         grid-template-columns: 50% 50%;
         align-items: stretch;
@@ -1398,8 +1398,8 @@
         list-style: none;
       }
 
-      summary::before {
-        content: counter(faq, decimal-leading-zero);
+      .faq summary::before {
+        content: counter(faq) ".";
         display: flex;
         align-items: center;
         justify-content: flex-end;
@@ -1408,36 +1408,40 @@
         font: inherit;
       }
 
-      summary span {
+      .faq summary span {
         position: relative;
         display: block;
         border-left: 1px solid var(--line);
-        padding: 20px 58px 20px 20px;
+        padding: 20px 76px 20px 20px;
         color: var(--ink);
+        font: inherit;
+        transition: color 0.3s ease;
       }
 
-      summary span::after {
-        content: "+";
+      .faq summary span::after {
+        content: "";
         position: absolute;
         top: 50%;
         right: 20px;
         transform: translateY(-50%);
-        color: var(--ink);
-        font-family: var(--font-body);
-        font-size: 20px;
-        font-weight: 400;
-        line-height: 1;
+        width: 44px;
+        height: 44px;
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        background:
+          linear-gradient(currentColor, currentColor) center / 20px 1px no-repeat,
+          linear-gradient(currentColor, currentColor) center / 1px 20px no-repeat;
       }
 
-      details[open] summary span::after {
-        content: "-";
+      .faq details[open] summary span::after {
+        background: linear-gradient(currentColor, currentColor) center / 20px 1px no-repeat;
       }
 
-      summary::-webkit-details-marker {
+      .faq summary::-webkit-details-marker {
         display: none;
       }
 
-      details p {
+      .faq details p {
         max-width: 400px;
         margin: 0 0 0 50%;
         border-left: 1px solid var(--line);
@@ -1448,6 +1452,13 @@
         font-weight: 400;
         line-height: 1.5;
         letter-spacing: 0.04em;
+      }
+
+      .faq details:hover summary::before,
+      .faq details:hover summary span,
+      .faq details[open] summary::before,
+      .faq details[open] summary span {
+        color: var(--accent-dark);
       }
 
       footer {
@@ -1754,27 +1765,26 @@
           font-size: 20px;
         }
 
-        summary {
+        .faq summary {
           grid-template-columns: 52px minmax(0, 1fr);
           font-size: 20px;
         }
 
-        summary::before {
+        .faq summary::before {
           justify-content: flex-start;
           padding: 18px 12px 18px 0;
         }
 
-        summary span {
+        .faq summary span {
           border-left: 0;
-          padding: 18px 44px 18px 0;
+          padding: 18px 58px 18px 0;
         }
 
-        summary span::after {
-          right: 4px;
-          font-size: 18px;
+        .faq summary span::after {
+          right: 0;
         }
 
-        details p {
+        .faq details p {
           max-width: 33rem;
           margin-left: 52px;
           border-left: 0;
@@ -1790,9 +1800,6 @@
           font-size: 14px;
         }
 
-        footer {
-          display: grid;
-        }
       }
     </style>
   </head>
