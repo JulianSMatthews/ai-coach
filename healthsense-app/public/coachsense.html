@@ -331,6 +331,16 @@
         background-size: 130px 86px, 130px 86px, auto;
       }
 
+      .hero-animation-video {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        object-fit: cover;
+      }
+
       .splash-preview::after {
         content: "";
         position: absolute;
@@ -1990,6 +2000,24 @@
 
           <aside class="app-preview" aria-label="CoachSense app preview">
             <div class="splash-preview" aria-label="CoachSense splash animation">
+              <video
+                class="hero-animation-video"
+                autoplay
+                muted
+                loop
+                playsinline
+                preload="metadata"
+                poster="https://cdn.prod.website-files.com/696e5675cd0223d5dbc61f65%2F699c29998d3806b0fc8aa9f4_web1_poster.0000000.jpg"
+              >
+                <source
+                  src="https://cdn.prod.website-files.com/696e5675cd0223d5dbc61f65%2F699c29998d3806b0fc8aa9f4_web1_mp4.mp4"
+                  type="video/mp4"
+                />
+                <source
+                  src="https://cdn.prod.website-files.com/696e5675cd0223d5dbc61f65%2F699c29998d3806b0fc8aa9f4_web1_webm.webm"
+                  type="video/webm"
+                />
+              </video>
               <div class="hero-flower-cluster" aria-hidden="true">
                 <span class="hero-flower yellow"></span>
                 <span class="hero-flower brown"></span>
