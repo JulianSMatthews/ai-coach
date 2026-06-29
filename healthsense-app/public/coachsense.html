@@ -23,8 +23,9 @@
         --hero-visual-bg: #fffcf6;
         --panel-soft: #fffaf0;
         --surface-muted: #fffaf0;
-        --ink: #1e1b16;
-        --muted: #6b6257;
+        --ink: #251208;
+        --muted: #251208;
+        --body-copy: #251208;
         --tertiary: #8c7f70;
         --accent: #d3541b;
         --accent-dark: #a83b0c;
@@ -91,7 +92,7 @@
         display: flex;
         align-items: center;
         gap: 22px;
-        color: var(--muted);
+        color: var(--body-copy);
         font-size: 14px;
         font-weight: 600;
       }
@@ -163,7 +164,7 @@
         align-items: center;
         border-radius: 12px;
         padding: 0 12px;
-        color: var(--muted);
+        color: var(--body-copy);
         font-size: 15px;
         font-weight: 600;
       }
@@ -203,7 +204,7 @@
       .lead {
         max-width: 482px;
         margin: 0 0 30px;
-        color: var(--muted);
+        color: var(--body-copy);
         font-family: var(--font-body);
         font-size: 16px;
         font-weight: 500;
@@ -365,7 +366,6 @@
         font-family: var(--font-body);
         font-size: 16px;
         font-weight: 400;
-        letter-spacing: 0.04em;
         line-height: 1.5;
       }
 
@@ -407,7 +407,7 @@
         border-radius: 30px;
         background: var(--white);
         padding: 28px;
-        color: var(--ink);
+        color: var(--body-copy);
         box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
       }
 
@@ -433,18 +433,26 @@
       }
 
       .queue-card p,
+      .section-heading p,
+      .demo-card p,
+      .mock-guide-note span,
+      .app-copy,
+      .app-question .app-copy,
+      .quiz-question,
+      .demo-feedback,
       .quote p,
       details p {
         margin: 0;
-        color: var(--muted);
+        color: var(--body-copy);
         font-family: var(--font-body);
         font-weight: 400;
-        letter-spacing: 0.04em;
+        letter-spacing: 0;
+        line-height: 1.5;
       }
 
       .queue-card p {
         margin-top: 2.65rem;
-        color: var(--ink);
+        color: var(--body-copy);
         font-size: 16px;
         font-weight: 400;
         line-height: 1.5;
@@ -546,7 +554,6 @@
         margin: 0;
         color: var(--ink);
         font-size: 16px;
-        letter-spacing: 0.04em;
         line-height: 1.5;
       }
 
@@ -600,9 +607,8 @@
         border-radius: 18px;
         background: var(--panel);
         padding: 14px 16px;
-        color: var(--muted);
+        color: var(--body-copy);
         font-size: 15px;
-        letter-spacing: 0.04em;
         line-height: 1.45;
       }
 
@@ -647,7 +653,7 @@
         border-radius: 20px;
         background: var(--panel);
         padding: 16px 18px;
-        color: var(--ink);
+        color: var(--body-copy);
         box-shadow: 0 18px 42px -34px rgba(30, 27, 22, 0.48);
       }
 
@@ -666,7 +672,6 @@
         color: var(--muted);
         font-size: 14px;
         font-weight: 600;
-        letter-spacing: 0.04em;
         line-height: 1.45;
       }
 
@@ -753,7 +758,7 @@
         border: 1px solid var(--line);
         border-radius: 50%;
         background: var(--panel);
-        color: var(--ink);
+        color: var(--body-copy);
         font-family: var(--font-body);
         font-size: 30px;
         line-height: 1;
@@ -872,7 +877,7 @@
       }
 
       .phone-app-top p {
-        color: var(--muted);
+        color: var(--body-copy);
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.14em;
@@ -996,7 +1001,6 @@
         margin: 20px 0 0;
         color: var(--ink);
         font-size: 16px;
-        letter-spacing: 0.04em;
         line-height: 1.5;
       }
 
@@ -1208,7 +1212,6 @@
         color: var(--ink);
         font-size: 16px;
         font-weight: 700;
-        letter-spacing: 0.04em;
         line-height: 1.45;
       }
 
@@ -1388,7 +1391,6 @@
         color: var(--muted);
         font-size: 14px;
         font-weight: 400;
-        letter-spacing: 0.04em;
       }
 
       .footer-legal {
