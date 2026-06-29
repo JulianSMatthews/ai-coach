@@ -20,8 +20,15 @@ const WEBSITE_HOSTS = new Set(["coachsense.ai", "www.coachsense.ai"]);
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hostname = request.nextUrl.hostname.toLowerCase();
-  if (pathname === "/" && WEBSITE_HOSTS.has(hostname)) {
+  const requestHosts = [
+    request.nextUrl.hostname,
+    request.headers.get("x-forwarded-host"),
+    request.headers.get("host"),
+  ]
+    .flatMap((host) => String(host || "").split(","))
+    .map((host) => host.trim().split(":")[0].toLowerCase())
+    .filter(Boolean);
+  if (pathname === "/" && requestHosts.some((host) => WEBSITE_HOSTS.has(host))) {
     const url = request.nextUrl.clone();
     url.pathname = "/coachsense.html";
     return NextResponse.rewrite(url);
