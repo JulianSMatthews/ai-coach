@@ -357,7 +357,7 @@
         height: auto;
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
-        animation: coach-logo-reveal 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-logo-reveal 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-icon {
@@ -368,7 +368,7 @@
         width: min(43%, 238px);
         transform: translate(-50%, -50%) scale(0.68);
         opacity: 0;
-        animation: coach-icon-reveal 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-icon-reveal 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-pillars {
@@ -402,7 +402,7 @@
         opacity: 0;
         transform: translateY(-150%) scale(0.92);
         box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
-        animation: coach-pillar-icon-feature 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-icon-feature 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
@@ -421,28 +421,28 @@
         opacity: 0;
         text-align: center;
         transform: translateY(150%) scale(0.96);
-        animation: coach-pillar-label-feature 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-label-feature 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-resilience {
         --pillar-color: #44abc3;
-        --pillar-delay: 2.4s;
+        --pillar-delay: 5.4s;
       }
 
       .splash-pillar-purpose {
         --pillar-color: #0f8b8d;
-        --pillar-delay: 3.6s;
+        --pillar-delay: 9.1s;
       }
 
       .splash-pillar-reflection {
         --pillar-color: #7c5cff;
-        --pillar-delay: 4.8s;
+        --pillar-delay: 12.8s;
       }
 
       .splash-pillar-recovery {
         --pillar-color: #c9764f;
-        --pillar-delay: 6s;
+        --pillar-delay: 16.5s;
       }
 
       .splash-preview-words {
@@ -462,7 +462,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-word-arrive 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -514,12 +514,12 @@
 
       @keyframes coach-icon-reveal {
         0%,
-        81% {
+        95% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.68);
         }
-        87%,
-        96% {
+        97%,
+        99% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
@@ -535,15 +535,15 @@
           opacity: 0;
           transform: translateY(-150%) scale(0.92);
         }
-        4%,
-        7% {
+        5%,
+        14% {
           opacity: 1;
           transform: translateY(0) scale(1);
         }
-        10%,
+        18%,
         100% {
           opacity: 0;
-          transform: translateX(-190%) scale(0.96);
+          transform: translateY(0) scale(0.96);
         }
       }
 
@@ -553,33 +553,33 @@
           opacity: 0;
           transform: translateY(150%) scale(0.96);
         }
-        4%,
-        7% {
+        5%,
+        14% {
           opacity: 1;
           transform: translateY(0) scale(1);
         }
-        10%,
+        18%,
         100% {
           opacity: 0;
-          transform: translateX(-190%) scale(0.96);
+          transform: translateY(0) scale(0.96);
         }
       }
 
       @keyframes coach-word-arrive {
         0%,
-        61% {
+        86% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        68% {
+        89% {
           opacity: 1;
         }
-        73%,
-        78% {
+        91%,
+        93% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        83%,
+        95%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
@@ -711,7 +711,7 @@
       .queue-card p {
         margin-top: 2.65rem;
         color: var(--body-copy);
-        font-size: 16px;
+        font-size: 19.2px;
         font-weight: 400;
         line-height: 1.5;
       }
@@ -1881,13 +1881,14 @@
         align-items: center;
         justify-content: flex-end;
         border-bottom: 1px solid var(--line);
-        padding: 52px 40px;
+        padding: 52px 40px 28px;
       }
 
       .footer-logo-row a {
         display: flex;
         width: min(100%, 520px);
         justify-content: flex-end;
+        text-align: right;
       }
 
       .footer-logo-row img {
@@ -2113,7 +2114,7 @@
         }
 
         .queue-card p {
-          font-size: 14px;
+          font-size: 16.8px;
         }
 
         .queue-card h3,
@@ -2506,7 +2507,7 @@
                     </span>
                     <div class="lesson-card-preview-content">
                       <p class="app-eyebrow">Emotional Awareness</p>
-                      <h3>Why Emotions Matter: Signals, Not Problems</h3>
+                      <h3>Why Emotions<br />Matter:<br />Signals, Not Problems</h3>
                       <p class="app-copy">
                         Notice one feeling today and reflect on what it might be telling you about your needs or values.
                       </p>
