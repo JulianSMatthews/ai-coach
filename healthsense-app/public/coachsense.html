@@ -357,7 +357,7 @@
         height: auto;
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
-        animation: coach-logo-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-logo-reveal 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-icon {
@@ -368,7 +368,7 @@
         width: min(43%, 238px);
         transform: translate(-50%, -50%) scale(0.68);
         opacity: 0;
-        animation: coach-icon-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-icon-reveal 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-pillars {
@@ -378,10 +378,21 @@
         pointer-events: none;
       }
 
-      .splash-pillar-icon {
+      .splash-pillar-item {
         position: absolute;
         left: 50%;
-        top: 48%;
+        top: 50%;
+        display: grid;
+        justify-items: center;
+        gap: 16px;
+        width: min(72%, 360px);
+        color: var(--pillar-color);
+        opacity: 0;
+        transform: translate(-50%, -150%) scale(0.92);
+        animation: coach-pillar-feature 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+      }
+
+      .splash-pillar-icon {
         width: clamp(76px, 14vw, 132px);
         aspect-ratio: 1;
         display: grid;
@@ -390,11 +401,7 @@
         border-radius: 50%;
         background: color-mix(in srgb, var(--pillar-color), white 90%);
         color: var(--pillar-color);
-        opacity: 0;
-        transform: translate(var(--pillar-x), var(--pillar-y)) scale(0.42) rotate(0deg);
-        transform-origin: center;
         box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
-        animation: coach-flower-bloom 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-pillar-icon svg {
@@ -402,35 +409,34 @@
         height: 54%;
       }
 
+      .splash-pillar-label {
+        display: block;
+        color: var(--ink);
+        font-family: Outfit, sans-serif;
+        font-size: clamp(24px, 3.6vw, 42px);
+        font-weight: 400;
+        line-height: 1.08;
+        text-align: center;
+      }
+
       .splash-pillar-resilience {
         --pillar-color: #44abc3;
-        --pillar-x: -122%;
-        --pillar-y: -132%;
-        width: clamp(68px, 12.2vw, 118px);
+        animation-delay: 2.4s;
       }
 
       .splash-pillar-purpose {
         --pillar-color: #0f8b8d;
-        --pillar-x: 16%;
-        --pillar-y: -94%;
-        width: clamp(84px, 14.8vw, 140px);
-        animation-delay: 0.08s;
+        animation-delay: 3.6s;
       }
 
       .splash-pillar-reflection {
         --pillar-color: #7c5cff;
-        --pillar-x: -106%;
-        --pillar-y: 16%;
-        width: clamp(74px, 13vw, 124px);
-        animation-delay: 0.16s;
+        animation-delay: 4.8s;
       }
 
       .splash-pillar-recovery {
         --pillar-color: #c9764f;
-        --pillar-x: 2%;
-        --pillar-y: 24%;
-        width: clamp(98px, 17.2vw, 162px);
-        animation-delay: 0.24s;
+        animation-delay: 6s;
       }
 
       .splash-preview-words {
@@ -450,7 +456,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-word-arrive 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -484,16 +490,16 @@
 
       @keyframes coach-logo-reveal {
         0%,
-        5% {
+        4% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.82);
         }
-        13%,
-        24% {
+        9%,
+        17% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
-        31%,
+        23%,
         100% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.94);
@@ -502,12 +508,12 @@
 
       @keyframes coach-icon-reveal {
         0%,
-        72% {
+        81% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.68);
         }
-        80%,
-        94% {
+        87%,
+        96% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
@@ -517,39 +523,42 @@
         }
       }
 
-      @keyframes coach-flower-bloom {
+      @keyframes coach-pillar-feature {
         0%,
-        26% {
+        12% {
           opacity: 0;
-          transform: translate(var(--pillar-x), var(--pillar-y)) scale(0.42) rotate(-12deg);
+          transform: translate(-50%, -150%) scale(0.92);
         }
-        37%,
-        48% {
+        28% {
           opacity: 1;
-          transform: translate(var(--pillar-x), var(--pillar-y)) scale(1) rotate(10deg);
+          transform: translate(-50%, -50%) scale(1);
         }
-        58%,
+        62% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        88%,
         100% {
           opacity: 0;
-          transform: translate(var(--pillar-x), var(--pillar-y)) scale(0.9) rotate(18deg);
+          transform: translate(-190%, -50%) scale(0.96);
         }
       }
 
       @keyframes coach-word-arrive {
         0%,
-        50% {
+        61% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        58% {
+        68% {
           opacity: 1;
         }
-        65%,
-        70% {
+        73%,
+        78% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        76%,
+        83%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
@@ -2182,34 +2191,46 @@
               <img class="splash-preview-logo" src="coachsense-logo-animation.svg" alt="" />
               <img class="splash-preview-icon" src="coachsense-icon-transparent.svg" alt="" />
               <div class="splash-preview-pillars" aria-hidden="true">
-                <span class="splash-pillar-icon splash-pillar-resilience">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
-                    <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
-                    <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
-                    <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
-                  </svg>
+                <span class="splash-pillar-item splash-pillar-resilience">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                      <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                      <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
+                      <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">Build Resilience</span>
                 </span>
-                <span class="splash-pillar-icon splash-pillar-purpose">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
-                    <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-                    <path d="M12 10h2" />
-                  </svg>
+                <span class="splash-pillar-item splash-pillar-purpose">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
+                      <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                      <path d="M12 10h2" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">Focus on Purpose</span>
                 </span>
-                <span class="splash-pillar-icon splash-pillar-reflection">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
-                    <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-                  </svg>
+                <span class="splash-pillar-item splash-pillar-reflection">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
+                      <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">Gain self-awareness</span>
                 </span>
-                <span class="splash-pillar-icon splash-pillar-recovery">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
-                    <path d="M16.5 4.8h3" />
-                    <path d="M18 3.3v3" />
-                    <path d="M7.5 16.5c1.4 1 3.1 1.5 5 1.2" />
-                  </svg>
+                <span class="splash-pillar-item splash-pillar-recovery">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
+                      <path d="M16.5 4.8h3" />
+                      <path d="M18 3.3v3" />
+                      <path d="M7.5 16.5c1.4 1 3.1 1.5 5 1.2" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">Renewed energy</span>
                 </span>
               </div>
               <div class="splash-preview-words" aria-hidden="true">
