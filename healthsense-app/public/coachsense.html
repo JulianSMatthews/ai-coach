@@ -847,16 +847,16 @@
       .app-sample {
         position: relative;
         display: grid;
-        width: min(100%, 390px, calc(92vh * 390 / 844));
-        aspect-ratio: 390 / 844;
-        gap: 16px;
+        width: min(100%, 430px, calc(92vh * 430 / 932));
+        aspect-ratio: 430 / 932;
+        gap: 14px;
         grid-template-rows: auto auto minmax(0, 1fr) auto;
         align-content: stretch;
         overflow: hidden;
         border: 0;
         border-radius: 42px;
         background: var(--bg);
-        padding: 24px 16px 20px;
+        padding: 24px 22px 20px;
         box-shadow: 0 30px 70px -42px rgba(30, 27, 22, 0.52);
         scrollbar-width: none;
       }
@@ -871,8 +871,8 @@
 
       .mock-guide {
         display: grid;
-        width: min(100%, 920px);
-        grid-template-columns: minmax(0, 220px) minmax(0, 390px) minmax(0, 220px);
+        width: min(100%, 980px);
+        grid-template-columns: minmax(0, 220px) minmax(0, 430px) minmax(0, 220px);
         gap: 24px;
         align-items: start;
         justify-content: center;
@@ -960,7 +960,7 @@
         gap: 14px;
         min-height: 0;
         overflow-y: auto;
-        padding: 0 0 8px;
+        padding: 0 10px 8px;
         scrollbar-width: none;
       }
 
@@ -1086,7 +1086,7 @@
         gap: 14px;
         border-radius: 0;
         background: transparent;
-        padding: 20px 0 16px;
+        padding: 18px 0 14px;
       }
 
       .phone-greeting {
@@ -1107,8 +1107,8 @@
 
       .phone-metric {
         display: grid;
-        min-width: 48px;
-        height: 48px;
+        min-width: 42px;
+        height: 42px;
         flex: 0 0 auto;
         place-items: center;
         border: 1px solid #e9dfd1;
@@ -1116,14 +1116,14 @@
         background: #fffdf9;
         color: var(--ink);
         font-family: var(--font-body);
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 800;
         box-shadow: 0 8px 18px -18px rgba(30, 27, 22, 0.48);
       }
 
       .phone-metric-ring {
-        width: 48px;
-        min-width: 48px;
+        width: 42px;
+        min-width: 42px;
         border-radius: 50%;
         background:
           radial-gradient(circle at center, #fffdf9 0 51%, transparent 52%),
@@ -1132,14 +1132,14 @@
 
       .phone-metric-streak {
         grid-template-columns: auto auto;
-        width: 68px;
-        gap: 10px;
+        width: 58px;
+        gap: 8px;
       }
 
       .phone-metric-menu {
-        width: 48px;
-        min-width: 48px;
-        font-size: 24px;
+        width: 42px;
+        min-width: 42px;
+        font-size: 21px;
         font-weight: 400;
       }
 
@@ -1169,7 +1169,7 @@
 
       .phone-tab {
         display: flex;
-        min-height: 62px;
+        min-height: 56px;
         min-width: 0;
         flex-direction: column;
         align-items: center;
@@ -1180,7 +1180,7 @@
         background: #fffdf9;
         color: #000000;
         font-family: var(--font-body);
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 700;
         line-height: 1;
         cursor: pointer;
@@ -1216,7 +1216,7 @@
       .app-sample .app-card {
         border: 1px solid #e8dfd2;
         border-radius: 30px;
-        padding: 28px 26px 26px;
+        padding: 26px 24px 24px;
         box-shadow: 0 22px 46px -42px rgba(30, 27, 22, 0.42);
       }
 
@@ -1245,40 +1245,40 @@
 
       .app-sample .app-card h3,
       .app-sample .app-card h4 {
-        max-width: calc(100% - 94px);
-        font-size: 32px;
+        max-width: calc(100% - 82px);
+        font-size: 29px;
         font-weight: 600;
         line-height: 1.08;
       }
 
       .app-copy {
-        max-width: 16rem;
-        margin: 28px 0 0;
+        max-width: 14.75rem;
+        margin: 24px 0 0;
         color: #55514d;
-        font-size: 17px;
-        line-height: 1.68;
+        font-size: 15.5px;
+        line-height: 1.62;
       }
 
       .app-score {
         position: absolute;
-        right: 22px;
+        right: 18px;
         top: 24px;
         display: grid;
-        width: 70px;
-        height: 70px;
+        width: 58px;
+        height: 58px;
         place-items: center;
-        border: 8px solid #eadfce;
+        border: 7px solid #eadfce;
         border-radius: 50%;
         color: var(--ink);
         background: #ffffff;
-        font-size: 23px;
+        font-size: 20px;
         font-weight: 700;
       }
 
       .app-progress-score {
-        width: 74px;
-        height: 74px;
-        border: 8px solid #eadfce;
+        width: 62px;
+        height: 62px;
+        border: 7px solid #eadfce;
         background:
           radial-gradient(circle at center, #7c5cff 0 47%, transparent 49%),
           conic-gradient(#eadfce 0 360deg);
@@ -1286,8 +1286,8 @@
       }
 
       .app-progress-score svg {
-        width: 32px;
-        height: 32px;
+        width: 28px;
+        height: 28px;
       }
 
       .app-date-options,
@@ -1307,7 +1307,7 @@
       }
 
       [data-checkin-home] .app-card {
-        min-height: 28rem;
+        min-height: 24.5rem;
       }
 
       [data-checkin-home] .app-card h3 {
@@ -1319,7 +1319,7 @@
       }
 
       [data-checkin-home] .app-copy {
-        max-height: 14.5rem;
+        max-height: 12rem;
         overflow: hidden;
       }
 
