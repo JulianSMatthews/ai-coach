@@ -387,9 +387,7 @@
         gap: 16px;
         width: min(72%, 360px);
         color: var(--pillar-color);
-        opacity: 0;
-        transform: translate(-50%, -150%) scale(0.92);
-        animation: coach-pillar-feature 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        transform: translate(-50%, -50%);
       }
 
       .splash-pillar-icon {
@@ -401,7 +399,11 @@
         border-radius: 50%;
         background: color-mix(in srgb, var(--pillar-color), white 90%);
         color: var(--pillar-color);
+        opacity: 0;
+        transform: translateY(-150%) scale(0.92);
         box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
+        animation: coach-pillar-icon-feature 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-icon svg {
@@ -416,27 +418,31 @@
         font-size: clamp(24px, 3.6vw, 42px);
         font-weight: 400;
         line-height: 1.08;
+        opacity: 0;
         text-align: center;
+        transform: translateY(150%) scale(0.96);
+        animation: coach-pillar-label-feature 12s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-resilience {
         --pillar-color: #44abc3;
-        animation-delay: 2.4s;
+        --pillar-delay: 2.4s;
       }
 
       .splash-pillar-purpose {
         --pillar-color: #0f8b8d;
-        animation-delay: 3.6s;
+        --pillar-delay: 3.6s;
       }
 
       .splash-pillar-reflection {
         --pillar-color: #7c5cff;
-        animation-delay: 4.8s;
+        --pillar-delay: 4.8s;
       }
 
       .splash-pillar-recovery {
         --pillar-color: #c9764f;
-        animation-delay: 6s;
+        --pillar-delay: 6s;
       }
 
       .splash-preview-words {
@@ -523,24 +529,39 @@
         }
       }
 
-      @keyframes coach-pillar-feature {
+      @keyframes coach-pillar-icon-feature {
         0%,
-        12% {
+        2% {
           opacity: 0;
-          transform: translate(-50%, -150%) scale(0.92);
+          transform: translateY(-150%) scale(0.92);
         }
-        28% {
+        4%,
+        7% {
           opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
+          transform: translateY(0) scale(1);
         }
-        62% {
-          opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
-        }
-        88%,
+        10%,
         100% {
           opacity: 0;
-          transform: translate(-190%, -50%) scale(0.96);
+          transform: translateX(-190%) scale(0.96);
+        }
+      }
+
+      @keyframes coach-pillar-label-feature {
+        0%,
+        2% {
+          opacity: 0;
+          transform: translateY(150%) scale(0.96);
+        }
+        4%,
+        7% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        10%,
+        100% {
+          opacity: 0;
+          transform: translateX(-190%) scale(0.96);
         }
       }
 
