@@ -341,6 +341,7 @@
         position: absolute;
         left: 50%;
         top: 43%;
+        z-index: 1;
         width: min(48%, 260px);
         aspect-ratio: 1;
         transform: translate(-50%, -50%);
@@ -348,42 +349,52 @@
       }
 
       .hero-flower {
-        --petal: #c54817;
+        --petal-a: rgba(197, 72, 23, 0.56);
+        --petal-b: rgba(197, 72, 23, 0.24);
+        --petal-core: rgba(255, 252, 246, 0.58);
         position: absolute;
         width: 42%;
         aspect-ratio: 1;
         border-radius: 50%;
-        opacity: 0.74;
+        opacity: 0.82;
         background:
-          radial-gradient(circle at center, color-mix(in srgb, var(--petal) 82%, white) 0 18%, transparent 19%),
-          repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--petal) 72%, white) 0deg 8deg, color-mix(in srgb, var(--petal) 48%, transparent) 8deg 16deg);
-        filter: blur(2.2px);
+          radial-gradient(circle at 50% 50%, var(--petal-core) 0 18%, transparent 19%),
+          radial-gradient(ellipse at 50% 12%, var(--petal-a) 0 13%, transparent 14%),
+          radial-gradient(ellipse at 88% 50%, var(--petal-a) 0 13%, transparent 14%),
+          radial-gradient(ellipse at 50% 88%, var(--petal-a) 0 13%, transparent 14%),
+          radial-gradient(ellipse at 12% 50%, var(--petal-a) 0 13%, transparent 14%),
+          repeating-conic-gradient(from 0deg, var(--petal-a) 0deg 7deg, var(--petal-b) 7deg 15deg);
+        filter: blur(1.6px);
         mix-blend-mode: multiply;
         animation: hero-flower-pulse 6.8s ease-in-out infinite;
       }
 
       .hero-flower.yellow {
-        --petal: #f4a840;
+        --petal-a: rgba(244, 168, 64, 0.62);
+        --petal-b: rgba(244, 168, 64, 0.25);
         left: 7%;
         top: 0;
       }
 
       .hero-flower.brown {
-        --petal: #bf7b57;
+        --petal-a: rgba(191, 123, 87, 0.58);
+        --petal-b: rgba(191, 123, 87, 0.24);
         right: 4%;
         top: 3%;
         animation-delay: 0.3s;
       }
 
       .hero-flower.green {
-        --petal: #7ab832;
+        --petal-a: rgba(122, 184, 50, 0.62);
+        --petal-b: rgba(122, 184, 50, 0.24);
         left: 3%;
         bottom: 3%;
         animation-delay: 0.6s;
       }
 
       .hero-flower.blue {
-        --petal: #63abc2;
+        --petal-a: rgba(99, 171, 194, 0.62);
+        --petal-b: rgba(99, 171, 194, 0.24);
         right: 6%;
         bottom: 0;
         animation-delay: 0.9s;
@@ -393,6 +404,7 @@
         position: absolute;
         left: 50%;
         bottom: 11.5%;
+        z-index: 1;
         width: min(86%, 430px);
         transform: translateX(-50%);
         color: var(--ink);
@@ -420,12 +432,12 @@
       @keyframes hero-flower-pulse {
         0%,
         100% {
-          transform: scale(0.96) rotate(0deg);
-          opacity: 0.58;
+          transform: translateY(0) scale(0.94) rotate(0deg);
+          opacity: 0.62;
         }
         48% {
-          transform: scale(1.08) rotate(16deg);
-          opacity: 0.78;
+          transform: translateY(-10px) scale(1.12) rotate(18deg);
+          opacity: 0.88;
         }
       }
 
