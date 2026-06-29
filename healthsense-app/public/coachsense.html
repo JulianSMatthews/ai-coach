@@ -348,7 +348,16 @@
       }
 
       .splash-preview-logo {
-        display: none;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: 1;
+        display: block;
+        width: min(88%, 496px);
+        height: auto;
+        transform: translate(-50%, -50%) scale(0.82);
+        opacity: 0;
+        animation: coach-logo-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-icon {
@@ -473,6 +482,24 @@
         --to-y: calc(-50% + 0.56em);
       }
 
+      @keyframes coach-logo-reveal {
+        0%,
+        5% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.82);
+        }
+        13%,
+        24% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        31%,
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.94);
+        }
+      }
+
       @keyframes coach-icon-reveal {
         0%,
         72% {
@@ -492,16 +519,16 @@
 
       @keyframes coach-flower-bloom {
         0%,
-        22% {
+        26% {
           opacity: 0;
           transform: translate(var(--pillar-x), var(--pillar-y)) scale(0.42) rotate(-12deg);
         }
-        33%,
-        44% {
+        37%,
+        48% {
           opacity: 1;
           transform: translate(var(--pillar-x), var(--pillar-y)) scale(1) rotate(10deg);
         }
-        54%,
+        58%,
         100% {
           opacity: 0;
           transform: translate(var(--pillar-x), var(--pillar-y)) scale(0.9) rotate(18deg);
@@ -510,19 +537,19 @@
 
       @keyframes coach-word-arrive {
         0%,
-        44% {
+        50% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        52% {
+        58% {
           opacity: 1;
         }
-        60%,
-        68% {
+        65%,
+        70% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        74%,
+        76%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
