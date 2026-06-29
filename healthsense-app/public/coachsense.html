@@ -65,7 +65,6 @@
       }
 
       .nav,
-      .hero,
       section,
       footer {
         width: min(1120px, calc(100% - 32px));
@@ -75,7 +74,8 @@
 
       .nav {
         position: relative;
-        min-height: 90px;
+        width: min(1440px, calc(100% - 200px));
+        min-height: 86px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -83,7 +83,7 @@
       }
 
       .brand img {
-        width: min(164px, 48vw);
+        width: 164px;
         height: auto;
         display: block;
       }
@@ -166,6 +166,29 @@
         outline-offset: 2px;
       }
 
+      .nav > .download-button {
+        border: 1px solid var(--accent-dark);
+        border-radius: 16px;
+        background: transparent;
+        padding: 12px 28px;
+        color: var(--accent-dark);
+        box-shadow: none;
+      }
+
+      .nav > .download-button:hover {
+        border-color: var(--accent-dark);
+        background: var(--footer-panel, #f9ebdb);
+        color: var(--accent-dark);
+        box-shadow: none;
+      }
+
+      .nav > .download-button:active {
+        border-color: var(--accent-dark);
+        background: var(--line);
+        color: var(--accent-dark);
+        box-shadow: none;
+      }
+
       .mobile-menu {
         display: none;
       }
@@ -224,16 +247,16 @@
 
       .hero {
         width: min(1440px, calc(100% - 200px));
-        min-height: calc(100vh - 90px);
+        min-height: calc(100vh - 86px);
         display: grid;
-        grid-template-columns: minmax(360px, 563px) minmax(0, 1fr);
+        grid-template-columns: minmax(420px, 770px) minmax(0, 1fr);
         align-items: center;
-        gap: 67px;
-        padding: 24px 0 72px;
+        gap: 90px;
+        padding: 80px 0 96px;
       }
 
       .eyebrow {
-        display: inline-flex;
+        display: none;
         align-items: center;
         min-height: 38px;
         border-radius: 999px;
@@ -247,21 +270,21 @@
 
       h1 {
         max-width: 760px;
-        margin: 16px 0 24px;
+        margin: 0 0 48px;
         font-family: var(--font-display);
-        font-size: 32px;
-        font-weight: 300;
+        font-size: clamp(56px, 4.45vw, 72px);
+        font-weight: 400;
         line-height: 1.1;
         letter-spacing: 0;
       }
 
       .lead {
-        max-width: 482px;
-        margin: 0 0 30px;
+        max-width: 540px;
+        margin: 0 0 72px;
         color: var(--body-copy);
         font-family: var(--font-body);
-        font-size: 16px;
-        font-weight: 400;
+        font-size: 18px;
+        font-weight: 600;
         letter-spacing: 0.04em;
         line-height: 1.5;
       }
@@ -284,9 +307,9 @@
       .splash-preview {
         position: relative;
         flex: 0 0 auto;
-        width: min(100%, 563px);
+        width: min(100%, 770px);
         min-height: 0;
-        aspect-ratio: 563 / 526;
+        aspect-ratio: 770 / 720;
         overflow: hidden;
         border-radius: 32px;
         background: var(--hero-visual-bg);
@@ -1616,6 +1639,10 @@
       }
 
       @media (max-width: 920px) {
+        .nav {
+          width: min(1120px, calc(100% - 32px));
+        }
+
         .hero {
           width: min(1120px, calc(100% - 32px));
         }
@@ -1855,6 +1882,8 @@
           <img src="coachsense-logo.svg" alt="CoachSense" />
         </a>
         <nav class="nav-links" aria-label="Main navigation">
+          <a href="#top">Home</a>
+          <a href="#try-it">For whom</a>
           <a href="#pillars">Pillars</a>
           <a href="#how">How it works</a>
           <a href="#faq">FAQ</a>
@@ -1869,6 +1898,8 @@
             </svg>
           </summary>
           <div class="mobile-menu-panel">
+            <a href="#top">Home</a>
+            <a href="#try-it">For whom</a>
             <a href="#pillars">Pillars</a>
             <a href="#how">How it works</a>
             <a href="#faq">FAQ</a>
@@ -1886,6 +1917,9 @@
               Build resilience, recovery, reflection and purpose to strengthen your inner sense, one small step at a
               time.
             </p>
+            <div class="hero-actions">
+              <a class="button download-button" href="#download">Download the App</a>
+            </div>
           </div>
 
           <aside class="app-preview" aria-label="CoachSense app preview">
