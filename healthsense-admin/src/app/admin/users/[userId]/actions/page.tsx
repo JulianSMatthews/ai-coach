@@ -64,7 +64,7 @@ function resolveHsAppBase(): string {
     const normalized = normalizeHsAppBase(raw);
     if (normalized) return normalized;
   }
-  return "https://app.healthsense.coach";
+  return "https://app.coachsense.ai";
 }
 
 function formatDateTime(value?: string | null): string {

@@ -22700,7 +22700,7 @@ def _resolve_admin_hsapp_base_url() -> tuple[str, dict]:
     fallback_source = ""
     if not base:
         if is_hosted:
-            base = (os.getenv("HSAPP_PUBLIC_DEFAULT_URL") or "https://app.healthsense.coach").strip()
+            base = (os.getenv("HSAPP_PUBLIC_DEFAULT_URL") or "https://app.coachsense.ai").strip()
             fallback_source = "HSAPP_PUBLIC_DEFAULT_URL_or_default"
         else:
             base = "http://localhost:3000"

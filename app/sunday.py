@@ -76,7 +76,7 @@ def _hsapp_base_url() -> str:
         or (os.getenv("APP_BASE_URL") or "").strip()
         or (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip()
         or (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
-        or "https://app.healthsense.coach"
+        or "https://app.coachsense.ai"
     )
     if not base.startswith(("http://", "https://")):
         base = f"https://{base}"

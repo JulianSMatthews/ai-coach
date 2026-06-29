@@ -41,9 +41,9 @@ If a future version charges for digital app features, it will use Apple's In-App
 
 ## Support and deletion
 
-Support URL: https://app.healthsense.coach/support
+Support URL: https://app.coachsense.ai/support
 
-Privacy URL: https://app.healthsense.coach/privacy
+Privacy URL: https://app.coachsense.ai/privacy
 
 Account deletion is available inside the app at `/delete-account`. A signed-in user can delete their own account and
 related assessment, check-in, lesson, coaching, preference, session, and message records from that page.

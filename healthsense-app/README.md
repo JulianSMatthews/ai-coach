@@ -9,7 +9,7 @@ Important constraint: the current app is server-rendered Next.js and depends on 
 Default hosted URL:
 
 ```bash
-https://app.healthsense.coach
+https://app.coachsense.ai
 ```
 
 Override it for a different hosted environment when syncing the native project:

@@ -1,6 +1,6 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-const DEFAULT_SERVER_URL = "https://app.healthsense.coach";
+const DEFAULT_SERVER_URL = "https://app.coachsense.ai";
 const serverUrl = String(process.env.CAP_SERVER_URL || DEFAULT_SERVER_URL).trim() || DEFAULT_SERVER_URL;
 
 const config: CapacitorConfig = {

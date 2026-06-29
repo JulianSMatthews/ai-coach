@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const DEFAULT_MAX_AGE_SECONDS = 60 * 30;
-const FALLBACK_PUBLIC_APP_ORIGIN = "https://app.healthsense.coach";
+const FALLBACK_PUBLIC_APP_ORIGIN = "https://app.coachsense.ai";
 
 function normalizeOrigin(raw: string | null | undefined): string | null {
   const value = String(raw || "").trim();
