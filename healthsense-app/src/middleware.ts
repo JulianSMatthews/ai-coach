@@ -21,6 +21,8 @@ const WEBSITE_HOSTS = new Set([
   "www.coachsense.ai",
   "coachsense.co.uk",
   "www.coachsense.co.uk",
+  "coachsense.app",
+  "www.coachsense.app",
 ]);
 
 export function middleware(request: NextRequest) {
