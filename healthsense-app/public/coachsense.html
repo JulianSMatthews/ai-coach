@@ -312,105 +312,114 @@
         aspect-ratio: 563 / 526;
         overflow: hidden;
         border-radius: 32px;
-        background: var(--hero-visual-bg);
+        background:
+          linear-gradient(rgba(235, 207, 195, 0.58) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(235, 207, 195, 0.58) 1px, transparent 1px),
+          #f7eadf;
+        background-size: 130px 86px, 130px 86px, auto;
       }
 
-      .splash-preview-logo {
+      .splash-preview::after {
+        content: "";
+        position: absolute;
+        right: -5%;
+        bottom: 6%;
+        width: 76%;
+        height: 118%;
+        border-right: 2px dashed rgba(191, 123, 87, 0.36);
+        border-radius: 50%;
+        transform: rotate(14deg);
+      }
+
+      .hero-flower-cluster {
         position: absolute;
         left: 50%;
-        top: 50%;
-        width: 88px;
-        transform: translate3d(-50%, -50%, 0);
-        animation: splash-logo-flight 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+        top: 43%;
+        width: min(48%, 260px);
+        aspect-ratio: 1;
+        transform: translate(-50%, -50%);
+        animation: hero-cluster-breathe 7.2s ease-in-out infinite;
       }
 
-      .splash-preview-words {
+      .hero-flower {
+        --petal: #c54817;
         position: absolute;
-        inset: 0;
+        width: 42%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        opacity: 0.74;
+        background:
+          radial-gradient(circle at center, color-mix(in srgb, var(--petal) 82%, white) 0 18%, transparent 19%),
+          repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--petal) 72%, white) 0deg 8deg, color-mix(in srgb, var(--petal) 48%, transparent) 8deg 16deg);
+        filter: blur(2.2px);
+        mix-blend-mode: multiply;
+        animation: hero-flower-pulse 6.8s ease-in-out infinite;
+      }
+
+      .hero-flower.yellow {
+        --petal: #f4a840;
+        left: 7%;
+        top: 0;
+      }
+
+      .hero-flower.brown {
+        --petal: #bf7b57;
+        right: 4%;
+        top: 3%;
+        animation-delay: 0.3s;
+      }
+
+      .hero-flower.green {
+        --petal: #7ab832;
+        left: 3%;
+        bottom: 3%;
+        animation-delay: 0.6s;
+      }
+
+      .hero-flower.blue {
+        --petal: #63abc2;
+        right: 6%;
+        bottom: 0;
+        animation-delay: 0.9s;
+      }
+
+      .hero-animation-caption {
+        position: absolute;
+        left: 50%;
+        bottom: 11.5%;
+        width: min(86%, 430px);
+        transform: translateX(-50%);
+        color: var(--ink);
+        font-family: Outfit, sans-serif;
+        font-size: clamp(24px, 3.1vw, 38px);
+        font-weight: 300;
+        line-height: 1.2;
+        text-align: center;
+      }
+
+      .hero-animation-caption span {
         color: var(--accent);
-        font-family: var(--font-display);
-        font-size: clamp(40px, 4.45vw, 64px);
-        font-weight: 400;
-        line-height: 1.1;
       }
 
-      .splash-preview-word {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        opacity: 0;
-        transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
-        animation: splash-word-arrive 8s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
-      }
-
-      .splash-word-find {
-        --from-x: -120%;
-        --from-y: -150%;
-        --to-x: calc(-100% - 0.18em);
-        --to-y: calc(-50% - 0.55em);
-      }
-
-      .splash-word-your {
-        --from-x: 80%;
-        --from-y: 150%;
-        --to-x: 0.18em;
-        --to-y: calc(-50% - 0.55em);
-        animation-delay: 0.13s;
-      }
-
-      .splash-word-own {
-        --from-x: -120%;
-        --from-y: 145%;
-        --to-x: calc(-100% - 0.18em);
-        --to-y: calc(-50% + 0.55em);
-        animation-delay: 0.26s;
-      }
-
-      .splash-word-way {
-        --from-x: 85%;
-        --from-y: -145%;
-        --to-x: 0.18em;
-        --to-y: calc(-50% + 0.55em);
-        animation-delay: 0.39s;
-      }
-
-      @keyframes splash-logo-flight {
-        0% {
-          opacity: 0;
-          transform: translate3d(150%, 160%, 0) scale(0.46);
-        }
-        10% {
-          opacity: 1;
-        }
-        22% {
-          opacity: 1;
-          transform: translate3d(-50%, -50%, 0) scale(1);
-        }
-        31%,
-        100% {
-          opacity: 0;
-          transform: translate3d(-50%, -50%, 0) scale(0.92);
-        }
-      }
-
-      @keyframes splash-word-arrive {
+      @keyframes hero-cluster-breathe {
         0%,
-        20% {
-          opacity: 0;
-          transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.96);
-        }
-        28% {
-          opacity: 1;
-        }
-        41%,
-        52% {
-          opacity: 1;
-          transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
-        }
-        61%,
         100% {
-          opacity: 0;
-          transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
+          transform: translate(-50%, -50%) scale(0.96) rotate(-1deg);
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.04) rotate(1deg);
+        }
+      }
+
+      @keyframes hero-flower-pulse {
+        0%,
+        100% {
+          transform: scale(0.96) rotate(0deg);
+          opacity: 0.58;
+        }
+        48% {
+          transform: scale(1.08) rotate(16deg);
+          opacity: 0.78;
         }
       }
 
@@ -1924,13 +1933,13 @@
 
           <aside class="app-preview" aria-label="CoachSense app preview">
             <div class="splash-preview" aria-label="CoachSense splash animation">
-              <img class="splash-preview-logo" src="healthsense-mark.svg" alt="" />
-              <div class="splash-preview-words" aria-hidden="true">
-                <span class="splash-preview-word splash-word-find">Find</span>
-                <span class="splash-preview-word splash-word-your">your</span>
-                <span class="splash-preview-word splash-word-own">own</span>
-                <span class="splash-preview-word splash-word-way">way.</span>
+              <div class="hero-flower-cluster" aria-hidden="true">
+                <span class="hero-flower yellow"></span>
+                <span class="hero-flower brown"></span>
+                <span class="hero-flower green"></span>
+                <span class="hero-flower blue"></span>
               </div>
+              <p class="hero-animation-caption">When everything aligns,<br /><span>life</span> makes sense</p>
             </div>
           </aside>
         </section>
