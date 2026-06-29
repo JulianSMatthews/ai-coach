@@ -350,9 +350,9 @@
       .splash-preview-logo {
         position: absolute;
         left: 50%;
-        top: 45%;
+        top: 50%;
         z-index: 1;
-        width: min(80%, 456px);
+        width: min(96%, 547px);
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
         animation: coach-logo-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
@@ -456,7 +456,6 @@
         --from-y: -170%;
         --to-x: calc(-100% - 0.18em);
         --to-y: calc(-50% - 0.56em);
-        animation-delay: 3.3s;
       }
 
       .splash-word-your {
@@ -465,7 +464,6 @@
         --to-x: 0.18em;
         --to-y: calc(-50% - 0.56em);
         color: var(--accent);
-        animation-delay: 3.42s;
       }
 
       .splash-word-own {
@@ -473,7 +471,6 @@
         --from-y: 120%;
         --to-x: calc(-100% - 0.18em);
         --to-y: calc(-50% + 0.56em);
-        animation-delay: 3.54s;
       }
 
       .splash-word-way {
@@ -481,7 +478,6 @@
         --from-y: 120%;
         --to-x: 0.18em;
         --to-y: calc(-50% + 0.56em);
-        animation-delay: 3.66s;
       }
 
       @keyframes coach-logo-reveal {
@@ -540,19 +536,19 @@
 
       @keyframes coach-word-arrive {
         0%,
-        34% {
+        64% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        44% {
+        72% {
           opacity: 1;
         }
-        56%,
-        78% {
+        80%,
+        91% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        88%,
+        98%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
