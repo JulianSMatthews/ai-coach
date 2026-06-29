@@ -348,22 +348,13 @@
       }
 
       .splash-preview-logo {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        z-index: 1;
-        display: block;
-        width: min(88%, 496px);
-        height: auto;
-        transform: translate(-50%, -50%) scale(0.82);
-        opacity: 0;
-        animation: coach-logo-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        display: none;
       }
 
       .splash-preview-icon {
         position: absolute;
         left: 50%;
-        top: 47%;
+        top: 50%;
         z-index: 1;
         width: min(43%, 238px);
         transform: translate(-50%, -50%) scale(0.68);
@@ -482,11 +473,11 @@
         --to-y: calc(-50% + 0.56em);
       }
 
-      @keyframes coach-logo-reveal {
+      @keyframes coach-icon-reveal {
         0%,
         72% {
           opacity: 0;
-          transform: translate(-50%, -50%) scale(0.82);
+          transform: translate(-50%, -50%) scale(0.68);
         }
         80%,
         94% {
@@ -496,24 +487,6 @@
         100% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(1);
-        }
-      }
-
-      @keyframes coach-icon-reveal {
-        0%,
-        6% {
-          opacity: 0;
-          transform: translate(-50%, -50%) scale(0.68);
-        }
-        14%,
-        24% {
-          opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
-        }
-        32%,
-        100% {
-          opacity: 0;
-          transform: translate(-50%, -50%) scale(0.9);
         }
       }
 
