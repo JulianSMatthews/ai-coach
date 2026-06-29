@@ -1420,27 +1420,87 @@
       }
 
       .quote {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 24px;
-        align-items: center;
-        border-radius: 36px;
-        background: #111111;
-        color: #fff;
-        padding: clamp(28px, 5vw, 56px);
+        display: flex;
+        align-items: stretch;
+        min-height: 520px;
+        overflow: hidden;
+        border-radius: 0;
+        background: transparent;
+        color: var(--bg);
+        padding: 0;
       }
 
       .quote h2 {
         margin: 0;
         font-family: var(--font-display);
-        font-size: 32px;
+        font-size: 48px;
         font-weight: 300;
         line-height: 1.1;
       }
 
       .quote p {
-        color: rgba(255, 255, 255, 0.72);
-        margin-bottom: 22px;
+        color: var(--bg);
+        margin-bottom: 38px;
+        font-size: 18px;
+        font-weight: 400;
+        letter-spacing: 0.04em;
+        line-height: 1.5;
+      }
+
+      .quote-visual {
+        position: relative;
+        width: 50%;
+        min-height: 520px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 26% 72%, rgba(122, 184, 50, 0.44) 0 9%, transparent 10%),
+          radial-gradient(circle at 58% 42%, rgba(191, 123, 87, 0.42) 0 10%, transparent 11%),
+          radial-gradient(circle at 72% 66%, rgba(99, 171, 194, 0.4) 0 11%, transparent 12%),
+          linear-gradient(rgba(235, 207, 195, 0.48) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(235, 207, 195, 0.48) 1px, transparent 1px),
+          #f7eadf;
+        background-size: auto, auto, auto, 128px 92px, 128px 92px, auto;
+      }
+
+      .quote-visual::after {
+        content: "";
+        position: absolute;
+        right: -15%;
+        bottom: -10%;
+        width: 72%;
+        height: 112%;
+        border-right: 2px dashed rgba(191, 123, 87, 0.32);
+        border-radius: 50%;
+        transform: rotate(16deg);
+      }
+
+      .quote-content {
+        display: flex;
+        width: 50%;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: var(--accent);
+        padding: clamp(56px, 8vw, 130px) clamp(32px, 6vw, 100px);
+        text-align: center;
+      }
+
+      .quote-content .download-button {
+        background: var(--bg);
+        color: var(--accent-dark);
+        padding-left: 59px;
+        padding-right: 59px;
+      }
+
+      .quote-content .download-button:hover {
+        border-color: transparent;
+        background: #f9ebdb;
+        box-shadow: none;
+      }
+
+      .quote-content .download-button:active {
+        background: #f9ebdb;
+        box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2), inset 0 0 0 4px #ebcfc3, 0 0 0 5px #dfa289;
       }
 
       .faq {
@@ -1660,9 +1720,36 @@
           width: min(1120px, calc(100% - 32px));
         }
 
-        .hero,
-        .quote {
+        .hero {
           grid-template-columns: 1fr;
+        }
+
+        .quote {
+          flex-direction: column;
+          min-height: auto;
+        }
+
+        .quote-visual,
+        .quote-content {
+          width: 100%;
+        }
+
+        .quote-visual {
+          min-height: 400px;
+        }
+
+        .quote-content {
+          padding: 80px 32px;
+        }
+
+        .quote h2 {
+          max-width: 420px;
+          font-size: 40px;
+        }
+
+        .quote p {
+          max-width: 420px;
+          font-size: 14px;
         }
 
         footer {
@@ -2292,10 +2379,9 @@
         </section>
 
         <section class="quote" id="download">
-          <div>
+          <div class="quote-visual" aria-hidden="true"></div>
+          <div class="quote-content">
             <h2>Not someone else's path. Your own.</h2>
-          </div>
-          <div>
             <p>
               CoachSense helps you slow down, make sense of where you are and build the habits that support where you
               want to go.
