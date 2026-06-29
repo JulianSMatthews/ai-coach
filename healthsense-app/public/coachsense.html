@@ -357,7 +357,7 @@
         height: auto;
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
-        animation: coach-logo-reveal 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-logo-reveal 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-icon {
@@ -368,7 +368,7 @@
         width: min(43%, 238px);
         transform: translate(-50%, -50%) scale(0.68);
         opacity: 0;
-        animation: coach-icon-reveal 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-icon-reveal 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-pillars {
@@ -402,7 +402,7 @@
         opacity: 0;
         transform: translateY(-150%) scale(0.92);
         box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
-        animation: coach-pillar-icon-feature 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-icon-feature 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
@@ -421,7 +421,7 @@
         opacity: 0;
         text-align: center;
         transform: translateY(150%) scale(0.96);
-        animation: coach-pillar-label-feature 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-label-feature 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
@@ -462,7 +462,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-word-arrive 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -514,11 +514,11 @@
 
       @keyframes coach-icon-reveal {
         0%,
-        96% {
+        92.5% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.68);
         }
-        97.5%,
+        93.5%,
         99.5% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
@@ -567,19 +567,19 @@
 
       @keyframes coach-word-arrive {
         0%,
-        90% {
+        84.5% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        92% {
+        87% {
           opacity: 1;
         }
-        94%,
-        95% {
+        89%,
+        90.5% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        96.5%,
+        92%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
