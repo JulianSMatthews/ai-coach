@@ -1355,18 +1355,26 @@
       }
 
       .faq {
-        display: grid;
-        gap: 12px;
+        display: block;
+        counter-reset: faq;
+        border-top: 1px solid var(--line);
       }
 
       details {
-        border-radius: 22px;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        padding: 18px 20px;
+        counter-increment: faq;
+        margin-top: -1px;
+        border: 0;
+        border-radius: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        padding: 0;
       }
 
       summary {
+        display: grid;
+        grid-template-columns: 50% 50%;
+        align-items: stretch;
+        padding: 0;
         cursor: pointer;
         font-family: var(--font-display);
         font-size: 24px;
@@ -1375,12 +1383,56 @@
         list-style: none;
       }
 
+      summary::before {
+        content: counter(faq, decimal-leading-zero);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 20px 85px 20px 0;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      summary span {
+        position: relative;
+        display: block;
+        border-left: 1px solid var(--line);
+        padding: 20px 58px 20px 20px;
+        color: var(--ink);
+      }
+
+      summary span::after {
+        content: "+";
+        position: absolute;
+        top: 50%;
+        right: 20px;
+        transform: translateY(-50%);
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 20px;
+        font-weight: 400;
+        line-height: 1;
+      }
+
+      details[open] summary span::after {
+        content: "-";
+      }
+
       summary::-webkit-details-marker {
         display: none;
       }
 
       details p {
-        padding-top: 10px;
+        max-width: 400px;
+        margin: 0 0 0 50%;
+        border-left: 1px solid var(--line);
+        padding: 24px 0 40px 20px;
+        color: var(--body-copy);
+        font-family: var(--font-body);
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 1.5;
+        letter-spacing: 0.04em;
       }
 
       footer {
@@ -1540,9 +1592,36 @@
           font-size: 24px;
         }
 
-        .app-question h5,
-        summary {
+        .app-question h5 {
           font-size: 20px;
+        }
+
+        summary {
+          grid-template-columns: 52px minmax(0, 1fr);
+          font-size: 20px;
+        }
+
+        summary::before {
+          justify-content: flex-start;
+          padding: 18px 12px 18px 0;
+        }
+
+        summary span {
+          border-left: 0;
+          padding: 18px 44px 18px 0;
+        }
+
+        summary span::after {
+          right: 4px;
+          font-size: 18px;
+        }
+
+        details p {
+          max-width: 33rem;
+          margin-left: 52px;
+          border-left: 0;
+          padding: 0 0 28px 0;
+          font-size: 14px;
         }
 
         .demo-card p,
@@ -1975,28 +2054,28 @@
           </div>
           <div class="faq">
             <details>
-              <summary>What is CoachSense?</summary>
+              <summary><span>What is CoachSense?</span></summary>
               <p>
                 A personal coaching app that helps you build resilience, recovery, reflection and purpose through short
                 daily actions.
               </p>
             </details>
             <details>
-              <summary>Do I need a perfect routine?</summary>
+              <summary><span>Do I need a perfect routine?</span></summary>
               <p>
                 No. CoachSense is built around real life. Missed days do not break progress. You simply return, reflect
                 and continue.
               </p>
             </details>
             <details>
-              <summary>Is it therapy?</summary>
+              <summary><span>Is it therapy?</span></summary>
               <p>
                 No. CoachSense supports everyday wellbeing, reflection and personal growth. It does not replace medical
                 or mental health support.
               </p>
             </details>
             <details>
-              <summary>How do I start?</summary>
+              <summary><span>How do I start?</span></summary>
               <p>Download the app, complete your first check-in and follow the first short coaching prompt.</p>
             </details>
           </div>
