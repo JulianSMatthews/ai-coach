@@ -349,10 +349,12 @@
 
       .splash-preview-logo {
         position: absolute;
-        left: 49%;
-        top: 51%;
+        left: 50%;
+        top: 50%;
         z-index: 1;
-        width: min(92%, 520px);
+        display: block;
+        width: min(88%, 496px);
+        height: auto;
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
         animation: coach-logo-reveal 8.4s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
@@ -385,7 +387,7 @@
         display: grid;
         place-items: center;
         border: 1px solid color-mix(in srgb, var(--pillar-color), white 62%);
-        border-radius: 26px;
+        border-radius: 50%;
         background: color-mix(in srgb, var(--pillar-color), white 90%);
         color: var(--pillar-color);
         opacity: 0;
@@ -635,14 +637,14 @@
       }
 
       .pillars .queue-card {
-        width: min(86vw, 22rem);
-        flex: 0 0 min(86vw, 22rem);
+        width: min(86vw, 24rem);
+        flex: 0 0 min(86vw, 24rem);
       }
 
       .steps .queue-card {
         min-height: 19.5rem;
-        width: min(86vw, calc(33rem + 9px));
-        flex: 0 0 min(86vw, calc(33rem + 9px));
+        width: min(86vw, calc(36rem + 9px));
+        flex: 0 0 min(86vw, calc(36rem + 9px));
       }
 
       .pillars .queue-card {
