@@ -849,15 +849,15 @@
         display: grid;
         width: min(100%, 390px, calc(92vh * 390 / 844));
         aspect-ratio: 390 / 844;
-        gap: 14px;
-        grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+        gap: 22px;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
         align-content: stretch;
         overflow: hidden;
-        border: 10px solid #241f1b;
-        border-radius: 46px;
+        border: 0;
+        border-radius: 42px;
         background: var(--bg);
-        padding: 22px 14px 26px;
-        box-shadow: 0 30px 70px -34px rgba(30, 27, 22, 0.76);
+        padding: 24px 16px 24px;
+        box-shadow: 0 30px 70px -42px rgba(30, 27, 22, 0.52);
         scrollbar-width: none;
       }
 
@@ -960,7 +960,7 @@
         gap: 14px;
         min-height: 0;
         overflow-y: auto;
-        padding-right: 2px;
+        padding: 0 0 8px;
         scrollbar-width: none;
       }
 
@@ -1000,28 +1000,29 @@
         display: none;
       }
 
-      .app-sample::before {
-        content: "";
+      .visually-hidden {
         position: absolute;
-        left: 50%;
-        top: 0;
-        z-index: 4;
-        width: 116px;
-        height: 22px;
-        border-radius: 0 0 18px 18px;
-        background: #241f1b;
-        transform: translateX(-50%);
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      .app-sample::before {
+        display: none;
       }
 
       .phone-status {
         display: flex;
-        min-height: 24px;
+        min-height: 22px;
         align-items: center;
         justify-content: space-between;
-        padding: 0 12px;
+        padding: 0 26px;
         color: var(--ink);
-        font-size: 12px;
+        font-size: 18px;
         font-weight: 800;
+        line-height: 1;
       }
 
       .phone-status-icons {
@@ -1038,9 +1039,9 @@
       }
 
       .phone-signal {
-        width: 16px;
+        width: 18px;
         border-radius: 2px;
-        background: linear-gradient(90deg, #241f1b 0 3px, transparent 3px 5px, #241f1b 5px 9px, transparent 9px 11px, #241f1b 11px 16px);
+        background: linear-gradient(90deg, #241f1b 0 4px, transparent 4px 6px, #bcb7af 6px 10px, transparent 10px 12px, #bcb7af 12px 18px);
       }
 
       .phone-wifi {
@@ -1079,47 +1080,67 @@
       }
 
       .phone-app-top {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
-        gap: 12px;
+        gap: 14px;
         border-radius: 0;
         background: transparent;
-        padding: 8px 4px 10px;
+        padding: 36px 0 28px;
       }
 
-      .phone-avatar {
+      .phone-greeting {
+        margin: 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .phone-metrics {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .phone-metric {
         display: grid;
-        width: 40px;
-        height: 40px;
+        min-width: 48px;
+        height: 48px;
         flex: 0 0 auto;
         place-items: center;
-        border: 1px solid var(--line);
-        border-radius: 50%;
-        background: var(--panel);
-        color: var(--accent);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .phone-app-top p,
-      .phone-app-top strong {
-        display: block;
-        margin: 0;
-      }
-
-      .phone-app-top p {
-        color: var(--body-copy);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-
-      .phone-app-top strong {
-        margin-top: 2px;
+        border: 1px solid #e9dfd1;
+        border-radius: 999px;
+        background: #fffdf9;
         color: var(--ink);
-        font-size: 19px;
-        line-height: 1.1;
+        font-family: var(--font-body);
+        font-size: 16px;
+        font-weight: 800;
+        box-shadow: 0 8px 18px -18px rgba(30, 27, 22, 0.48);
+      }
+
+      .phone-metric-ring {
+        width: 48px;
+        min-width: 48px;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, #fffdf9 0 51%, transparent 52%),
+          conic-gradient(#f4ddd4 0 360deg);
+      }
+
+      .phone-metric-streak {
+        grid-template-columns: auto auto;
+        width: 68px;
+        gap: 10px;
+      }
+
+      .phone-metric-menu {
+        width: 48px;
+        min-width: 48px;
+        font-size: 24px;
+        font-weight: 400;
       }
 
       .phone-home {
@@ -1139,7 +1160,7 @@
         gap: 0;
         overflow: hidden;
         border: 1px solid #efe7db;
-        border-radius: 30px;
+        border-radius: 34px;
         background: #fffdf9;
         padding: 4px;
         box-shadow: 0 18px 40px -30px rgba(30, 27, 22, 0.35);
@@ -1148,18 +1169,18 @@
 
       .phone-tab {
         display: flex;
-        min-height: 60px;
+        min-height: 62px;
         min-width: 0;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 3px;
         border: 1px solid #efe7db;
-        border-radius: 22px;
+        border-radius: 28px;
         background: #fffdf9;
         color: #000000;
         font-family: var(--font-body);
-        font-size: 12.5px;
+        font-size: 14px;
         font-weight: 700;
         line-height: 1;
         cursor: pointer;
@@ -1181,9 +1202,9 @@
         position: relative;
         overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 34px;
-        background: var(--panel);
-        padding: 28px;
+        border-radius: 30px;
+        background: #ffffff;
+        padding: 32px 28px 30px;
         color: var(--ink);
         box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
       }
@@ -1193,16 +1214,16 @@
       }
 
       .app-sample .app-card {
-        border: 0;
-        border-radius: 34px;
-        padding: 24px;
-        box-shadow: 0 20px 44px -38px rgba(30, 27, 22, 0.4);
+        border: 1px solid #e8dfd2;
+        border-radius: 30px;
+        padding: 32px 28px 28px;
+        box-shadow: 0 22px 46px -42px rgba(30, 27, 22, 0.42);
       }
 
       .app-eyebrow {
         margin: 0;
-        color: var(--orange);
-        font-size: 11px;
+        color: #6e6a65;
+        font-size: 12px;
         font-weight: 800;
         letter-spacing: 0.18em;
         text-transform: uppercase;
@@ -1224,15 +1245,17 @@
 
       .app-sample .app-card h3,
       .app-sample .app-card h4 {
-        font-size: 28px;
+        font-size: 37px;
+        font-weight: 600;
+        line-height: 1.05;
       }
 
       .app-copy {
-        max-width: 20rem;
-        margin: 20px 0 0;
-        color: var(--ink);
-        font-size: 16px;
-        line-height: 1.5;
+        max-width: 17rem;
+        margin: 34px 0 0;
+        color: #55514d;
+        font-size: 20px;
+        line-height: 1.72;
       }
 
       .app-score {
@@ -1240,23 +1263,30 @@
         right: 22px;
         top: 22px;
         display: grid;
-        width: 58px;
-        height: 58px;
+        width: 82px;
+        height: 82px;
         place-items: center;
-        border: 8px solid var(--track);
-        border-top-color: var(--orange);
-        border-right-color: var(--orange);
+        border: 9px solid #eadfce;
         border-radius: 50%;
         color: var(--ink);
-        font-size: 14px;
+        background: #ffffff;
+        font-size: 26px;
         font-weight: 700;
       }
 
       .app-progress-score {
-        border: 0;
+        width: 86px;
+        height: 86px;
+        border: 9px solid #eadfce;
         background:
-          radial-gradient(circle at center, var(--panel) 0 58%, transparent 60%),
-          conic-gradient(var(--accent) 0 90deg, var(--track) 90deg 360deg);
+          radial-gradient(circle at center, #7c5cff 0 47%, transparent 49%),
+          conic-gradient(#eadfce 0 360deg);
+        color: #111111;
+      }
+
+      .app-progress-score svg {
+        width: 38px;
+        height: 38px;
       }
 
       .app-date-options,
@@ -1268,18 +1298,22 @@
 
       .app-date-options {
         max-width: 17rem;
-        margin-top: 36px;
+        margin-top: 40px;
+      }
+
+      .app-date-options .app-pill:nth-child(3) {
+        grid-column: 1 / 2;
       }
 
       .app-pill {
-        min-height: 44px;
-        border: 1px solid var(--line);
+        min-height: 48px;
+        border: 1px solid #eadfce;
         border-radius: 999px;
-        background: var(--white);
+        background: #fffaf2;
         padding: 0 14px;
         color: var(--ink);
         font-family: var(--font-body);
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 700;
       }
 
@@ -1290,8 +1324,8 @@
       }
 
       .app-pill.is-selected {
-        border-color: var(--accent-dark);
-        background: var(--accent-dark);
+        border-color: #111111;
+        background: #111111;
         color: var(--white);
       }
 
@@ -1404,18 +1438,33 @@
       }
 
       .lesson-card-preview {
-        min-height: 25rem;
+        min-height: 36rem;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
       }
 
       .lesson-card-preview-content {
-        padding-top: 68px;
+        padding-top: 0;
       }
 
       .lesson-card-preview h3 {
-        max-width: 10ch;
+        max-width: 12ch;
+      }
+
+      .lesson-card-preview .app-copy {
+        max-width: 16rem;
+        margin-top: 28px;
+      }
+
+      .lesson-card-preview .button {
+        align-self: flex-start;
+        min-height: 58px;
+        border-radius: 999px;
+        background: #111111;
+        padding: 0 26px;
+        color: #ffffff;
+        font-size: 20px;
       }
 
       .lesson-open-preview {
@@ -2013,10 +2062,13 @@
 
         .queue-card h3,
         .demo-card h3,
-        .app-sample .app-card h3,
-        .app-sample .app-card h4,
         .lesson-open-preview h4 {
           font-size: 24px;
+        }
+
+        .app-sample .app-card h3,
+        .app-sample .app-card h4 {
+          font-size: 32px;
         }
 
         .app-question h5 {
@@ -2243,7 +2295,7 @@
               </aside>
             <div class="app-sample app-sample-single" id="resilience-checkin-demo" data-app-shell>
               <div class="phone-status" aria-hidden="true">
-                <span>9:41</span>
+                <span>13:29</span>
                 <span class="phone-status-icons">
                   <span class="phone-signal"></span>
                   <span class="phone-wifi"></span>
@@ -2251,20 +2303,25 @@
                 </span>
               </div>
               <div class="phone-app-top">
-                <span class="phone-avatar">CS</span>
-                <div>
-                  <p>CoachSense</p>
-                  <strong data-phone-title>Check-in</strong>
+                <p class="phone-greeting">Hi Julian</p>
+                <div class="phone-metrics" aria-hidden="true">
+                  <span class="phone-metric phone-metric-ring">0</span>
+                  <span class="phone-metric phone-metric-streak">
+                    <span>♨</span>
+                    <span>2</span>
+                  </span>
+                  <span class="phone-metric phone-metric-menu">≡</span>
                 </div>
+                <span class="visually-hidden" data-phone-title>Check-in</span>
               </div>
               <div class="mock-screen" data-mock-screen="checkin">
                 <div class="mock-surface" data-checkin-home>
                   <article class="app-card">
-                    <span class="app-score">75</span>
-                    <p class="app-eyebrow">Calm &amp; Control insight</p>
+                    <span class="app-score">0</span>
                     <h3>Resilience</h3>
+                    <p class="app-eyebrow">Journal Mon 29 Jun</p>
                     <p class="app-copy">
-                      Notice stress early and use a settling skill in the moment, such as slower breathing, relaxing your jaw or shoulders, or taking a brief pause before responding.
+                      When your support network feels solid, it is safe to acknowledge moments of overwhelm, giving you the emotional space to settle, reset and return to challenge with
                     </p>
                     <div class="app-date-options" data-checkin-dates>
                       <button class="app-pill" type="button" data-checkin-date="Last week">Last week</button>
@@ -2346,12 +2403,19 @@
               <div class="mock-screen" data-mock-screen="learn" hidden>
                 <div class="mock-surface" data-learn-home>
                   <article class="app-card lesson-card-preview">
-                    <span class="app-score app-progress-score">1/4</span>
+                    <span class="app-score app-progress-score" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 4.5c1.7-1.6 4.7-.6 5 1.9 2.2.2 3.5 2.6 2.3 4.5 1.1 1.9-.2 4.3-2.4 4.4-.4 2.5-3.3 3.5-5 1.9-1.7 1.6-4.7.6-5-1.9-2.2-.2-3.5-2.6-2.3-4.5-1.1-1.9.2-4.3 2.4-4.4.4-2.5 3.3-3.5 5-1.9Z" />
+                        <path d="M8.8 11.8h.1" />
+                        <path d="M15.1 11.8h.1" />
+                        <path d="M9.3 14.4c1.4 1.1 3.9 1.1 5.3 0" />
+                      </svg>
+                    </span>
                     <div class="lesson-card-preview-content">
                       <p class="app-eyebrow">Emotional Awareness</p>
-                      <h3>Why Emotions Matter: Signals, Not Problems</h3>
+                      <h3>Lesson 1: Why Emotions Matter: Signals, Not Problems</h3>
                       <p class="app-copy">
-                        Explore the purpose of emotions and how every feeling carries useful information, rather than being something to fight or fix.
+                        Notice one feeling today and reflect on what it might be telling you about your needs or values.
                       </p>
                     </div>
                     <button class="button" type="button" data-open-lesson>Start lesson</button>
