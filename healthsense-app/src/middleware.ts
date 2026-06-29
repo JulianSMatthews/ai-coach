@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/coachsense-icon.svg",
   "/coachsense-icon-transparent.svg",
   "/coachsense-logo.svg",
+  "/coachsense-logo-animation.svg",
   "/healthsense-mark.svg",
 ];
 
