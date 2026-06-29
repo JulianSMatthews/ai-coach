@@ -16,7 +16,12 @@ const PUBLIC_PATHS = [
   "/healthsense-mark.svg",
 ];
 
-const WEBSITE_HOSTS = new Set(["coachsense.ai", "www.coachsense.ai"]);
+const WEBSITE_HOSTS = new Set([
+  "coachsense.ai",
+  "www.coachsense.ai",
+  "coachsense.co.uk",
+  "www.coachsense.co.uk",
+]);
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
