@@ -12,6 +12,7 @@ const PUBLIC_PATHS = [
   "/delete-account",
   "/coachsense.html",
   "/coachsense-icon.svg",
+  "/coachsense-icon-transparent.svg",
   "/coachsense-logo.svg",
   "/healthsense-mark.svg",
 ];
