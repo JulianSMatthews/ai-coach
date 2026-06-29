@@ -20,6 +20,7 @@
       :root {
         --bg: #f6f1e7;
         --panel: #fffdf9;
+        --hero-visual-bg: #fffcf6;
         --panel-soft: #fffaf0;
         --surface-muted: #fffaf0;
         --ink: #1e1b16;
@@ -170,9 +171,9 @@
       .hero {
         min-height: calc(100vh - 90px);
         display: grid;
-        grid-template-columns: minmax(0, 1.02fr) minmax(330px, 0.98fr);
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr);
         align-items: center;
-        gap: 44px;
+        gap: 67px;
         padding: 24px 0 72px;
       }
 
@@ -221,17 +222,18 @@
         display: flex;
         justify-content: flex-end;
         min-height: 0;
+        width: 100%;
       }
 
       .splash-preview {
         position: relative;
-        width: min(82.5%, 429px);
+        width: min(100%, 563px);
         min-height: 0;
-        aspect-ratio: 1;
+        aspect-ratio: 563 / 526;
         overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 30px;
-        background: var(--white);
+        border-radius: 32px;
+        background: var(--hero-visual-bg);
         box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
       }
 
