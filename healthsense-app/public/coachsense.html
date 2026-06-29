@@ -357,7 +357,7 @@
         height: auto;
         transform: translate(-50%, -50%) scale(0.82);
         opacity: 0;
-        animation: coach-logo-reveal 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-logo-reveal 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-icon {
@@ -368,7 +368,7 @@
         width: min(43%, 238px);
         transform: translate(-50%, -50%) scale(0.68);
         opacity: 0;
-        animation: coach-icon-reveal 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-icon-reveal 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-pillars {
@@ -402,7 +402,7 @@
         opacity: 0;
         transform: translateY(-150%) scale(0.92);
         box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
-        animation: coach-pillar-icon-feature 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-icon-feature 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
@@ -421,28 +421,28 @@
         opacity: 0;
         text-align: center;
         transform: translateY(150%) scale(0.96);
-        animation: coach-pillar-label-feature 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-label-feature 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-resilience {
         --pillar-color: #44abc3;
-        --pillar-delay: 5.4s;
+        --pillar-delay: 5s;
       }
 
       .splash-pillar-purpose {
         --pillar-color: #0f8b8d;
-        --pillar-delay: 9.1s;
+        --pillar-delay: 13s;
       }
 
       .splash-pillar-reflection {
         --pillar-color: #7c5cff;
-        --pillar-delay: 12.8s;
+        --pillar-delay: 21s;
       }
 
       .splash-pillar-recovery {
         --pillar-color: #c9764f;
-        --pillar-delay: 16.5s;
+        --pillar-delay: 29s;
       }
 
       .splash-preview-words {
@@ -462,7 +462,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 24s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-word-arrive 40s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -496,16 +496,16 @@
 
       @keyframes coach-logo-reveal {
         0%,
-        4% {
+        2% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.82);
         }
-        9%,
-        17% {
+        5%,
+        10% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
-        23%,
+        13%,
         100% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.94);
@@ -514,12 +514,12 @@
 
       @keyframes coach-icon-reveal {
         0%,
-        95% {
+        96% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.68);
         }
-        97%,
-        99% {
+        97.5%,
+        99.5% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
@@ -535,12 +535,12 @@
           opacity: 0;
           transform: translateY(-150%) scale(0.92);
         }
-        5%,
+        4%,
         14% {
           opacity: 1;
           transform: translateY(0) scale(1);
         }
-        18%,
+        17%,
         100% {
           opacity: 0;
           transform: translateY(0) scale(0.96);
@@ -553,12 +553,12 @@
           opacity: 0;
           transform: translateY(150%) scale(0.96);
         }
-        5%,
+        4%,
         14% {
           opacity: 1;
           transform: translateY(0) scale(1);
         }
-        18%,
+        17%,
         100% {
           opacity: 0;
           transform: translateY(0) scale(0.96);
@@ -567,19 +567,19 @@
 
       @keyframes coach-word-arrive {
         0%,
-        86% {
+        90% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        89% {
+        92% {
           opacity: 1;
         }
-        91%,
-        93% {
+        94%,
+        95% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        95%,
+        96.5%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
