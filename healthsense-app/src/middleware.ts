@@ -16,8 +16,16 @@ const PUBLIC_PATHS = [
   "/healthsense-mark.svg",
 ];
 
+const WEBSITE_HOSTS = new Set(["coachsense.ai", "www.coachsense.ai"]);
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hostname = request.nextUrl.hostname.toLowerCase();
+  if (pathname === "/" && WEBSITE_HOSTS.has(hostname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/coachsense.html";
+    return NextResponse.rewrite(url);
+  }
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
