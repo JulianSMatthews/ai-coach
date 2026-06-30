@@ -1323,6 +1323,18 @@
         height: 28px;
       }
 
+      .app-progress-score.is-complete {
+        background:
+          radial-gradient(circle at center, #7c5cff 0 47%, transparent 49%),
+          conic-gradient(#7c5cff 0 120deg, #eadfce 120deg 360deg);
+        color: #ffffff;
+        font-size: 16px;
+      }
+
+      .app-progress-score.is-complete svg {
+        display: none;
+      }
+
       .app-date-options,
       .app-choice-grid {
         display: grid;
@@ -2504,7 +2516,7 @@
               <div class="mock-screen" data-mock-screen="learn" hidden>
                 <div class="mock-surface" data-learn-home>
                   <article class="app-card lesson-card-preview">
-                    <span class="app-score app-progress-score" aria-hidden="true">
+                    <span class="app-score app-progress-score" aria-hidden="true" data-lesson-score>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 4.5c1.7-1.6 4.7-.6 5 1.9 2.2.2 3.5 2.6 2.3 4.5 1.1 1.9-.2 4.3-2.4 4.4-.4 2.5-3.3 3.5-5 1.9-1.7 1.6-4.7.6-5-1.9-2.2-.2-3.5-2.6-2.3-4.5-1.1-1.9.2-4.3 2.4-4.4.4-2.5 3.3-3.5 5-1.9Z" />
                         <path d="M8.8 11.8h.1" />
@@ -2519,7 +2531,7 @@
                         Notice one feeling today and reflect on what it might be telling you about your needs or values.
                       </p>
                     </div>
-                    <button class="button" type="button" data-open-lesson>Start lesson</button>
+                    <button class="button" type="button" data-open-lesson data-lesson-action>Start lesson</button>
                   </article>
                 </div>
 
@@ -2883,6 +2895,16 @@
         });
       });
 
+      function updateLessonCompletion() {
+        document.querySelectorAll("[data-lesson-score]").forEach((scoreBadge) => {
+          scoreBadge.classList.add("is-complete");
+          scoreBadge.textContent = "1/3";
+        });
+        document.querySelectorAll("[data-lesson-action]").forEach((button) => {
+          button.textContent = "Lesson complete";
+        });
+      }
+
       document.querySelectorAll("[data-submit-quiz]").forEach((button) => {
         button.addEventListener("click", () => {
           const quizBox = button.closest(".quiz-box");
@@ -2913,6 +2935,7 @@
                 ? `You got ${correctCount} of ${questions.length} correct. Correct answers are shown in green.`
                 : `You answered ${answeredCount} of ${questions.length}. Correct answers are shown in green.`;
           }
+          updateLessonCompletion();
         });
       });
 
