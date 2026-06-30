@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import desc, select, text as sa_text
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, PillarCueQuote, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
+from .models import AssessmentRun, DailyPillarTrackerEntry, EducationConceptInsight, PillarCueQuote, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 from .pillar_config import active_pillar_keys, pillar_label
 from .prompts import run_llm_prompt
@@ -51,6 +51,61 @@ _HOME_PILLAR_QUOTE_GUIDANCE: dict[str, str] = {
     "recovery": "For Recovery, make it about the user's capacity to restore, reset, and protect energy, not sleep performance.",
     "nutrition": "For Nutrition, make it about how food choices may be affecting energy, steadiness, or self-care, not diet compliance.",
     "training": "For Training, make it about body confidence, capability, and rhythm, not workout completion or progression.",
+}
+_QUOTE_LED_PILLARS = {"reflection", "purpose", "resilience"}
+_EDUCATION_INSIGHT_PILLARS = {"recovery", "nutrition", "training"}
+_QUOTE_LED_CUE_BANK: dict[str, tuple[dict[str, str], ...]] = {
+    "reflection": (
+        {
+            "quote": "The unexamined life is not worth living.",
+            "author": "Socrates",
+            "reflection": "Reflection begins when you pause long enough to understand what your choices, feelings and patterns are trying to show you.",
+        },
+        {
+            "quote": "Knowing yourself is the beginning of all wisdom.",
+            "author": "Aristotle",
+            "reflection": "Self-awareness turns experience into learning, helping you notice what supports you and what quietly pulls you away from yourself.",
+        },
+        {
+            "quote": "Turn your wounds into wisdom.",
+            "author": "Rumi",
+            "reflection": "Reflection helps difficult moments become information, not identity, so the past can guide you without defining you.",
+        },
+    ),
+    "purpose": (
+        {
+            "quote": "He who has a why to live can bear almost any how.",
+            "author": "Friedrich Nietzsche",
+            "reflection": "Purpose is not about life being easy; it is about staying connected to meaning when the path becomes demanding.",
+        },
+        {
+            "quote": "Act as if what you do makes a difference. It does.",
+            "author": "William James",
+            "reflection": "Purpose is often built through repeated small choices that remind you your presence, effort and direction matter.",
+        },
+        {
+            "quote": "Be yourself; everyone else is already taken.",
+            "author": "Oscar Wilde",
+            "reflection": "Purpose becomes clearer when you stop borrowing other people's paths and pay attention to what feels true for you.",
+        },
+    ),
+    "resilience": (
+        {
+            "quote": "What stands in the way becomes the way.",
+            "author": "Marcus Aurelius",
+            "reflection": "Resilience grows when challenge becomes something to work with, not a sign that you are on the wrong path.",
+        },
+        {
+            "quote": "No man is free who is not master of himself.",
+            "author": "Epictetus",
+            "reflection": "Resilience is strengthened by the space between feeling pressure and choosing how you want to respond.",
+        },
+        {
+            "quote": "Our greatest glory is not in never falling, but in rising every time we fall.",
+            "author": "Confucius",
+            "reflection": "Resilience is less about avoiding difficulty and more about returning to yourself after difficult moments.",
+        },
+    ),
 }
 _HEAT_EXPOSURE_MINUTE_OPTIONS = {10, 15, 20, 25, 30}
 _COLD_EXPOSURE_MINUTE_OPTIONS = {1, 2, 3, 5, 10}
@@ -1783,10 +1838,17 @@ def _fallback_daily_pillar_quote(pillar_key: str, label: str) -> str:
     return f"Take one small step today that supports your {resolved_label.lower()}."
 
 
-def _normalise_daily_pillar_quote(value: str | None) -> str:
+def _normalise_daily_pillar_quote(value: str | None, *, preserve_lines: bool = False) -> str:
     quote = str(value or "").strip()
     if not quote:
         return ""
+    if preserve_lines:
+        lines = [" ".join(line.strip().split()) for line in quote.splitlines()]
+        quote = "\n".join(line for line in lines if line)
+        words = quote.split()
+        if len(words) > 72:
+            quote = " ".join(words[:72]).rstrip(" ,.;:") + "."
+        return quote
     quote = quote.strip("\"'“”‘’")
     quote = " ".join(quote.split())
     words = quote.split()
@@ -1801,8 +1863,80 @@ def _is_fallback_daily_pillar_quote(value: str | None) -> bool:
 
 
 def _stored_generated_daily_pillar_quote(value: str | None) -> str:
-    quote = _normalise_daily_pillar_quote(value)
+    quote = _normalise_daily_pillar_quote(value, preserve_lines=True)
     return quote if quote and not _is_fallback_daily_pillar_quote(quote) else ""
+
+
+def _stable_daily_index(*, user_id: int, pillar_key: str, anchor: date, count: int) -> int:
+    if count <= 1:
+        return 0
+    key_weight = sum(ord(char) for char in str(pillar_key or ""))
+    return (int(user_id) + anchor.toordinal() + key_weight) % count
+
+
+def _quote_led_daily_pillar_quote(user_id: int, pillar_key: str, anchor: date) -> str:
+    key = str(pillar_key or "").strip().lower()
+    items = _QUOTE_LED_CUE_BANK.get(key) or ()
+    if not items:
+        return ""
+    item = items[_stable_daily_index(user_id=int(user_id), pillar_key=key, anchor=anchor, count=len(items))]
+    quote = str(item.get("quote") or "").strip()
+    reflection = str(item.get("reflection") or "").strip()
+    author = str(item.get("author") or "").strip()
+    if not quote or not reflection or not author:
+        return ""
+    return _normalise_daily_pillar_quote(f'"{quote}"\n{reflection}\n{author}', preserve_lines=True)
+
+
+def _education_insight_daily_pillar_quote(
+    session,
+    *,
+    user_id: int,
+    pillar_key: str,
+    anchor: date,
+    concept_context: dict[str, Any] | None,
+) -> str:
+    key = str(pillar_key or "").strip().lower()
+    if key not in _EDUCATION_INSIGHT_PILLARS:
+        return ""
+    lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None
+    lowest_key = str((lowest or {}).get("key") or "").strip().lower() if isinstance(lowest, dict) else ""
+    statement = select(EducationConceptInsight).where(
+        EducationConceptInsight.pillar_key == key,
+        EducationConceptInsight.is_active == True,  # noqa: E712
+    )
+    if lowest_key:
+        concept_rows = (
+            session.execute(
+                statement.where(EducationConceptInsight.concept_key == lowest_key).order_by(
+                    EducationConceptInsight.insight_index.asc(),
+                    EducationConceptInsight.id.asc(),
+                )
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        concept_rows = []
+    rows = concept_rows or (
+        session.execute(
+            statement.order_by(
+                EducationConceptInsight.concept_key.asc(),
+                EducationConceptInsight.insight_index.asc(),
+                EducationConceptInsight.id.asc(),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    messages = [
+        _normalise_daily_pillar_quote(getattr(row, "message", None))
+        for row in rows
+        if _normalise_daily_pillar_quote(getattr(row, "message", None))
+    ]
+    if not messages:
+        return ""
+    return messages[_stable_daily_index(user_id=int(user_id), pillar_key=f"{key}:{lowest_key}", anchor=anchor, count=len(messages))]
 
 
 def _save_latest_daily_pillar_quote(
@@ -1936,6 +2070,40 @@ def _daily_pillar_quote(
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None
             lowest = (concept_context or {}).get("lowest") if isinstance(concept_context, dict) else None
+            if key in _QUOTE_LED_PILLARS:
+                generated = _quote_led_daily_pillar_quote(int(user_id), key, anchor)
+                if generated:
+                    generated_for_persistence = generated
+                    _save_latest_daily_pillar_quote(
+                        session,
+                        user_id=int(user_id),
+                        pillar_key=key,
+                        anchor=anchor,
+                        quote=generated,
+                        source_cache_key="home_pillar_quote_bank",
+                    )
+                    session.commit()
+                    return generated
+            if key in _EDUCATION_INSIGHT_PILLARS:
+                generated = _education_insight_daily_pillar_quote(
+                    session,
+                    user_id=int(user_id),
+                    pillar_key=key,
+                    anchor=anchor,
+                    concept_context=concept_context,
+                )
+                if generated:
+                    generated_for_persistence = generated
+                    _save_latest_daily_pillar_quote(
+                        session,
+                        user_id=int(user_id),
+                        pillar_key=key,
+                        anchor=anchor,
+                        quote=generated,
+                        source_cache_key="education_concept_insight",
+                    )
+                    session.commit()
+                    return generated
             concept_lines = ""
             if isinstance(strongest, dict) and isinstance(lowest, dict):
                 strongest_label = str(strongest.get("label") or "").strip()

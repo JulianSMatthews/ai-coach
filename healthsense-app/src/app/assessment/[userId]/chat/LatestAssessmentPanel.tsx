@@ -3566,6 +3566,12 @@ export default function LatestAssessmentPanel({
                   const quote = hasRecordedPillarCheckin(pillar, orderedCheckinOptions)
                     ? resolveHomePillarQuote(pillar, pillarKey)
                     : resolveEmptyPillarCheckinMessage(pillar, pillarKey, orderedCheckinOptions);
+                  const quoteLines = String(quote || "")
+                    .split(/\n+/)
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                  const quoteAuthor = quoteLines.length >= 3 ? quoteLines[quoteLines.length - 1] : "";
+                  const quoteBodyLines = quoteAuthor ? quoteLines.slice(0, -1) : quoteLines;
                   return (
                     <article
                       key={pillarKey}
@@ -3594,9 +3600,18 @@ export default function LatestAssessmentPanel({
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div className="max-h-[9.5rem] max-w-[18rem] overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-h-[10.75rem]">
-                          <p className="text-[1.18rem] leading-8 text-current opacity-80">
-                            {quote}
-                          </p>
+                          <div className="space-y-3 text-[1.18rem] leading-8 text-current opacity-80">
+                            {(quoteBodyLines.length ? quoteBodyLines : [quote]).map((line, index) => (
+                              <p key={`${pillarKey}-quote-${index}`}>
+                                {line}
+                              </p>
+                            ))}
+                            {quoteAuthor ? (
+                              <p className="pt-1 text-right text-[0.9rem] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                {quoteAuthor}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="mt-auto grid max-w-[16rem] grid-cols-2 gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {
