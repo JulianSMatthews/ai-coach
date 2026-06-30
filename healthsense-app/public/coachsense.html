@@ -2441,7 +2441,7 @@
               <div class="mock-screen" data-mock-screen="checkin">
                 <div class="mock-surface" data-checkin-home>
                   <article class="app-card">
-                    <span class="app-score app-checkin-score" data-checkin-score style="--score-deg: 0deg;">0%</span>
+                    <span class="app-score app-checkin-score" data-checkin-score style="--score-deg: 0deg;">0</span>
                     <h3>Resilience</h3>
                     <p class="app-eyebrow app-date-label">Journal Mon 29 Jun</p>
                     <p class="app-copy">
@@ -3039,7 +3039,7 @@
         const percentage = Math.round((yesCount / total) * 100);
         const scoreDegrees = Math.round((percentage / 100) * 360);
         document.querySelectorAll("[data-checkin-score]").forEach((scoreBadge) => {
-          scoreBadge.textContent = `${percentage}%`;
+          scoreBadge.textContent = `${percentage}`;
           scoreBadge.style.setProperty("--score-deg", `${scoreDegrees}deg`);
         });
         return percentage;
@@ -3101,7 +3101,7 @@
             question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
           ).length;
           const percentage = updateCheckinScore(yesCount);
-          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, score ${percentage}%.`);
+          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, score ${percentage}.`);
           showTrackerDetail(false);
         });
       }
