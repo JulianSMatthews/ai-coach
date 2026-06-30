@@ -1308,6 +1308,17 @@
         font-weight: 700;
       }
 
+      .app-checkin-score {
+        width: 68px;
+        height: 68px;
+        border: 0;
+        background:
+          radial-gradient(circle at center, #ffffff 0 57%, transparent 58%),
+          conic-gradient(#44abc3 0 var(--score-deg, 0deg), #eadfce var(--score-deg, 0deg) 360deg);
+        color: var(--ink);
+        font-size: 16px;
+      }
+
       .app-progress-score {
         width: 62px;
         height: 62px;
@@ -2430,7 +2441,7 @@
               <div class="mock-screen" data-mock-screen="checkin">
                 <div class="mock-surface" data-checkin-home>
                   <article class="app-card">
-                    <span class="app-score" data-checkin-score>0</span>
+                    <span class="app-score app-checkin-score" data-checkin-score style="--score-deg: 0deg;">0%</span>
                     <h3>Resilience</h3>
                     <p class="app-eyebrow app-date-label">Journal Mon 29 Jun</p>
                     <p class="app-copy">
@@ -3023,10 +3034,15 @@
         checkinStatus.textContent = message || `${selectedCheckinDate}: ${yesCount} of ${checkinQuestions.length} marked Yes`;
       }
 
-      function updateCheckinScore(score) {
+      function updateCheckinScore(yesCount) {
+        const total = checkinQuestions.length || 1;
+        const percentage = Math.round((yesCount / total) * 100);
+        const scoreDegrees = Math.round((percentage / 100) * 360);
         document.querySelectorAll("[data-checkin-score]").forEach((scoreBadge) => {
-          scoreBadge.textContent = String(score);
+          scoreBadge.textContent = `${percentage}%`;
+          scoreBadge.style.setProperty("--score-deg", `${scoreDegrees}deg`);
         });
+        return percentage;
       }
 
       function contextualizeCheckinCopy(copy) {
@@ -3084,8 +3100,8 @@
           const yesCount = checkinQuestions.filter((question) =>
             question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
           ).length;
-          updateCheckinScore(yesCount);
-          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, ${yesCount} of ${checkinQuestions.length} marked Yes.`);
+          const percentage = updateCheckinScore(yesCount);
+          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, score ${percentage}%.`);
           showTrackerDetail(false);
         });
       }
