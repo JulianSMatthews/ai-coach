@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import desc, select, text as sa_text
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, EducationConceptInsight, PillarCueQuote, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
+from .models import AssessmentRun, DailyPillarTrackerEntry, EducationConceptInsight, PillarCueQuote, PillarQuoteCue, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 from .pillar_config import active_pillar_keys, pillar_label
 from .prompts import run_llm_prompt
@@ -438,6 +438,7 @@ def ensure_pillar_tracker_schema() -> None:
     try:
         DailyPillarTrackerEntry.__table__.create(bind=engine, checkfirst=True)
         PillarCueQuote.__table__.create(bind=engine, checkfirst=True)
+        PillarQuoteCue.__table__.create(bind=engine, checkfirst=True)
         with engine.connect() as conn:
             conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS quote_date date;"))
             conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS pillar_key varchar(64);"))
@@ -449,6 +450,18 @@ def ensure_pillar_tracker_schema() -> None:
             conn.execute(sa_text("ALTER TABLE pillar_cue_quotes ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now();"))
             conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_pillar_cue_quotes_user_day ON pillar_cue_quotes(user_id, quote_date);"))
             conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_pillar_cue_quotes_user_pillar_day ON pillar_cue_quotes(user_id, pillar_key, quote_date);"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS pillar_key varchar(64);"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS quote text;"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS author varchar(160);"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS reflection text;"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS cycle_index integer;"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS source varchar(64);"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS meta json;"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();"))
+            conn.execute(sa_text("ALTER TABLE pillar_quote_cues ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now();"))
+            conn.execute(sa_text("CREATE UNIQUE INDEX IF NOT EXISTS uq_pillar_quote_cues_pillar_cycle ON pillar_quote_cues(pillar_key, cycle_index);"))
+            conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_pillar_quote_cues_pillar_active_cycle ON pillar_quote_cues(pillar_key, is_active, cycle_index);"))
             conn.commit()
         _TRACKER_SCHEMA_READY = True
     except Exception:
@@ -1876,13 +1889,29 @@ def _stable_daily_index(*, user_id: int, pillar_key: str, anchor: date, count: i
 
 def _quote_led_daily_pillar_quote(user_id: int, pillar_key: str, anchor: date) -> str:
     key = str(pillar_key or "").strip().lower()
-    items = _QUOTE_LED_CUE_BANK.get(key) or ()
-    if not items:
-        return ""
-    item = items[_stable_daily_index(user_id=int(user_id), pillar_key=key, anchor=anchor, count=len(items))]
-    quote = str(item.get("quote") or "").strip()
-    reflection = str(item.get("reflection") or "").strip()
-    author = str(item.get("author") or "").strip()
+    with SessionLocal() as session:
+        rows = (
+            session.execute(
+                select(PillarQuoteCue)
+                .where(PillarQuoteCue.pillar_key == key, PillarQuoteCue.is_active == True)  # noqa: E712
+                .order_by(PillarQuoteCue.cycle_index.asc(), PillarQuoteCue.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+    if rows:
+        row = rows[_stable_daily_index(user_id=int(user_id), pillar_key=key, anchor=anchor, count=len(rows))]
+        quote = str(getattr(row, "quote", "") or "").strip()
+        reflection = str(getattr(row, "reflection", "") or "").strip()
+        author = str(getattr(row, "author", "") or "").strip()
+    else:
+        items = _QUOTE_LED_CUE_BANK.get(key) or ()
+        if not items:
+            return ""
+        item = items[_stable_daily_index(user_id=int(user_id), pillar_key=key, anchor=anchor, count=len(items))]
+        quote = str(item.get("quote") or "").strip()
+        reflection = str(item.get("reflection") or "").strip()
+        author = str(item.get("author") or "").strip()
     if not quote or not reflection or not author:
         return ""
     return _normalise_daily_pillar_quote(f'"{quote}"\n{reflection}\n{author}', preserve_lines=True)

@@ -27,6 +27,7 @@ from .models import (
     EducationProgrammeDay,
     EducationQuiz,
     EducationQuizQuestion,
+    PillarQuoteCue,
     BackgroundJob,
     PillarResult,
     PromptTemplate,
@@ -43,8 +44,10 @@ from .prompts import (
     log_llm_prompt,
 )
 from .prompts import build_prompt
+from .prompts import run_llm_prompt
 from . import prompts as prompts_module
 from .models import User
+from .pillar_tracker import ensure_pillar_tracker_schema
 from .education_plan import (
     education_lesson_avatar_payload,
     ensure_education_plan_schema,
@@ -268,6 +271,7 @@ def _admin_menu_html() -> str:
         "<a href='/admin/runs'>Assessment Runs</a>"
         "<a href='/admin/prompt-templates'>Prompt Templates</a>"
         "<a href='/admin/education-programmes'>Education</a>"
+        "<a href='/admin/pillar-quotes'>Pillar Quotes</a>"
         "</nav>"
     )
 
@@ -4139,6 +4143,180 @@ async def save_prompt_template(
         row.is_active = active_flag
         s.commit()
     return RedirectResponse(url="/admin/prompt-templates", status_code=303)
+
+
+_QUOTE_LED_ADMIN_PILLARS = ("reflection", "purpose", "resilience")
+
+
+def _normalise_pillar_quote_items(raw_items: object, *, limit: int = 90) -> list[dict[str, str]]:
+    items = raw_items if isinstance(raw_items, list) else []
+    normalised: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        quote = " ".join(str(raw.get("quote") or "").strip().strip("\"'“”‘’").split())
+        author = " ".join(str(raw.get("author") or "").strip().split())
+        reflection = " ".join(str(raw.get("reflection") or "").strip().split())
+        if not quote or not author or not reflection:
+            continue
+        quote_words = quote.split()
+        reflection_words = reflection.split()
+        if len(quote_words) > 25:
+            quote = " ".join(quote_words[:25]).rstrip(" ,.;:") + "."
+        if len(reflection_words) > 28:
+            reflection = " ".join(reflection_words[:28]).rstrip(" ,.;:") + "."
+        key = (quote.lower(), author.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        normalised.append({"quote": quote, "author": author, "reflection": reflection})
+        if len(normalised) >= int(limit):
+            break
+    return normalised
+
+
+def _build_pillar_quote_generation_prompt(pillar_key: str, count: int) -> str:
+    pillar_label = str(pillar_key or "").strip().title()
+    return (
+        "Create a quote bank for CoachSense mobile pillar cue cards.\n"
+        "Return STRICT JSON only with this exact shape:\n"
+        '{"quotes":[{"quote":"short exact quote","author":"Author Name","reflection":"CoachSense reflection"}]}\n\n'
+        f"Pillar: {pillar_label}\n"
+        f"Required quote count: exactly {int(count)}.\n\n"
+        "Rules:\n"
+        "- Use only widely known public-domain/classic quotations where the author attribution is reliable.\n"
+        "- Prefer authors whose works are public domain. Do not use living authors, modern copyrighted song/film/book lines, or uncertain attributions.\n"
+        "- Each quote must be under 25 words.\n"
+        "- Each reflection must be 18-28 words, UK English, practical, warm, and aligned to the pillar.\n"
+        "- The reflection must explain what the quote means for everyday wellbeing.\n"
+        "- Do not mention scores, tracking, targets, streaks, apps, CoachSense, JSON, or being an AI.\n"
+        "- Avoid duplicate quotes and avoid all reflections starting the same way.\n"
+        "- Use plain author names only, with no dates or extra notes.\n"
+    )
+
+
+@admin.get("/pillar-quotes", response_class=HTMLResponse)
+def list_pillar_quotes():
+    ensure_pillar_tracker_schema()
+    model_options = _llm_model_options_html(_education_programme_default_llm_model())
+    with SessionLocal() as s:
+        rows = (
+            s.query(PillarQuoteCue)
+            .filter(PillarQuoteCue.pillar_key.in_(_QUOTE_LED_ADMIN_PILLARS))
+            .order_by(PillarQuoteCue.pillar_key.asc(), PillarQuoteCue.cycle_index.asc(), PillarQuoteCue.id.asc())
+            .all()
+        )
+    by_pillar: dict[str, list[PillarQuoteCue]] = {key: [] for key in _QUOTE_LED_ADMIN_PILLARS}
+    for row in rows:
+        key = str(getattr(row, "pillar_key", "") or "").strip().lower()
+        if key in by_pillar:
+            by_pillar[key].append(row)
+    sections = []
+    for pillar_key in _QUOTE_LED_ADMIN_PILLARS:
+        active_rows = [row for row in by_pillar[pillar_key] if bool(getattr(row, "is_active", False))]
+        sample_rows = active_rows[:8]
+        sample_html = "".join(
+            "<tr>"
+            f"<td>{html.escape(str(getattr(row, 'cycle_index', '') or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'quote', '') or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'author', '') or ''))}</td>"
+            f"<td>{html.escape(str(getattr(row, 'reflection', '') or ''))}</td>"
+            "</tr>"
+            for row in sample_rows
+        ) or "<tr><td colspan='4'><em>No active quotes generated yet.</em></td></tr>"
+        sections.append(
+            f"""
+            <div class='card'>
+              <h2>{html.escape(pillar_key.title())}</h2>
+              <p class='help'>{len(active_rows)} active quotes. Target: 90 for a 90-day cycle.</p>
+              <form method='post' action='/admin/pillar-quotes/generate' onsubmit="return confirm('Generate and replace the active {html.escape(pillar_key.title())} quote bank?');">
+                <input type='hidden' name='pillar_key' value='{html.escape(pillar_key)}' />
+                <div class='grid-3'>
+                  <label>Quote count<br/><input type='number' name='count' min='10' max='90' value='90' /></label>
+                  <label>Model<br/><select name='model'>{model_options}</select></label>
+                  <div style='align-self:end;'><button type='submit'>Generate 90-day bank</button></div>
+                </div>
+              </form>
+              <table>
+                <thead><tr><th>Cycle</th><th>Quote</th><th>Author</th><th>Reflection</th></tr></thead>
+                <tbody>{sample_html}</tbody>
+              </table>
+            </div>
+            """
+        )
+    body = (
+        "<h1>Pillar Quote Banks</h1>"
+        "<p class='help'>Generate quote-led cue-card banks for Reflection, Purpose and Resilience. The app rotates active quotes by user/date/pillar; hardcoded quotes remain as fallback only.</p>"
+        + "".join(sections)
+    )
+    return _wrap_page("Pillar Quote Banks", body)
+
+
+@admin.post("/pillar-quotes/generate", response_class=HTMLResponse)
+async def generate_pillar_quotes(
+    pillar_key: str = Form(...),
+    count: int = Form(default=90),
+    model: str | None = Form(default=None),
+):
+    ensure_pillar_tracker_schema()
+    key = str(pillar_key or "").strip().lower()
+    if key not in _QUOTE_LED_ADMIN_PILLARS:
+        raise HTTPException(400, "pillar_key must be reflection, purpose, or resilience")
+    resolved_count = max(10, min(int(count or 90), 90))
+    model_override = _normalize_model_override(model)
+    raw = run_llm_prompt(
+        _build_pillar_quote_generation_prompt(key, resolved_count),
+        touchpoint="admin_pillar_quote_bank_generator",
+        prompt_variant=f"admin_pillar_quote_bank_{key}",
+        task_label=f"Generate {key} pillar quote bank",
+        model=model_override,
+        log=True,
+    )
+    payload = _extract_llm_json_object(raw)
+    quotes = _normalise_pillar_quote_items(payload.get("quotes"), limit=resolved_count)
+    if len(quotes) < resolved_count:
+        raise HTTPException(502, f"LLM returned {len(quotes)} usable quotes, expected {resolved_count}")
+    with SessionLocal() as s:
+        existing = s.query(PillarQuoteCue).filter(PillarQuoteCue.pillar_key == key).all()
+        existing_by_cycle = {
+            int(getattr(row, "cycle_index", -1)): row
+            for row in existing
+            if getattr(row, "cycle_index", None) is not None
+        }
+        now = datetime.utcnow()
+        used_cycles: set[int] = set()
+        for index, item in enumerate(quotes):
+            row = existing_by_cycle.get(index) or PillarQuoteCue(pillar_key=key, cycle_index=index)
+            row.pillar_key = key
+            row.cycle_index = index
+            row.quote = item["quote"]
+            row.author = item["author"]
+            row.reflection = item["reflection"]
+            row.is_active = True
+            row.source = "admin_llm"
+            row.meta = {
+                "generated_from": "admin_pillar_quote_bank_generator",
+                "model": model_override,
+                "generated_at": now.isoformat(),
+            }
+            row.updated_at = now
+            s.add(row)
+            used_cycles.add(index)
+        for row in existing:
+            if int(getattr(row, "cycle_index", -1)) not in used_cycles:
+                row.is_active = False
+                row.updated_at = now
+                s.add(row)
+        s.commit()
+    body = (
+        "<div class='card'>"
+        f"<h1>Generated {len(quotes)} {html.escape(key.title())} quotes</h1>"
+        "<p>The active quote bank has been replaced for this pillar.</p>"
+        "<p><a class='button-link' href='/admin/pillar-quotes'>Back to pillar quote banks</a></p>"
+        "</div>"
+    )
+    return _wrap_page("Pillar Quote Bank Generated", body)
 
 
 @admin.post("/education-programmes/summaries/rationalise", response_class=HTMLResponse)

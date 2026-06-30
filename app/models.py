@@ -1002,6 +1002,27 @@ class PillarCueQuote(Base):
     )
 
 
+class PillarQuoteCue(Base):
+    __tablename__ = "pillar_quote_cues"
+
+    id = Column(Integer, primary_key=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    quote = Column(Text, nullable=False)
+    author = Column(String(160), nullable=False)
+    reflection = Column(Text, nullable=False)
+    cycle_index = Column(Integer, nullable=False, index=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    source = Column(String(64), nullable=True)
+    meta = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("pillar_key", "cycle_index", name="uq_pillar_quote_cues_pillar_cycle"),
+        Index("ix_pillar_quote_cues_pillar_active_cycle", "pillar_key", "is_active", "cycle_index"),
+    )
+
+
 class DailyCoachHabitPlan(Base):
     __tablename__ = "daily_coach_habit_plans"
 
