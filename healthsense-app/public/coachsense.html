@@ -347,19 +347,6 @@
         transform: rotate(14deg);
       }
 
-      .splash-preview-logo {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        z-index: 1;
-        display: block;
-        width: min(88%, 496px);
-        height: auto;
-        transform: translate(-50%, -50%) scale(0.82);
-        opacity: 0;
-        animation: coach-logo-reveal 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
-      }
-
       .splash-preview-icon {
         position: absolute;
         left: 50%;
@@ -492,24 +479,6 @@
         --from-y: 120%;
         --to-x: 0.18em;
         --to-y: calc(-50% + 0.56em);
-      }
-
-      @keyframes coach-logo-reveal {
-        0%,
-        2% {
-          opacity: 0;
-          transform: translate(-50%, -50%) scale(0.82);
-        }
-        5%,
-        10% {
-          opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
-        }
-        13%,
-        100% {
-          opacity: 0;
-          transform: translate(-50%, -50%) scale(0.94);
-        }
       }
 
       @keyframes coach-icon-reveal {
@@ -2265,7 +2234,6 @@
 
           <aside class="app-preview" aria-label="CoachSense app preview">
             <div class="splash-preview" aria-label="CoachSense splash animation">
-              <img class="splash-preview-logo" src="coachsense-logo-animation.svg" alt="" />
               <img class="splash-preview-icon" src="coachsense-icon-transparent.svg" alt="" />
               <div class="splash-preview-pillars" aria-hidden="true">
                 <span class="splash-pillar-item splash-pillar-resilience">
