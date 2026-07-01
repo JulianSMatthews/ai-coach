@@ -744,6 +744,27 @@ function firstIncompleteEducationLessonToken(lessons: any[]): string {
   return String(lesson?.programme_day_id || lesson?.day_index || "").trim();
 }
 
+function educationQuestionId(question: any, fallback: number | string = ""): string {
+  return String(question?.id || question?.question_id || question?.questionId || fallback || "").trim();
+}
+
+function educationLessonProgrammeDayId(lesson: any): number {
+  return Number(lesson?.programme_day_id || lesson?.programmeDayId || lesson?.day?.id || 0) || 0;
+}
+
+function educationLessonVariantId(lesson: any): number {
+  const content = lesson?.content || null;
+  return Number(
+    lesson?.lesson_variant_id ||
+      lesson?.lessonVariantId ||
+      lesson?.variant_id ||
+      lesson?.variantId ||
+      content?.lesson_variant_id ||
+      content?.lessonVariantId ||
+      0,
+  ) || 0;
+}
+
 function findEducationLessonByProgrammeDayId(payload: any, programmeDayId: number): any | null {
   if (!payload || !programmeDayId) return null;
   if (Number(payload?.submitted_lesson?.programme_day_id || 0) === programmeDayId) {
@@ -1749,7 +1770,7 @@ export default function AssessmentChatBox({
     String(activeEducationLesson?.title || activeEducationLesson?.concept_label || activeEducationLesson?.pillar_label || "").trim(),
   );
   const activeEducationLessonDescription = normalizeLessonText(String(activeEducationLesson?.goal || activeEducationLesson?.summary || "").trim());
-  const activeEducationLessonVariantId = Number(activeEducationLesson?.lesson_variant_id || activeEducationLessonContent?.lesson_variant_id || 0);
+  const activeEducationLessonVariantId = educationLessonVariantId(activeEducationLesson);
   const currentEducationLessonVariantId = Number(educationPlan?.lesson?.lesson_variant_id || 0);
   const activeEducationQuiz =
     activeEducationLesson?.quiz ||
@@ -1778,16 +1799,20 @@ export default function AssessmentChatBox({
     setEducationQuizError(null);
     setEducationQuizMessage(null);
     try {
-      const answers = activeEducationQuizQuestions.map((question: any) => ({
-        question_id: Number(question?.id || 0),
-        answer: educationQuizAnswers[String(question?.id || "")],
-      }));
+      const answers = activeEducationQuizQuestions.map((question: any, index: number) => {
+        const questionId = educationQuestionId(question, index);
+        return {
+          question_id: Number(questionId || 0),
+          answer: educationQuizAnswers[questionId],
+        };
+      });
+      const programmeDayId = educationLessonProgrammeDayId(activeEducationLesson);
       const res = await fetch("/api/education-plan/quiz-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          programme_day_id: Number(activeEducationLesson?.programme_day_id || 0) || undefined,
+          programme_day_id: programmeDayId || undefined,
           lesson_variant_id: activeEducationLessonVariantId || undefined,
           answers,
         }),
@@ -1808,7 +1833,7 @@ export default function AssessmentChatBox({
       setEducationQuizMessage("Quiz submitted.");
       const updatedLesson = findEducationLessonByProgrammeDayId(
         payload,
-        Number(activeEducationLesson?.programme_day_id || 0),
+        programmeDayId,
       ) || (
         Array.isArray(payload.lessons)
           ? payload.lessons.find((lesson: any) => Number(lesson?.day_index || 0) === Number(activeEducationLesson?.day_index || 0))
@@ -1818,7 +1843,7 @@ export default function AssessmentChatBox({
         setActiveEducationLesson(updatedLesson);
       } else if (
         Number(payload.lesson?.lesson_variant_id || 0) === activeEducationLessonVariantId ||
-        Number(payload.lesson?.programme_day_id || 0) === Number(activeEducationLesson?.programme_day_id || 0)
+        Number(payload.lesson?.programme_day_id || 0) === programmeDayId
       ) {
         setActiveEducationLesson(payload.lesson);
       }
@@ -3697,7 +3722,7 @@ export default function AssessmentChatBox({
                         {activeEducationQuizQuestions.length ? (
                           <div className="mt-4 space-y-5">
                             {activeEducationQuizQuestions.map((question: any, questionIndex: number) => {
-                              const questionId = String(question?.id || questionIndex);
+                              const questionId = educationQuestionId(question, questionIndex);
                               const selectedAnswer = educationQuizAnswers[questionId];
                               const options = Array.isArray(question?.options)
                                 ? question.options.map(normalizeEducationQuizOption).filter(Boolean)
@@ -3751,7 +3776,7 @@ export default function AssessmentChatBox({
                               disabled={
                                 educationQuizSubmitting ||
                                 activeEducationQuizQuestions.some((question: any, index: number) => {
-                                  const questionId = String(question?.id || index);
+                                  const questionId = educationQuestionId(question, index);
                                   return educationQuizAnswers[questionId] === undefined;
                                 })
                               }
