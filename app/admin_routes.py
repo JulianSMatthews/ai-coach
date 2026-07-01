@@ -4229,15 +4229,14 @@ def list_pillar_quotes():
     sections = []
     for pillar_key in _QUOTE_LED_ADMIN_PILLARS:
         active_rows = [row for row in by_pillar[pillar_key] if bool(getattr(row, "is_active", False))]
-        sample_rows = active_rows[:8]
-        sample_html = "".join(
+        quote_rows_html = "".join(
             "<tr>"
             f"<td>{html.escape(str(getattr(row, 'cycle_index', '') or ''))}</td>"
             f"<td>{html.escape(str(getattr(row, 'quote', '') or ''))}</td>"
             f"<td>{html.escape(str(getattr(row, 'author', '') or ''))}</td>"
             f"<td>{html.escape(str(getattr(row, 'reflection', '') or ''))}</td>"
             "</tr>"
-            for row in sample_rows
+            for row in active_rows
         ) or "<tr><td colspan='4'><em>No active quotes generated yet.</em></td></tr>"
         sections.append(
             f"""
@@ -4252,10 +4251,15 @@ def list_pillar_quotes():
                   <div style='align-self:end;'><button type='submit'>Generate 90-day bank</button></div>
                 </div>
               </form>
-              <table>
-                <thead><tr><th>Cycle</th><th>Quote</th><th>Author</th><th>Reflection</th></tr></thead>
-                <tbody>{sample_html}</tbody>
-              </table>
+              <h3>Active quote review</h3>
+              <div style='max-height:640px; overflow:auto; border:1px solid #ddd; border-radius:8px;'>
+                <table style='margin:0;'>
+                  <thead style='position:sticky; top:0; background:#fff;'>
+                    <tr><th>Cycle</th><th>Quote</th><th>Author</th><th>Reflection</th></tr>
+                  </thead>
+                  <tbody>{quote_rows_html}</tbody>
+                </table>
+              </div>
             </div>
             """
         )
