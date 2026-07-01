@@ -4329,12 +4329,12 @@ async def generate_pillar_quotes(
         if len(quotes) == before:
             errors.append(f"Batch {attempts}: all returned quotes were duplicates")
 
-    if len(quotes) < resolved_count:
+    if not quotes:
         details = "<br/>".join(html.escape(error) for error in errors[-6:]) or "No detailed error was returned."
         body = (
             "<div class='card'>"
-            f"<h1>Could not generate full {html.escape(key.title())} quote bank</h1>"
-            f"<p>Generated {len(quotes)} usable quotes from {attempts} batch attempts. Target was {resolved_count}.</p>"
+            f"<h1>Could not generate {html.escape(key.title())} quotes</h1>"
+            f"<p>Generated 0 usable quotes from {attempts} batch attempts.</p>"
             f"<p class='help'>{details}</p>"
             "<p>Try again with a smaller count first, or choose a stronger model in the dropdown.</p>"
             "<p><a class='button-link' href='/admin/pillar-quotes'>Back to pillar quote banks</a></p>"
@@ -4377,7 +4377,7 @@ async def generate_pillar_quotes(
     body = (
         "<div class='card'>"
         f"<h1>Generated {len(quotes)} {html.escape(key.title())} quotes</h1>"
-        "<p>The active quote bank has been replaced for this pillar.</p>"
+        f"<p>The active quote bank has been replaced for this pillar with {len(quotes)} usable quotes from {attempts} batch attempts. Requested target was {resolved_count}.</p>"
         "<p><a class='button-link' href='/admin/pillar-quotes'>Back to pillar quote banks</a></p>"
         "</div>"
     )
