@@ -4176,8 +4176,21 @@ def _normalise_pillar_quote_items(raw_items: object, *, limit: int = 90) -> list
     return normalised
 
 
-def _build_pillar_quote_generation_prompt(pillar_key: str, count: int) -> str:
+def _build_pillar_quote_generation_prompt(
+    pillar_key: str,
+    count: int,
+    *,
+    avoid_quotes: list[str] | None = None,
+) -> str:
     pillar_label = str(pillar_key or "").strip().title()
+    avoid = [str(value or "").strip() for value in (avoid_quotes or []) if str(value or "").strip()]
+    avoid_block = ""
+    if avoid:
+        avoid_sample = "\n".join(f"- {value}" for value in avoid[-60:])
+        avoid_block = (
+            "\nAlready generated quotes to avoid repeating:\n"
+            f"{avoid_sample}\n"
+        )
     return (
         "Create a quote bank for CoachSense mobile pillar cue cards.\n"
         "Return STRICT JSON only with this exact shape:\n"
@@ -4193,6 +4206,7 @@ def _build_pillar_quote_generation_prompt(pillar_key: str, count: int) -> str:
         "- Do not mention scores, tracking, targets, streaks, apps, CoachSense, JSON, or being an AI.\n"
         "- Avoid duplicate quotes and avoid all reflections starting the same way.\n"
         "- Use plain author names only, with no dates or extra notes.\n"
+        f"{avoid_block}"
     )
 
 
@@ -4265,18 +4279,65 @@ async def generate_pillar_quotes(
         raise HTTPException(400, "pillar_key must be reflection, purpose, or resilience")
     resolved_count = max(10, min(int(count or 90), 90))
     model_override = _normalize_model_override(model)
-    raw = run_llm_prompt(
-        _build_pillar_quote_generation_prompt(key, resolved_count),
-        touchpoint="admin_pillar_quote_bank_generator",
-        prompt_variant=f"admin_pillar_quote_bank_{key}",
-        task_label=f"Generate {key} pillar quote bank",
-        model=model_override,
-        log=True,
-    )
-    payload = _extract_llm_json_object(raw)
-    quotes = _normalise_pillar_quote_items(payload.get("quotes"), limit=resolved_count)
+
+    quotes: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    errors: list[str] = []
+    attempts = 0
+    max_attempts = 12
+    batch_size = 12
+    while len(quotes) < resolved_count and attempts < max_attempts:
+        attempts += 1
+        batch_count = min(batch_size, resolved_count - len(quotes))
+        raw = run_llm_prompt(
+            _build_pillar_quote_generation_prompt(
+                key,
+                batch_count,
+                avoid_quotes=[item["quote"] for item in quotes],
+            ),
+            touchpoint="admin_pillar_quote_bank_generator",
+            prompt_variant=f"admin_pillar_quote_bank_{key}_batch_{attempts}",
+            task_label=f"Generate {key} pillar quote bank batch {attempts}",
+            model=model_override,
+            log=True,
+        )
+        if not str(raw or "").strip():
+            errors.append(f"Batch {attempts}: LLM returned an empty response")
+            continue
+        try:
+            payload = _extract_llm_json_object(raw)
+        except Exception as exc:
+            errors.append(f"Batch {attempts}: response was not valid JSON ({exc})")
+            continue
+        batch_quotes = _normalise_pillar_quote_items(payload.get("quotes"), limit=batch_count)
+        if not batch_quotes:
+            errors.append(f"Batch {attempts}: no usable quotes found in response")
+            continue
+        before = len(quotes)
+        for item in batch_quotes:
+            duplicate_key = (item["quote"].lower(), item["author"].lower())
+            if duplicate_key in seen:
+                continue
+            seen.add(duplicate_key)
+            quotes.append(item)
+            if len(quotes) >= resolved_count:
+                break
+        if len(quotes) == before:
+            errors.append(f"Batch {attempts}: all returned quotes were duplicates")
+
     if len(quotes) < resolved_count:
-        raise HTTPException(502, f"LLM returned {len(quotes)} usable quotes, expected {resolved_count}")
+        details = "<br/>".join(html.escape(error) for error in errors[-6:]) or "No detailed error was returned."
+        body = (
+            "<div class='card'>"
+            f"<h1>Could not generate full {html.escape(key.title())} quote bank</h1>"
+            f"<p>Generated {len(quotes)} usable quotes from {attempts} batch attempts. Target was {resolved_count}.</p>"
+            f"<p class='help'>{details}</p>"
+            "<p>Try again with a smaller count first, or choose a stronger model in the dropdown.</p>"
+            "<p><a class='button-link' href='/admin/pillar-quotes'>Back to pillar quote banks</a></p>"
+            "</div>"
+        )
+        return _wrap_page("Pillar Quote Bank Generation Failed", body)
+
     with SessionLocal() as s:
         existing = s.query(PillarQuoteCue).filter(PillarQuoteCue.pillar_key == key).all()
         existing_by_cycle = {
