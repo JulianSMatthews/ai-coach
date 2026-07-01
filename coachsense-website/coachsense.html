@@ -1,0 +1,3120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CoachSense | Find your own way</title>
+    <meta
+      name="description"
+      content="CoachSense helps you find your own way by strengthening resilience, recovery, reflection and purpose."
+    />
+    <link rel="icon" type="image/svg+xml" href="/coachsense-icon-transparent.svg" />
+    <link rel="shortcut icon" href="/coachsense-icon-transparent.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fffcf6;
+        --panel: #fffdfacc;
+        --hero-visual-bg: #f9ebdb;
+        --panel-soft: #fffdfacc;
+        --surface-muted: #fffdfacc;
+        --ink: #251208;
+        --muted: #251208;
+        --body-copy: #251208;
+        --tertiary: #8c7f70;
+        --accent: #d3541b;
+        --accent-dark: #a83b0c;
+        --orange: #c54817;
+        --line: #e7e1d6;
+        --track: #eadfce;
+        --white: #ffffff;
+        --shadow: 0 24px 70px rgba(168, 59, 12, 0.14);
+        --font-display: Outfit, sans-serif;
+        --font-body: Inter, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        overflow: hidden;
+      }
+
+      @media (min-width: 921px) {
+        body {
+          overflow-x: hidden;
+        }
+
+        .page {
+          width: 125%;
+          transform: scale(0.8);
+          transform-origin: top left;
+        }
+      }
+
+      .nav,
+      section,
+      footer {
+        width: min(1120px, calc(100% - 32px));
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .nav {
+        position: relative;
+        width: min(1440px, calc(100% - 200px));
+        min-height: 86px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .brand img {
+        width: 164px;
+        height: auto;
+        display: block;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 37px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 400;
+        line-height: 1.5;
+        letter-spacing: 0.04em;
+      }
+
+      .nav-links a {
+        transition: color 0.3s ease;
+      }
+
+      .nav-links a:hover {
+        color: var(--accent-dark);
+      }
+
+      .button {
+        min-height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 0 22px;
+        background: var(--accent-dark);
+        color: var(--white);
+        font-family: var(--font-body);
+        font-weight: 500;
+        border: 1px solid var(--accent-dark);
+      }
+
+      .button.light {
+        background: var(--white);
+        color: var(--accent-dark);
+        border-color: var(--line);
+      }
+
+      .download-button {
+        min-height: 0;
+        border: 4px solid transparent;
+        border-radius: 16px;
+        background: var(--accent-dark);
+        padding: 14px 40px;
+        color: var(--bg);
+        font-family: var(--font-body);
+        font-size: 16px;
+        font-weight: 500;
+        line-height: 1.5;
+        letter-spacing: 0.02em;
+        transition: all 0.3s ease-in;
+      }
+
+      .download-button:hover {
+        border-color: #e3cec0;
+        background: var(--accent-dark);
+        box-shadow:
+          inset 0 0 0 6px #d59578,
+          inset 0 0 0 12px #c46c47,
+          inset 0 0 0 18px #ba562c;
+      }
+
+      .download-button:active {
+        border-color: #f5e0d1;
+        background: #cb6c3a;
+        box-shadow:
+          inset 0 0 0 6px #e0a685,
+          inset 0 0 0 12px #d48459,
+          inset 0 0 0 18px #cc7041;
+      }
+
+      .download-button:focus {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
+
+      .nav > .download-button {
+        border: 1px solid var(--accent-dark);
+        border-radius: 16px;
+        background: transparent;
+        padding: 12px 28px;
+        color: var(--accent-dark);
+        box-shadow: none;
+      }
+
+      .nav > .download-button:hover {
+        border-color: var(--accent-dark);
+        background: var(--footer-panel, #f9ebdb);
+        color: var(--accent-dark);
+        box-shadow: none;
+      }
+
+      .nav > .download-button:active {
+        border-color: var(--accent-dark);
+        background: var(--line);
+        color: var(--accent-dark);
+        box-shadow: none;
+      }
+
+      .mobile-menu {
+        display: none;
+      }
+
+      .mobile-menu summary {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--white);
+        color: var(--ink);
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .mobile-menu summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .mobile-menu svg {
+        width: 24px;
+        height: 24px;
+      }
+
+      .mobile-menu-panel {
+        position: absolute;
+        top: calc(100% - 10px);
+        right: 0;
+        z-index: 20;
+        display: grid;
+        width: min(280px, calc(100vw - 32px));
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        padding: 12px;
+        box-shadow: var(--shadow);
+      }
+
+      .mobile-menu-panel a:not(.button) {
+        display: flex;
+        min-height: 68px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        border-radius: 0;
+        padding: 0 16px;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 400;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+      }
+
+      .hero {
+        width: min(1440px, calc(100% - 200px));
+        min-height: calc(100vh - 86px);
+        display: grid;
+        grid-template-columns: minmax(360px, 563px) minmax(0, 1fr);
+        align-items: center;
+        gap: 90px;
+        padding: 80px 0 96px;
+      }
+
+      .eyebrow {
+        display: none;
+        align-items: center;
+        min-height: 38px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.52);
+        padding: 0 13px;
+        color: var(--accent-dark);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin: 0 0 48px;
+        font-family: Outfit, sans-serif;
+        font-size: 64px;
+        font-weight: 400;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .title-accent {
+        color: var(--accent);
+      }
+
+      .lead {
+        max-width: 540px;
+        margin: 0 0 72px;
+        color: var(--body-copy);
+        font-family: var(--font-body);
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        line-height: 1.5;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+      }
+
+      .app-preview {
+        position: relative;
+        display: flex;
+        justify-content: flex-start;
+        order: -1;
+        min-height: 0;
+        width: 100%;
+      }
+
+      .splash-preview {
+        position: relative;
+        flex: 0 0 auto;
+        width: min(100%, 563px);
+        min-height: 0;
+        aspect-ratio: 563 / 526;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 32px;
+        background:
+          linear-gradient(rgba(231, 225, 214, 0.34) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(231, 225, 214, 0.34) 1px, transparent 1px),
+          #ffffff;
+        background-size: 130px 86px, 130px 86px, auto;
+      }
+
+      .splash-preview::after {
+        content: "";
+        position: absolute;
+        right: -5%;
+        bottom: 6%;
+        width: 76%;
+        height: 118%;
+        border-right: 2px dashed rgba(191, 123, 87, 0.36);
+        border-radius: 50%;
+        transform: rotate(14deg);
+      }
+
+      .splash-preview-icon {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: 1;
+        width: min(43%, 238px);
+        transform: translate(-50%, -50%) scale(0.68);
+        opacity: 0;
+        animation: coach-icon-reveal 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+      }
+
+      .splash-preview-pillars {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      .splash-pillar-item {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        display: grid;
+        justify-items: center;
+        gap: 16px;
+        width: min(72%, 360px);
+        color: var(--pillar-color);
+        transform: translate(-50%, -50%);
+      }
+
+      .splash-pillar-icon {
+        width: clamp(91px, 16.8vw, 158px);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, var(--pillar-color), white 62%);
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--pillar-color), white 90%);
+        color: var(--pillar-color);
+        opacity: 0;
+        transform: translateY(-150%) scale(0.92);
+        box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
+        animation: coach-pillar-icon-feature 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation-delay: var(--pillar-delay);
+      }
+
+      .splash-pillar-icon svg {
+        width: 54%;
+        height: 54%;
+      }
+
+      .splash-pillar-label {
+        display: block;
+        color: var(--ink);
+        font-family: Outfit, sans-serif;
+        font-size: clamp(26px, 3.84vw, 43px);
+        font-weight: 400;
+        line-height: 1.08;
+        opacity: 0;
+        text-align: center;
+        transform: translateY(150%) scale(0.96);
+        animation: coach-pillar-label-feature 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation-delay: var(--pillar-delay);
+      }
+
+      .splash-pillar-resilience {
+        --pillar-color: #44abc3;
+        --pillar-delay: 0s;
+      }
+
+      .splash-pillar-purpose {
+        --pillar-color: #0f8b8d;
+        --pillar-delay: 5s;
+      }
+
+      .splash-pillar-reflection {
+        --pillar-color: #7c5cff;
+        --pillar-delay: 10s;
+      }
+
+      .splash-pillar-recovery {
+        --pillar-color: #c9764f;
+        --pillar-delay: 15s;
+      }
+
+      .splash-preview-words {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        color: var(--ink);
+        font-family: Outfit, sans-serif;
+        font-size: clamp(43px, 6.26vw, 80px);
+        font-weight: 300;
+        line-height: 1.12;
+      }
+
+      .splash-preview-word {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        opacity: 0;
+        transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
+        animation: coach-word-arrive 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+      }
+
+      .splash-word-find {
+        --from-x: -160%;
+        --from-y: -170%;
+        --to-x: calc(-100% - 0.18em);
+        --to-y: calc(-50% - 0.56em);
+      }
+
+      .splash-word-your {
+        --from-x: 86%;
+        --from-y: -170%;
+        --to-x: 0.18em;
+        --to-y: calc(-50% - 0.56em);
+        color: var(--accent);
+      }
+
+      .splash-word-own {
+        --from-x: -160%;
+        --from-y: 120%;
+        --to-x: calc(-100% - 0.18em);
+        --to-y: calc(-50% + 0.56em);
+      }
+
+      .splash-word-way {
+        --from-x: 88%;
+        --from-y: 120%;
+        --to-x: 0.18em;
+        --to-y: calc(-50% + 0.56em);
+      }
+
+      @keyframes coach-icon-reveal {
+        0%,
+        83.3% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.68);
+        }
+        85.3%,
+        96.7% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      @keyframes coach-pillar-icon-feature {
+        0%,
+        0.1% {
+          opacity: 0;
+          transform: translateY(-150%) scale(0.92);
+        }
+        3.3%,
+        13.3% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        16.7%,
+        100% {
+          opacity: 0;
+          transform: translateY(0) scale(0.96);
+        }
+      }
+
+      @keyframes coach-pillar-label-feature {
+        0%,
+        0.1% {
+          opacity: 0;
+          transform: translateY(150%) scale(0.96);
+        }
+        3.3%,
+        13.3% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        16.7%,
+        100% {
+          opacity: 0;
+          transform: translateY(0) scale(0.96);
+        }
+      }
+
+      @keyframes coach-word-arrive {
+        0%,
+        66.7% {
+          opacity: 0;
+          transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
+        }
+        70% {
+          opacity: 1;
+        }
+        73.3%,
+        80% {
+          opacity: 1;
+          transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
+        }
+        81.7%,
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
+        }
+      }
+
+      section {
+        margin-bottom: 72px;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .section-heading h2 {
+        max-width: 720px;
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 32px;
+        font-weight: 300;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .section-heading p {
+        max-width: 400px;
+        margin: 0;
+        color: var(--body-copy);
+        font-family: var(--font-body);
+        font-size: 16px;
+        font-weight: 400;
+        letter-spacing: 0.04em;
+        line-height: 1.5;
+      }
+
+      #how .section-heading {
+        flex-direction: row-reverse;
+      }
+
+      .queue-rail {
+        display: flex;
+        gap: 18px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        padding: 4px 0 18px;
+        scroll-snap-type: x proximity;
+        scrollbar-color: var(--accent-dark) var(--track);
+        scrollbar-width: thin;
+      }
+
+      .queue-rail::-webkit-scrollbar {
+        height: 12px;
+      }
+
+      .queue-rail::-webkit-scrollbar-track {
+        border-radius: 999px;
+        background: var(--track);
+      }
+
+      .queue-rail::-webkit-scrollbar-thumb {
+        border: 3px solid var(--track);
+        border-radius: 999px;
+        background: var(--accent-dark);
+      }
+
+      .queue-card {
+        position: relative;
+        display: flex;
+        min-height: 26rem;
+        width: min(86vw, 22rem);
+        flex: 0 0 min(86vw, 22rem);
+        scroll-snap-align: center;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: var(--white);
+        padding: 28px;
+        color: var(--body-copy);
+        box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
+      }
+
+      .pillars .queue-card {
+        width: min(86vw, 22rem);
+        flex: 0 0 min(86vw, 22rem);
+      }
+
+      .steps .queue-card {
+        min-height: 19.5rem;
+        width: min(86vw, calc(31.2rem + 7px));
+        flex: 0 0 min(86vw, calc(31.2rem + 7px));
+      }
+
+      .pillars .queue-card {
+        min-height: 20.8rem;
+      }
+
+      .queue-card h3 {
+        max-width: 220px;
+        margin: 0;
+        padding-right: 74px;
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 400;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .queue-card p,
+      .demo-card p,
+      .mock-guide-note span,
+      .app-copy,
+      .app-question .app-copy,
+      .quiz-question,
+      .demo-feedback,
+      .quote p,
+      details p {
+        margin: 0;
+        color: var(--body-copy);
+        font-family: var(--font-body);
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.5;
+      }
+
+      .queue-card p {
+        margin-top: 2.65rem;
+        color: var(--body-copy);
+        font-size: 19.2px;
+        font-weight: 400;
+        line-height: 1.5;
+      }
+
+      .pillars .queue-card h3 {
+        margin-top: 0;
+      }
+
+      .steps .queue-card h3 {
+        max-width: calc(100% - 86px);
+        padding-right: 0;
+      }
+
+      .pillars .queue-card p {
+        margin-top: 3.25rem;
+      }
+
+      .steps .queue-card p {
+        margin-top: 3.75rem;
+        padding-right: 9rem;
+      }
+
+      .steps .queue-card .queue-try {
+        align-self: flex-end;
+      }
+
+      .queue-ring {
+        position: absolute;
+        right: 20px;
+        top: 20px;
+        display: grid;
+        width: 56px;
+        height: 56px;
+        place-items: center;
+      }
+
+      .queue-ring > svg {
+        position: absolute;
+        inset: 0;
+        transform: rotate(-90deg);
+      }
+
+      .queue-circle {
+        position: relative;
+        display: grid;
+        width: 56px;
+        height: 56px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--circle-bg, #fff2e8);
+        color: var(--circle-fg, var(--tone, #17120f));
+      }
+
+      .queue-circle svg {
+        position: static;
+        width: 35px;
+        height: 35px;
+        transform: none;
+      }
+
+      .queue-try {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-start;
+        margin-top: auto;
+        border: 1px solid var(--accent-dark);
+        border-radius: 999px;
+        background: var(--accent-dark);
+        padding: 10px 18px;
+        color: var(--white);
+        font-size: 14px;
+        font-family: var(--font-body);
+        font-weight: 500;
+      }
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        align-items: start;
+        justify-items: center;
+      }
+
+      .demo-card {
+        border: 1px solid rgba(42, 33, 27, 0.12);
+        border-radius: 30px;
+        background: var(--white);
+        padding: 28px;
+        box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
+      }
+
+      .demo-card h3 {
+        margin: 0 0 12px;
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 400;
+        line-height: 1.1;
+      }
+
+      .demo-card p {
+        margin: 0;
+        color: var(--ink);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .demo-prompt {
+        margin-top: 24px;
+        border: 1px solid rgba(17, 17, 17, 0.1);
+        border-radius: 24px;
+        background: var(--white);
+        padding: 20px;
+      }
+
+      .demo-prompt strong {
+        display: block;
+        margin-bottom: 12px;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 400;
+        line-height: 1.1;
+      }
+
+      .demo-options {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .demo-option {
+        min-height: 48px;
+        border: 1px solid rgba(17, 17, 17, 0.14);
+        border-radius: 999px;
+        background: var(--white);
+        padding: 0 16px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 15px;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .demo-option.is-selected {
+        border-color: #111111;
+        background: #111111;
+        color: var(--white);
+      }
+
+      .demo-feedback {
+        min-height: 56px;
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        padding: 14px 16px;
+        color: var(--body-copy);
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .app-sample {
+        position: relative;
+        display: grid;
+        width: min(100%, 430px, calc(92vh * 430 / 932));
+        aspect-ratio: 430 / 932;
+        gap: 14px;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        align-content: stretch;
+        overflow: hidden;
+        border: 8px solid #17120f;
+        border-radius: 54px;
+        background: var(--bg);
+        padding: 24px 16px 20px;
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+          0 30px 70px -42px rgba(30, 27, 22, 0.52);
+        scrollbar-width: none;
+      }
+
+      .demo-grid:has(.app-sample-single) {
+        grid-template-columns: 1fr;
+      }
+
+      .app-sample-single {
+        justify-self: center;
+      }
+
+      .mock-guide {
+        display: grid;
+        width: min(100%, 980px);
+        grid-template-columns: minmax(0, 220px) minmax(0, 430px) minmax(0, 220px);
+        gap: 24px;
+        align-items: start;
+        justify-content: center;
+      }
+
+      .mock-guide-note {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--panel);
+        padding: 16px 18px;
+        color: var(--body-copy);
+        box-shadow: 0 18px 42px -34px rgba(30, 27, 22, 0.48);
+      }
+
+      .mock-guide-note strong {
+        display: block;
+        color: var(--accent-dark);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .mock-guide-note span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.45;
+      }
+
+      .mock-guide-note::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        width: 34px;
+        height: 1.5px;
+        background: var(--accent-dark);
+      }
+
+      .mock-guide-note::before {
+        content: "";
+        position: absolute;
+        top: calc(50% - 5px);
+        width: 10px;
+        height: 10px;
+        border-top: 1.5px solid var(--accent-dark);
+        border-right: 1.5px solid var(--accent-dark);
+      }
+
+      .mock-guide-note.left {
+        justify-self: end;
+        margin-top: 628px;
+        margin-right: 38px;
+      }
+
+      .mock-guide-note.left::after {
+        right: -34px;
+      }
+
+      .mock-guide-note.left::before {
+        right: -34px;
+        transform: rotate(45deg);
+      }
+
+      .mock-guide-note.right {
+        justify-self: start;
+        margin-top: 647px;
+        margin-left: 28px;
+      }
+
+      .mock-guide-note.right::after {
+        left: -34px;
+      }
+
+      .mock-guide-note.right::before {
+        left: -34px;
+        transform: rotate(225deg);
+      }
+
+      .mock-screen {
+        display: grid;
+        gap: 14px;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 0 8px;
+        scrollbar-width: none;
+      }
+
+      .mock-screen::-webkit-scrollbar {
+        display: none;
+      }
+
+      .mock-screen[hidden] {
+        display: none;
+      }
+
+      .mock-surface {
+        display: grid;
+        gap: 14px;
+      }
+
+      .mock-surface[hidden] {
+        display: none;
+      }
+
+      .mock-back {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--panel);
+        color: var(--body-copy);
+        font-family: var(--font-body);
+        font-size: 30px;
+        line-height: 1;
+        box-shadow: 0 10px 26px -22px rgba(30, 27, 22, 0.45);
+      }
+
+      .app-sample::-webkit-scrollbar {
+        display: none;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      .app-sample::before {
+        display: none;
+      }
+
+      .phone-status {
+        display: flex;
+        min-height: 22px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 26px;
+        color: var(--ink);
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .phone-status-icons {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .phone-signal,
+      .phone-wifi,
+      .phone-battery {
+        display: block;
+        height: 10px;
+      }
+
+      .phone-signal {
+        width: 18px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #241f1b 0 4px, transparent 4px 6px, #bcb7af 6px 10px, transparent 10px 12px, #bcb7af 12px 18px);
+      }
+
+      .phone-wifi {
+        width: 14px;
+        border: 2px solid #241f1b;
+        border-top: 0;
+        border-left-color: transparent;
+        border-right-color: transparent;
+        border-radius: 0 0 14px 14px;
+      }
+
+      .phone-battery {
+        position: relative;
+        width: 22px;
+        border: 1.5px solid #241f1b;
+        border-radius: 4px;
+      }
+
+      .phone-battery::after {
+        content: "";
+        position: absolute;
+        right: -4px;
+        top: 3px;
+        width: 2px;
+        height: 4px;
+        border-radius: 0 2px 2px 0;
+        background: #241f1b;
+      }
+
+      .phone-battery span {
+        display: block;
+        width: 14px;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--accent-dark);
+      }
+
+      .phone-app-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 14px;
+        border-radius: 0;
+        background: transparent;
+        padding: 18px 0 14px;
+      }
+
+      .phone-greeting {
+        margin: 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 21px;
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .phone-metrics {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .phone-metric {
+        display: grid;
+        min-width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 0.33mm solid #e9dfd1;
+        border-radius: 999px;
+        background: #fffdf9;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 15px;
+        font-weight: 800;
+        box-shadow: 0 8px 18px -18px rgba(30, 27, 22, 0.48);
+      }
+
+      .phone-metric-ring {
+        width: 42px;
+        min-width: 42px;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, #fffdf9 0 51%, transparent 52%),
+          conic-gradient(#f4ddd4 0 360deg);
+      }
+
+      .phone-metric-streak {
+        grid-template-columns: auto auto;
+        width: 58px;
+        gap: 8px;
+      }
+
+      .phone-metric-menu {
+        width: 42px;
+        min-width: 42px;
+        font-size: 21px;
+        font-weight: 400;
+      }
+
+      .phone-home {
+        display: block;
+        justify-self: center;
+        width: 112px;
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(36, 31, 27, 0.32);
+      }
+
+      .phone-tabbar {
+        position: relative;
+        z-index: 5;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        border: 0.33mm solid #efe7db;
+        border-radius: 34px;
+        background: #fffdf9;
+        padding: 4px;
+        box-shadow: 0 18px 40px -30px rgba(30, 27, 22, 0.35);
+        backdrop-filter: blur(12px);
+      }
+
+      .phone-tab {
+        display: flex;
+        min-height: 56px;
+        min-width: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        border: 0.33mm solid transparent;
+        border-radius: 28px;
+        background: #fffdf9;
+        color: #000000;
+        font-family: var(--font-body);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .phone-tab.is-active {
+        border-color: #d9d0c3;
+        background: #ececec;
+        color: #000000;
+      }
+
+      .phone-tab svg {
+        width: 16px;
+        height: 16px;
+        color: #000000;
+      }
+
+      .app-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: #ffffff;
+        padding: 32px 28px 30px;
+        color: var(--ink);
+        box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
+      }
+
+      .app-card-muted {
+        background: var(--surface-muted);
+      }
+
+      .app-sample .app-card {
+        border: 0.33mm solid #e8dfd2;
+        border-radius: 30px;
+        padding: 26px 24px 24px;
+        box-shadow: 0 24px 52px -44px rgba(30, 27, 22, 0.34);
+      }
+
+      .app-eyebrow {
+        margin: 0;
+        color: #6e6a65;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .app-card h3,
+      .app-card h4 {
+        margin: 12px 0 0;
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.1;
+      }
+
+      .app-card h4 {
+        font-size: 24px;
+      }
+
+      .app-sample .app-card h3,
+      .app-sample .app-card h4 {
+        max-width: calc(100% - 82px);
+        font-size: 29px;
+        font-weight: 600;
+        line-height: 1.08;
+      }
+
+      .app-copy {
+        max-width: 14.75rem;
+        margin: 24px 0 0;
+        color: #55514d;
+        font-size: 15.5px;
+        line-height: 1.62;
+      }
+
+      .app-score {
+        position: absolute;
+        right: 18px;
+        top: 24px;
+        display: grid;
+        width: 58px;
+        height: 58px;
+        place-items: center;
+        border: 7px solid #eadfce;
+        border-radius: 50%;
+        color: var(--ink);
+        background: #ffffff;
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .app-checkin-score {
+        width: 68px;
+        height: 68px;
+        border: 0;
+        background:
+          radial-gradient(circle at center, #ffffff 0 57%, transparent 58%),
+          conic-gradient(#44abc3 0 var(--score-deg, 0deg), #eadfce var(--score-deg, 0deg) 360deg);
+        color: var(--ink);
+        font-size: 16px;
+      }
+
+      .app-progress-score {
+        width: 62px;
+        height: 62px;
+        border: 7px solid #eadfce;
+        background:
+          radial-gradient(circle at center, #7c5cff 0 47%, transparent 49%),
+          conic-gradient(#eadfce 0 360deg);
+        color: #111111;
+      }
+
+      .app-progress-score svg {
+        width: 28px;
+        height: 28px;
+      }
+
+      .app-progress-score.is-complete {
+        background:
+          radial-gradient(circle at center, #7c5cff 0 47%, transparent 49%),
+          conic-gradient(#7c5cff 0 120deg, #eadfce 120deg 360deg);
+        color: #ffffff;
+        font-size: 16px;
+      }
+
+      .app-progress-score.is-complete svg {
+        display: none;
+      }
+
+      .app-date-options,
+      .app-choice-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .app-date-options {
+        max-width: 17rem;
+        margin-top: 34px;
+      }
+
+      .app-date-options .app-pill:nth-child(3) {
+        grid-column: 1 / 2;
+      }
+
+      [data-checkin-home] .app-card {
+        min-height: 24.5rem;
+      }
+
+      [data-checkin-home] .app-card h3 {
+        margin-top: 0;
+      }
+
+      [data-checkin-home] .app-eyebrow {
+        margin-top: 4px;
+      }
+
+      [data-checkin-home] .app-date-label {
+        font-size: 9.6px;
+      }
+
+      [data-checkin-home] .app-copy {
+        max-height: 12rem;
+        overflow: hidden;
+      }
+
+      [data-checkin-home] .app-quote {
+        max-width: 14.75rem;
+        margin-top: 24px;
+        color: #55514d;
+        font-size: 16px;
+        line-height: 1.52;
+      }
+
+      [data-checkin-home] .app-quote-author {
+        display: block;
+        margin-top: 12px;
+        color: #8c7f70;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+
+      .app-pill {
+        min-height: 48px;
+        border: 0.33mm solid #eadfce;
+        border-radius: 999px;
+        background: #fffaf2;
+        padding: 0 14px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .app-pill.primary {
+        border-color: var(--accent-dark);
+        background: var(--accent-dark);
+        color: var(--white);
+      }
+
+      .app-pill.is-selected {
+        border-color: #111111;
+        background: #111111;
+        color: var(--white);
+      }
+
+      .app-checkin-status {
+        min-height: 1.4em;
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .app-week {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 24px;
+      }
+
+      .app-day {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--white);
+        color: var(--tertiary);
+        padding: 8px 4px;
+        text-align: center;
+        font-size: 10px;
+      }
+
+      .app-day.is-complete {
+        border-color: #79b84a;
+        background: #dff5cf;
+        color: #1f5a14;
+      }
+
+      .app-day.is-partial {
+        border-color: #d28a35;
+        background: #ffead1;
+        color: #794712;
+      }
+
+      .app-day.is-empty {
+        background: #ffffff;
+        color: #777777;
+      }
+
+      .app-day strong,
+      .app-day span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .app-choice-grid {
+        margin-top: 20px;
+      }
+
+      .app-question-list {
+        display: grid;
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .app-question {
+        display: flex;
+        min-height: 21rem;
+        flex-direction: column;
+        border-top: 0;
+        border-radius: 30px;
+        background: var(--surface-muted);
+        padding: 20px;
+        box-shadow: 0 20px 44px -38px rgba(30, 27, 22, 0.4);
+      }
+
+      .app-question:first-child {
+        border-top: 0;
+      }
+
+      .app-question h5 {
+        margin: 12px 0 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.1;
+      }
+
+      .app-question .app-copy {
+        max-width: none;
+        margin-top: 18px;
+        font-size: 16px;
+        font-weight: 500;
+        line-height: 1.5;
+      }
+
+      .app-question .app-week {
+        margin-top: 24px;
+      }
+
+      .app-question .app-choice-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 18px;
+      }
+
+      .app-complete {
+        width: 100%;
+        margin-top: 18px;
+      }
+
+      .lesson-card-preview {
+        min-height: 29rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .lesson-card-preview-content {
+        padding-top: 0;
+      }
+
+      .lesson-card-preview .app-eyebrow {
+        font-size: 9.6px;
+      }
+
+      .app-sample .lesson-card-preview h3 {
+        max-width: none;
+        line-height: 1.18;
+      }
+
+      .lesson-card-preview .app-copy {
+        max-width: 15rem;
+        margin-top: 24px;
+      }
+
+      .lesson-card-preview .button {
+        align-self: flex-start;
+        min-height: 52px;
+        border-radius: 999px;
+        background: #111111;
+        padding: 0 26px;
+        color: #ffffff;
+        font-size: 18px;
+      }
+
+      .lesson-open-preview {
+        display: grid;
+        gap: 18px;
+      }
+
+      .lesson-open-preview h4 {
+        margin: 12px 0 0;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.1;
+      }
+
+      .quiz-box {
+        border-radius: 24px;
+        background: var(--surface-muted);
+        padding: 18px;
+      }
+
+      .quiz-question {
+        margin: 14px 0 0;
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .quiz-question-block + .quiz-question-block {
+        margin-top: 18px;
+      }
+
+      .quiz-option {
+        display: flex;
+        width: 100%;
+        min-height: 50px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border: 0;
+        border-radius: 18px;
+        background: var(--white);
+        padding: 12px 14px;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .quiz-radio {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--white);
+      }
+
+      .quiz-option.is-selected .quiz-radio {
+        border-color: #111111;
+        background: #111111;
+      }
+
+      .quiz-option.is-correct {
+        background: #dff5cf;
+        color: #1f5a14;
+      }
+
+      .quiz-option.is-correct .quiz-radio {
+        border-color: #79b84a;
+        background: #79b84a;
+      }
+
+      .quiz-option.is-incorrect {
+        background: #f8d8d3;
+        color: #8a2418;
+      }
+
+      .quiz-option.is-incorrect .quiz-radio {
+        border-color: #c54817;
+        background: #c54817;
+      }
+
+      .lesson-video {
+        position: relative;
+        display: grid;
+        min-height: 220px;
+        place-items: center;
+        overflow: hidden;
+        border-radius: 24px;
+        background: #111111;
+        color: var(--white);
+      }
+
+      .lesson-video-player {
+        position: absolute;
+        inset: 0;
+        display: none;
+        width: 100%;
+        height: 100%;
+        background: #111111;
+        object-fit: cover;
+      }
+
+      .lesson-video.has-video .lesson-video-player {
+        display: block;
+      }
+
+      .lesson-video.has-video .lesson-video-content,
+      .lesson-video.has-video::before {
+        display: none;
+      }
+
+      .lesson-video::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), transparent 58%);
+      }
+
+      .lesson-video-content {
+        position: relative;
+        display: grid;
+        gap: 12px;
+        justify-items: center;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .play-dot {
+        display: grid;
+        width: 62px;
+        height: 62px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--white);
+        color: #111111;
+        font-size: 28px;
+        line-height: 1;
+      }
+
+      .quote {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        align-items: center;
+        border-radius: 36px;
+        background: #b75025;
+        color: var(--bg);
+        padding: clamp(28px, 5vw, 56px);
+      }
+
+      .quote h2 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 32px;
+        font-weight: 300;
+        line-height: 1.1;
+      }
+
+      .quote p {
+        color: var(--bg);
+        margin-bottom: 22px;
+      }
+
+      .quote-content .download-button {
+        background: var(--bg);
+        color: var(--accent-dark);
+      }
+
+      .quote-content .download-button:hover {
+        border-color: transparent;
+        background: #f9ebdb;
+        box-shadow: none;
+      }
+
+      .quote-content .download-button:active {
+        background: #f9ebdb;
+        box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2), inset 0 0 0 4px #ebcfc3, 0 0 0 5px #dfa289;
+      }
+
+      .faq {
+        display: block;
+        counter-reset: faq;
+        border-top: 1px solid var(--line);
+      }
+
+      .faq details {
+        counter-increment: faq;
+        margin-top: -1px;
+        border: 0;
+        border-radius: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        padding: 0;
+      }
+
+      .faq summary {
+        display: grid;
+        grid-template-columns: 50% 50%;
+        align-items: stretch;
+        padding: 0;
+        cursor: pointer;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 400;
+        line-height: 1.1;
+        list-style: none;
+      }
+
+      .faq summary::before {
+        content: counter(faq) ".";
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 20px 85px 20px 0;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .faq summary span {
+        position: relative;
+        display: block;
+        border-left: 1px solid var(--line);
+        padding: 20px 76px 20px 20px;
+        color: var(--ink);
+        font: inherit;
+        transition: color 0.3s ease;
+      }
+
+      .faq summary span::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: 20px;
+        transform: translateY(-50%);
+        width: 44px;
+        height: 44px;
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        background:
+          linear-gradient(currentColor, currentColor) center / 20px 1px no-repeat,
+          linear-gradient(currentColor, currentColor) center / 1px 20px no-repeat;
+      }
+
+      .faq details[open] summary span::after {
+        background: linear-gradient(currentColor, currentColor) center / 20px 1px no-repeat;
+      }
+
+      .faq summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq details p {
+        max-width: 400px;
+        margin: 0 0 0 50%;
+        border-left: 1px solid var(--line);
+        padding: 24px 0 40px 20px;
+        color: var(--body-copy);
+        font-family: var(--font-body);
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 1.5;
+        letter-spacing: 0.04em;
+      }
+
+      .faq details:hover summary::before,
+      .faq details:hover summary span,
+      .faq details[open] summary::before,
+      .faq details[open] summary span {
+        color: var(--accent-dark);
+      }
+
+      footer {
+        width: min(1240px, calc(100% - 32px));
+        overflow: hidden;
+        border-radius: 32px;
+        background: #f9ebdb;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 400;
+        line-height: 1.5;
+      }
+
+      .footer-top {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(180px, 0.6fr) minmax(220px, 1fr);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .footer-desc,
+      .footer-nav,
+      .footer-contact {
+        padding-top: 42px;
+        padding-bottom: 40px;
+      }
+
+      .footer-desc {
+        max-width: 630px;
+        border-right: 1px solid var(--line);
+        padding-left: 40px;
+        padding-right: clamp(32px, 9vw, 170px);
+      }
+
+      .footer-desc p,
+      .footer-bottom p {
+        margin: 0;
+        letter-spacing: 0.04em;
+      }
+
+      .footer-desc p + p {
+        margin-top: 24px;
+      }
+
+      .footer-nav {
+        border-right: 1px solid var(--line);
+        padding-left: 40px;
+        padding-right: 40px;
+      }
+
+      .footer-contact {
+        padding-left: 40px;
+        padding-right: 32px;
+      }
+
+      .footer-title {
+        margin: 0 0 8px;
+        color: var(--accent-dark);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.5;
+        letter-spacing: 0.02em;
+      }
+
+      .footer-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        letter-spacing: 0.04em;
+      }
+
+      .footer-list a:hover,
+      .footer-tech-links a:hover {
+        color: var(--accent-dark);
+      }
+
+      .footer-logo-row {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        border-bottom: 1px solid var(--line);
+        padding: 52px 40px 28px;
+      }
+
+      .footer-logo-row a {
+        display: flex;
+        width: 164px;
+        overflow: hidden;
+        justify-content: flex-end;
+        text-align: right;
+      }
+
+      .footer-logo-row img {
+        width: 234px;
+        max-width: none;
+        height: auto;
+        display: block;
+      }
+
+      .footer-bottom {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 24px 40px;
+      }
+
+      .footer-tech-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        letter-spacing: 0.04em;
+      }
+
+      .footer-legal {
+        max-width: 520px;
+        font-size: 11.2px;
+        text-align: right;
+        letter-spacing: 0.04em;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 920px) {
+        .nav {
+          width: min(1120px, calc(100% - 32px));
+        }
+
+        .hero {
+          width: min(1120px, calc(100% - 32px));
+        }
+
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 51px;
+        }
+
+        .splash-preview {
+          width: min(100%, 450px);
+        }
+
+        .quote {
+          grid-template-columns: 1fr;
+        }
+
+        footer {
+          width: 100%;
+          border-radius: 0;
+        }
+
+        .footer-top {
+          grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+        }
+
+        .footer-desc {
+          grid-column: 1 / -1;
+          max-width: none;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 40px 32px 32px;
+        }
+
+        .footer-nav {
+          border-right: 1px solid var(--line);
+          padding: 32px 32px 30px;
+        }
+
+        .footer-contact {
+          padding: 32px 32px 30px;
+        }
+
+        .footer-logo-row {
+          justify-content: center;
+          padding: 32px;
+        }
+
+        .footer-logo-row a {
+          width: 164px;
+          justify-content: center;
+        }
+
+        .footer-logo-row img {
+          width: 234px;
+        }
+
+        .footer-bottom {
+          flex-direction: column;
+          align-items: center;
+          max-width: 390px;
+          margin: 0 auto;
+          padding: 32px 24px 12px;
+          text-align: center;
+        }
+
+        .footer-tech-links {
+          width: 100%;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .footer-legal {
+          max-width: none;
+          text-align: center;
+        }
+
+        .queue-card {
+          flex-basis: min(88vw, 22rem);
+        }
+
+        .demo-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .mock-guide {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 12px;
+          justify-items: center;
+        }
+
+        .mock-guide-note {
+          width: min(100%, 390px);
+          justify-self: center;
+          margin-top: 0;
+          border-radius: 16px;
+          padding: 12px 14px;
+          box-shadow: 0 12px 30px -28px rgba(30, 27, 22, 0.44);
+        }
+
+        .mock-guide-note strong,
+        .mock-guide-note span {
+          display: inline;
+        }
+
+        .mock-guide-note strong {
+          margin-right: 8px;
+          font-size: 11px;
+        }
+
+        .mock-guide-note span {
+          margin-top: 0;
+          font-size: 13px;
+        }
+
+        .mock-guide-note.left {
+          order: 1;
+          margin-top: 0;
+          margin-right: 0;
+        }
+
+        .mock-guide-note.right {
+          order: 2;
+          margin-top: 0;
+          margin-left: 0;
+        }
+
+        .mock-guide .app-sample {
+          order: 3;
+        }
+
+        .mock-guide-note::before,
+        .mock-guide-note::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .nav {
+          align-items: center;
+        }
+
+        .nav-links,
+        .nav > .button {
+          display: none;
+        }
+
+        .mobile-menu {
+          display: block;
+        }
+
+        .hero {
+          min-height: auto;
+          padding-top: 20px;
+        }
+
+        h1 {
+          font-size: 42px;
+        }
+
+        .hero-actions .button {
+          width: 100%;
+        }
+
+        .app-preview {
+          order: 0;
+          justify-content: center;
+          min-height: auto;
+          width: 100%;
+        }
+
+        .splash-preview {
+          width: min(100%, 343px);
+          aspect-ratio: 343 / 330;
+          border-radius: 24px;
+        }
+
+        .section-heading {
+          display: block;
+        }
+
+        .section-heading p {
+          margin-top: 12px;
+          font-size: 14px;
+        }
+
+        .queue-card {
+          min-height: 24rem;
+          padding: 24px;
+        }
+
+        .pillars .queue-card {
+          min-height: 19.2rem;
+        }
+
+        .queue-card p {
+          font-size: 16.8px;
+        }
+
+        .queue-card h3,
+        .demo-card h3,
+        .lesson-open-preview h4 {
+          font-size: 24px;
+        }
+
+        .app-sample .app-card h3,
+        .app-sample .app-card h4 {
+          font-size: 32px;
+        }
+
+        .app-question h5 {
+          font-size: 20px;
+        }
+
+        .faq summary {
+          grid-template-columns: 52px minmax(0, 1fr);
+          font-size: 20px;
+        }
+
+        .faq summary::before {
+          justify-content: flex-start;
+          padding: 18px 12px 18px 0;
+        }
+
+        .faq summary span {
+          border-left: 0;
+          padding: 18px 58px 18px 0;
+        }
+
+        .faq summary span::after {
+          right: 0;
+        }
+
+        .faq details p {
+          max-width: 33rem;
+          margin-left: 52px;
+          border-left: 0;
+          padding: 0 0 28px 0;
+          font-size: 14px;
+        }
+
+        .demo-card p,
+        .app-copy,
+        .app-question .app-copy,
+        .quiz-question,
+        details p {
+          font-size: 14px;
+        }
+
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="nav">
+        <a class="brand" href="#top" aria-label="CoachSense home">
+          <img src="coachsense-logo.svg" alt="CoachSense" />
+        </a>
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="#top">Home</a>
+          <a href="#pillars">Pillars</a>
+          <a href="#how">How it works</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a class="button download-button" href="#download">Download the App</a>
+        <details class="mobile-menu">
+          <summary aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M4 7h16" />
+              <path d="M4 12h16" />
+              <path d="M4 17h16" />
+            </svg>
+          </summary>
+          <div class="mobile-menu-panel">
+            <a href="#top">Home</a>
+            <a href="#pillars">Pillars</a>
+            <a href="#how">How it works</a>
+            <a href="#faq">FAQ</a>
+            <a class="button download-button" href="#download">Download the App</a>
+          </div>
+        </details>
+      </header>
+
+      <main id="top">
+        <section class="hero" aria-labelledby="hero-title">
+          <div>
+            <div class="eyebrow">Daily coaching for real life</div>
+            <h1 id="hero-title">Find <span class="title-accent">your</span> own way.</h1>
+            <p class="lead">
+              Coaching for daily life. Strengthen your inner sense, one small step at a time.
+            </p>
+            <div class="hero-actions">
+              <a class="button download-button" href="#download">Download the App</a>
+            </div>
+          </div>
+
+          <aside class="app-preview" aria-label="CoachSense app preview">
+            <div class="splash-preview" aria-label="CoachSense splash animation">
+              <img class="splash-preview-icon" src="coachsense-icon-transparent.svg" alt="" />
+              <div class="splash-preview-pillars" aria-hidden="true">
+                <span class="splash-pillar-item splash-pillar-resilience">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                      <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                      <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
+                      <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">
+                    Build Resilience
+                  </span>
+                </span>
+                <span class="splash-pillar-item splash-pillar-purpose">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
+                      <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                      <path d="M12 10h2" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">
+                    Focus on Purpose
+                  </span>
+                </span>
+                <span class="splash-pillar-item splash-pillar-reflection">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
+                      <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">
+                    Gain self-awareness
+                  </span>
+                </span>
+                <span class="splash-pillar-item splash-pillar-recovery">
+                  <span class="splash-pillar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
+                      <path d="M16.5 4.8h3" />
+                      <path d="M18 3.3v3" />
+                      <path d="M7.5 16.5c1.4 1 3.1 1.5 5 1.2" />
+                    </svg>
+                  </span>
+                  <span class="splash-pillar-label">
+                    Recover better
+                  </span>
+                </span>
+              </div>
+              <div class="splash-preview-words" aria-hidden="true">
+                <span class="splash-preview-word splash-word-find">Find</span>
+                <span class="splash-preview-word splash-word-your">your</span>
+                <span class="splash-preview-word splash-word-own">own</span>
+                <span class="splash-preview-word splash-word-way">way.</span>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section id="pillars">
+          <div class="section-heading">
+            <h2>Four pillars that help life make more sense.</h2>
+            <p>CoachSense keeps things simple: daily guidance shaped around the areas that support personal growth.</p>
+          </div>
+          <div class="queue-rail pillars">
+            <article class="queue-card pillar" style="--tone:#44abc3;--circle-bg:#e9f6fa;--circle-fg:#44abc3;">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 13.5c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                    <path d="M6 17c1.9-2 4.2-2 6 0s4.1 2 6 0" />
+                    <path d="M12 4.5a5 5 0 0 0-5 5c0 1.4.6 2.6 1.5 3.5" />
+                    <path d="M12 4.5a5 5 0 0 1 5 5c0 1.4-.6 2.6-1.5 3.5" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Resilience</h3>
+              <p>Stay steady, adapt and recover your footing when life pulls you off course.</p>
+            </article>
+            <article class="queue-card pillar" style="--tone:#0f8b8d;--circle-bg:#e8f7f7;--circle-fg:#0f8b8d;">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 21s7-5.3 7-11a7 7 0 0 0-14 0c0 5.7 7 11 7 11Z" />
+                    <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                    <path d="M12 10h2" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Purpose</h3>
+              <p>Reconnect with what matters, where you are heading and why it matters.</p>
+            </article>
+            <article class="queue-card pillar" style="--tone:#7c5cff;--circle-bg:#f2efff;--circle-fg:#7c5cff;">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 12s3.1-5.5 8-5.5S20 12 20 12s-3.1 5.5-8 5.5S4 12 4 12Z" />
+                    <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Reflection</h3>
+              <p>Understand your patterns, learn from experience and build self-awareness.</p>
+            </article>
+            <article class="queue-card pillar" style="--tone:#c9764f;--circle-bg:#fff1ea;--circle-fg:#c9764f;">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 15.2A7.2 7.2 0 0 1 8.8 5a7.8 7.8 0 1 0 10.2 10.2Z" />
+                    <path d="M16.5 4.8h3" />
+                    <path d="M18 3.3v3" />
+                    <path d="M7.5 16.5c1.4 1 3.1 1.5 5 1.2" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Recovery</h3>
+              <p>Protect your energy, create space to reset and support better decisions.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="how">
+          <div class="section-heading">
+            <h2>Small daily actions. A stronger inner sense.</h2>
+            <p>
+              No complicated programme. Just short lessons, check-ins and coaching prompts that help you keep moving
+              forward.
+            </p>
+          </div>
+          <div class="queue-rail steps">
+            <article class="queue-card step">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle" style="--circle-bg:#fff2e8;--circle-fg:#d3541b;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 5.5h14v13H5z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 13h3" />
+                    <path d="m13.5 14.2 1.5 1.5 3-3.4" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Check in</h3>
+              <p>Each selected pillar becomes a daily cue card. Choose Today, Yesterday, or Last week and answer a short check-in.</p>
+              <a class="queue-try" href="#resilience-checkin-demo">How it works</a>
+            </article>
+            <article class="queue-card step">
+              <span class="queue-ring" aria-hidden="true">
+                <span class="queue-circle" style="--circle-bg:#fff2e8;--circle-fg:#d3541b;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 5.5h10a3 3 0 0 1 3 3v10H8a3 3 0 0 1-3-3v-10Z" />
+                    <path d="M8.5 9h6" />
+                    <path d="M8.5 12.5h6" />
+                    <path d="M8 18.5V7.5" />
+                  </svg>
+                </span>
+              </span>
+              <h3>Learn</h3>
+              <p>Lessons move through short concept units linked to your pillars, with simple questions to help the idea stick.</p>
+              <a class="queue-try" href="#resilience-checkin-demo" data-jump-tab="learn">How it works</a>
+            </article>
+          </div>
+        </section>
+
+        <section id="try-it">
+          <div class="section-heading">
+            <h2>How it works.</h2>
+            <p>These website demos show the feel of CoachSense without saving data or creating an account.</p>
+          </div>
+          <div class="demo-grid">
+            <div class="mock-guide">
+              <aside class="mock-guide-note left" aria-label="Check-in interaction tip">
+                <strong>Check in</strong>
+                <span>Press Today, Yesterday or Last week, then answer the Yes / No questions.</span>
+              </aside>
+            <div class="app-sample app-sample-single" id="resilience-checkin-demo" data-app-shell>
+              <div class="phone-status" aria-hidden="true">
+                <span>13:29</span>
+                <span class="phone-status-icons">
+                  <span class="phone-signal"></span>
+                  <span class="phone-wifi"></span>
+                  <span class="phone-battery"><span></span></span>
+                </span>
+              </div>
+              <div class="phone-app-top">
+                <p class="phone-greeting">Hi Julian</p>
+                <div class="phone-metrics" aria-hidden="true">
+                  <span class="phone-metric phone-metric-ring">0</span>
+                  <span class="phone-metric phone-metric-streak">
+                    <span>♨</span>
+                    <span>2</span>
+                  </span>
+                  <span class="phone-metric phone-metric-menu">≡</span>
+                </div>
+                <span class="visually-hidden" data-phone-title>Check-in</span>
+              </div>
+              <div class="mock-screen" data-mock-screen="checkin">
+                <div class="mock-surface" data-checkin-home>
+                  <article class="app-card">
+                    <span class="app-score app-checkin-score" data-checkin-score style="--score-deg: 0deg;">0</span>
+                    <h3>Resilience</h3>
+                    <p class="app-eyebrow app-date-label">Journal Mon 29 Jun</p>
+                    <p class="app-quote">
+                      "He who has a why to live can bear almost any how."
+                      <span class="app-quote-author">Friedrich Nietzsche</span>
+                    </p>
+                    <div class="app-date-options" data-checkin-dates>
+                      <button class="app-pill" type="button" data-checkin-date="Last week">Last week</button>
+                      <button class="app-pill" type="button" data-checkin-date="Yesterday">Yesterday</button>
+                      <button class="app-pill is-selected" type="button" data-checkin-date="Today">Today</button>
+                    </div>
+                  </article>
+                </div>
+
+                <div class="mock-surface" data-tracker-detail hidden>
+                  <button class="mock-back" type="button" data-tracker-back aria-label="Back">‹</button>
+                  <div class="app-question-list">
+                    <section class="app-question" data-checkin-question="Calm & Control">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 1 of 3</p>
+                      <h5>Calm &amp; Control</h5>
+                      <p class="app-copy" data-checkin-copy="Did you feel calm and in control for most of today?">
+                        Did you feel calm and in control for most of today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly calm and control tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Tue</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill" type="button" data-checkin-value="No">No</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="Yes">Yes</button>
+                      </div>
+                    </section>
+                    <section class="app-question" data-checkin-question="Enjoyment / Restoration">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 2 of 3</p>
+                      <h5>Enjoyment / Restoration</h5>
+                      <p class="app-copy" data-checkin-copy="Did you make time for something enjoyable or restorative today?">
+                        Did you make time for something enjoyable or restorative today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly enjoyment and restoration tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-partial"><strong>Tue</strong><span>No</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill is-selected" type="button" data-checkin-value="No">No</button>
+                        <button class="app-pill" type="button" data-checkin-value="Yes">Yes</button>
+                      </div>
+                    </section>
+                    <section class="app-question" data-checkin-question="Stress Recovery">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 3 of 3</p>
+                      <h5>Stress Recovery</h5>
+                      <p class="app-copy" data-checkin-copy="Did you use a reset or recovery strategy today?">
+                        Did you use a reset or recovery strategy today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly stress recovery tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Tue</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill" type="button" data-checkin-value="No">No</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="Yes">Yes</button>
+                      </div>
+                    </section>
+                  </div>
+                  <p class="app-checkin-status" data-checkin-status>Selected: 2 of 3 marked Yes</p>
+                  <button class="button app-complete" type="button" data-checkin-complete>Complete check-in</button>
+                </div>
+              </div>
+
+              <div class="mock-screen" data-mock-screen="learn" hidden>
+                <div class="mock-surface" data-learn-home>
+                  <article class="app-card lesson-card-preview">
+                    <span class="app-score app-progress-score" aria-hidden="true" data-lesson-score>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 4.5c1.7-1.6 4.7-.6 5 1.9 2.2.2 3.5 2.6 2.3 4.5 1.1 1.9-.2 4.3-2.4 4.4-.4 2.5-3.3 3.5-5 1.9-1.7 1.6-4.7.6-5-1.9-2.2-.2-3.5-2.6-2.3-4.5-1.1-1.9.2-4.3 2.4-4.4.4-2.5 3.3-3.5 5-1.9Z" />
+                        <path d="M8.8 11.8h.1" />
+                        <path d="M15.1 11.8h.1" />
+                        <path d="M9.3 14.4c1.4 1.1 3.9 1.1 5.3 0" />
+                      </svg>
+                    </span>
+                    <div class="lesson-card-preview-content">
+                      <p class="app-eyebrow">Emotional Awareness</p>
+                      <h3>Why<br />Emotions<br />Matter:<br />Signals, Not Problems</h3>
+                      <p class="app-copy">
+                        Notice one feeling today and reflect on what it might be telling you about your needs or values.
+                      </p>
+                    </div>
+                    <button class="button" type="button" data-open-lesson data-lesson-action>Start lesson</button>
+                  </article>
+                </div>
+
+                <div class="mock-surface" data-lesson-detail hidden>
+                  <button class="mock-back" type="button" data-lesson-back aria-label="Back">‹</button>
+                  <article class="lesson-open-preview">
+                    <div>
+                      <p class="app-eyebrow">Emotional Awareness · Lesson 1</p>
+                      <h4>Why<br />Emotions<br />Matter:<br />Signals, Not Problems</h4>
+                    </div>
+                    <div class="lesson-video" aria-label="Education programme lesson media" data-lesson-video-shell>
+                      <video class="lesson-video-player" controls playsinline preload="metadata" data-lesson-video-player src="https://healthsense-mear.onrender.com/reports/content/education/education-avatar-101-edu-avatar-101-435864b1ffce.mp4"></video>
+                      <div class="lesson-video-content">
+                        <span class="play-dot" aria-hidden="true">▶</span>
+                        <p data-lesson-video-status>Loading education programme lesson...</p>
+                      </div>
+                    </div>
+                  <div class="quiz-box">
+                    <p class="app-eyebrow">Quiz</p>
+                    <div class="demo-options" data-demo-group="lesson">
+                      <div class="quiz-question-block" data-quiz-question>
+                        <p class="quiz-question">In this lesson, how are emotions described?</p>
+                        <button class="quiz-option" type="button" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As proof of weakness</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As problems to solve immediately</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-correct="true" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As signals that carry information</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Seeing emotions as information helps you stay curious instead of trying to fight or suppress them.">
+                          <span>As flaws to remove</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                      </div>
+                      <div class="quiz-question-block" data-quiz-question>
+                        <p class="quiz-question">In the example of feeling anxious before a meeting, what can that emotion point to?</p>
+                        <button class="quiz-option" type="button" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>That you should cancel the meeting</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>That the meeting does not matter</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>That emotions are dangerous</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-correct="true" data-feedback="Anxiety in this context often signals importance, care, or a desire to protect something valuable.">
+                          <span>A wish to do well or protect something</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                      </div>
+                      <div class="quiz-question-block" data-quiz-question>
+                        <p class="quiz-question">What is the suggested attitude towards emotions in this programme?</p>
+                        <button class="quiz-option" type="button" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Judge them as good or bad</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Ignore them completely</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Force them to disappear</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                        <button class="quiz-option" type="button" data-correct="true" data-feedback="The focus is on recognising and understanding emotions, not judging or eliminating them.">
+                          <span>Listen to them as messages</span>
+                          <span class="quiz-radio" aria-hidden="true"></span>
+                        </button>
+                      </div>
+                    </div>
+                      <div class="demo-feedback" data-feedback-for="lesson">Answer the lesson question to see feedback.</div>
+                      <button class="button app-complete" type="button" data-submit-quiz>Submit quiz</button>
+                    </div>
+                  </article>
+                </div>
+              </div>
+              <nav class="phone-tabbar" aria-label="Mock app navigation">
+                <button class="phone-tab is-active" type="button" data-mock-tab="checkin" aria-pressed="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 5.5h14v13H5z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 13h3" />
+                    <path d="m13.5 14.2 1.5 1.5 3-3.4" />
+                  </svg>
+                  <span>Checkin</span>
+                </button>
+                <button class="phone-tab" type="button" data-mock-tab="learn" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 5.5h10a3 3 0 0 1 3 3v10H8a3 3 0 0 1-3-3v-10Z" />
+                    <path d="M8.5 9h6" />
+                    <path d="M8.5 12.5h6" />
+                    <path d="M8 18.5V7.5" />
+                  </svg>
+                  <span>Learn</span>
+                </button>
+              </nav>
+              <span class="phone-home" aria-hidden="true"></span>
+            </div>
+              <aside class="mock-guide-note right" aria-label="Learn interaction tip">
+                <strong>Learn</strong>
+                <span>Use the Checkin / Learn buttons, start the lesson, then submit the quiz.</span>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="quote" id="download">
+          <div class="quote-content">
+            <p>
+              CoachSense helps you slow down, make sense of where you are and build the habits that support where you
+              want to go.
+            </p>
+            <a class="button download-button" href="#">Download the App</a>
+          </div>
+          <div>
+            <h2>Not someone else's path. Your own.</h2>
+          </div>
+        </section>
+
+        <section id="faq">
+          <div class="section-heading">
+            <h2>Common questions about starting</h2>
+            <p>CoachSense is designed to be easy to start and easy to return to.</p>
+          </div>
+          <div class="faq">
+            <details>
+              <summary><span>What is CoachSense?</span></summary>
+              <p>
+                A personal coaching app that helps you build resilience, recovery, reflection and purpose through short
+                daily actions.
+              </p>
+            </details>
+            <details>
+              <summary><span>Do I need a perfect routine?</span></summary>
+              <p>
+                No. CoachSense is built around real life. Missed days do not break progress. You simply return, reflect
+                and continue.
+              </p>
+            </details>
+            <details>
+              <summary><span>Is it therapy?</span></summary>
+              <p>
+                No. CoachSense supports everyday wellbeing, reflection and personal growth. It does not replace medical
+                or mental health support.
+              </p>
+            </details>
+            <details>
+              <summary><span>How do I start?</span></summary>
+              <p>Download the app, complete your first check-in and follow the first short coaching prompt.</p>
+            </details>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <div class="footer-top">
+          <div class="footer-desc">
+            <p>
+              CoachSense is not a medical or mental health service. It is designed to support everyday wellbeing habits,
+              self-reflection and personal growth, not replace professional care.
+            </p>
+            <p>
+              If you are experiencing serious physical or emotional difficulties, please seek help from a qualified
+              specialist.
+            </p>
+          </div>
+          <nav class="footer-nav" aria-label="Footer menu">
+            <p class="footer-title">Menu</p>
+            <ul class="footer-list">
+              <li><a href="#top">Home</a></li>
+              <li><a href="#pillars">Pillars</a></li>
+              <li><a href="#how">How it works</a></li>
+              <li><a href="#download">Download</a></li>
+              <li><a href="#faq">FAQ</a></li>
+            </ul>
+          </nav>
+          <div class="footer-contact">
+            <p class="footer-title">Contacts</p>
+            <ul class="footer-list">
+              <li><a href="https://app.coachsense.ai/support">Contact Support</a></li>
+              <li><a href="https://app.coachsense.ai/login">Open the app</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-logo-row">
+          <a href="#top" aria-label="CoachSense home">
+            <img src="coachsense-logo.svg" alt="CoachSense" />
+          </a>
+        </div>
+        <div class="footer-bottom">
+          <nav aria-label="Legal and support links">
+            <ul class="footer-tech-links">
+              <li><a href="https://app.coachsense.ai/privacy">Privacy policy</a></li>
+              <li><a href="https://app.coachsense.ai/terms">Terms and conditions</a></li>
+              <li><a href="https://app.coachsense.ai/delete-account">Delete account</a></li>
+            </ul>
+          </nav>
+          <div class="footer-legal">
+            <p>© 2026 CoachSense.</p>
+            <p>
+              CoachSense is a trading name of <strong>CoachSense Group Limited</strong>. Registered in England & Wales.
+              Company No. 16877998.
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
+    <script>
+      function firstText() {
+        for (const value of arguments) {
+          const token = String(value || "").trim();
+          if (token) return token;
+        }
+        return "";
+      }
+
+      function likelyVideoUrl(value) {
+        const token = firstText(value).toLowerCase().split("?")[0];
+        return [".mp4", ".webm", ".mov", ".m4v"].some((extension) => token.endsWith(extension));
+      }
+
+      function normalizeLessonMediaUrl(value) {
+        const token = firstText(value);
+        if (!token) return "";
+        return token;
+      }
+
+      function lessonVideoUrl(lesson) {
+        const content = lesson && typeof lesson === "object" ? lesson.content || {} : {};
+        const avatar = content && typeof content === "object" ? content.avatar || {} : {};
+        const explicitVideo = firstText(
+          avatar.video_url,
+          avatar.videoUrl,
+          avatar.url,
+          avatar.result_url,
+          avatar.resultUrl,
+          content.video_url,
+        );
+        const normalized = normalizeLessonMediaUrl(explicitVideo);
+        return likelyVideoUrl(normalized) ? normalized : "";
+      }
+
+      function collectEducationLessons(data) {
+        const candidates = [];
+        const pushLesson = (lesson) => {
+          if (lesson && typeof lesson === "object") candidates.push(lesson);
+        };
+        pushLesson(data && data.lesson);
+        (Array.isArray(data && data.lessons) ? data.lessons : []).forEach(pushLesson);
+        const journey = data && data.journey && typeof data.journey === "object" ? data.journey : {};
+        (Array.isArray(journey.programmes) ? journey.programmes : []).forEach((programme) => {
+          (Array.isArray(programme && programme.lessons) ? programme.lessons : []).forEach(pushLesson);
+        });
+        const catalog = data && data.explore_catalog && typeof data.explore_catalog === "object" ? data.explore_catalog : {};
+        (Array.isArray(catalog.pillars) ? catalog.pillars : []).forEach((pillar) => {
+          (Array.isArray(pillar && pillar.concepts) ? pillar.concepts : []).forEach((concept) => {
+            (Array.isArray(concept && concept.lessons) ? concept.lessons : []).forEach(pushLesson);
+          });
+        });
+        return candidates;
+      }
+
+      function findPreviewEducationLessonVideo(data) {
+        const lessons = collectEducationLessons(data);
+        const matchingPreviewLesson = lessons.find((lesson) => {
+          const haystack = [
+            lesson && lesson.title,
+            lesson && lesson.summary,
+            lesson && lesson.goal,
+            lesson && lesson.concept_key,
+            lesson && lesson.concept_label,
+            lesson && lesson.pillar_key,
+            lesson && lesson.pillar_label,
+          ].join(" ").toLowerCase();
+          return (
+            haystack.includes("why emotions matter") ||
+            haystack.includes("signals, not problems") ||
+            haystack.includes("emotional awareness") ||
+            haystack.includes("emotional_awareness")
+          );
+        });
+        const fallbackLesson =
+          (data && data.lesson && typeof data.lesson === "object" ? data.lesson : null) ||
+          lessons.find((lesson) => lesson && lesson.is_current === true) ||
+          lessons.find((lesson) => String(lesson && lesson.status || "").trim().toLowerCase() === "current") ||
+          lessons[0];
+        return lessonVideoUrl(matchingPreviewLesson) || lessonVideoUrl(fallbackLesson) || lessons.map(lessonVideoUrl).find(Boolean) || "";
+      }
+
+      function showLessonVideo(url, shell, videoPlayer) {
+        const mediaUrl = normalizeLessonMediaUrl(url);
+        shell.classList.remove("has-video");
+        videoPlayer.pause();
+        videoPlayer.removeAttribute("src");
+        if (!likelyVideoUrl(mediaUrl)) return false;
+        videoPlayer.src = mediaUrl;
+        videoPlayer.load();
+        shell.classList.add("has-video");
+        return true;
+      }
+
+      function setLessonVideoStatus(message) {
+        const status = document.querySelector("[data-lesson-video-status]");
+        if (status) {
+          status.textContent = message;
+        }
+      }
+
+      async function loadEducationProgrammeMedia() {
+        const shell = document.querySelector("[data-lesson-video-shell]");
+        const videoPlayer = document.querySelector("[data-lesson-video-player]");
+        if (!shell || !videoPlayer) return;
+        const renderEmotionalAwarenessLessonOneVideoUrl =
+          "https://healthsense-mear.onrender.com/reports/content/education/education-avatar-101-edu-avatar-101-435864b1ffce.mp4";
+        showLessonVideo(renderEmotionalAwarenessLessonOneVideoUrl, shell, videoPlayer);
+        setLessonVideoStatus("Emotional Awareness lesson video from the education programme.");
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 1800);
+        try {
+          const response = await fetch("/api/education-plan/today?userId=2&includeExplore=true&exploreCacheOnly=true&prefetch=true", {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            throw new Error("video_unavailable");
+          }
+          const data = await response.json();
+          const url = findPreviewEducationLessonVideo(data);
+          if (!showLessonVideo(url, shell, videoPlayer)) {
+            showLessonVideo(renderEmotionalAwarenessLessonOneVideoUrl, shell, videoPlayer);
+          }
+        } catch (error) {
+          showLessonVideo(renderEmotionalAwarenessLessonOneVideoUrl, shell, videoPlayer);
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      }
+
+      document.querySelectorAll("[data-demo-group]").forEach((group) => {
+        const groupName = group.getAttribute("data-demo-group");
+        const feedback = document.querySelector(`[data-feedback-for="${groupName}"]`);
+        group.querySelectorAll(".demo-option, .quiz-option").forEach((button) => {
+          button.addEventListener("click", () => {
+            const optionScope = button.closest("[data-quiz-question]") || group;
+            optionScope.querySelectorAll(".demo-option, .quiz-option").forEach((option) => option.classList.remove("is-selected"));
+            optionScope.querySelectorAll(".quiz-option").forEach((option) => option.classList.remove("is-correct", "is-incorrect"));
+            button.classList.add("is-selected");
+            if (feedback) {
+              feedback.textContent = button.getAttribute("data-feedback") || "";
+            }
+          });
+        });
+      });
+
+      function updateLessonCompletion() {
+        document.querySelectorAll("[data-lesson-score]").forEach((scoreBadge) => {
+          scoreBadge.classList.add("is-complete");
+          scoreBadge.textContent = "1/3";
+        });
+        document.querySelectorAll("[data-lesson-action]").forEach((button) => {
+          button.textContent = "Lesson complete";
+        });
+      }
+
+      document.querySelectorAll("[data-submit-quiz]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const quizBox = button.closest(".quiz-box");
+          if (!quizBox) return;
+          const questions = Array.from(quizBox.querySelectorAll("[data-quiz-question]"));
+          let correctCount = 0;
+          let answeredCount = 0;
+          questions.forEach((question) => {
+            const selected = question.querySelector(".quiz-option.is-selected");
+            const correct = question.querySelector('.quiz-option[data-correct="true"]');
+            question.querySelectorAll(".quiz-option").forEach((option) => option.classList.remove("is-correct", "is-incorrect"));
+            if (selected) {
+              answeredCount += 1;
+              if (selected === correct) {
+                correctCount += 1;
+              } else {
+                selected.classList.add("is-incorrect");
+              }
+            }
+            if (correct) {
+              correct.classList.add("is-correct");
+            }
+          });
+          const feedback = quizBox.querySelector('[data-feedback-for="lesson"]');
+          if (feedback) {
+            feedback.textContent =
+              answeredCount === questions.length
+                ? `You got ${correctCount} of ${questions.length} correct. Correct answers are shown in green.`
+                : `You answered ${answeredCount} of ${questions.length}. Correct answers are shown in green.`;
+          }
+          updateLessonCompletion();
+        });
+      });
+
+      function setMockAppScreen(screenName) {
+        const shell = document.querySelector("[data-app-shell]");
+        if (!shell) return;
+        const nextScreen = screenName === "learn" ? "learn" : "checkin";
+        shell.querySelectorAll("[data-mock-screen]").forEach((screen) => {
+          screen.hidden = screen.getAttribute("data-mock-screen") !== nextScreen;
+        });
+        shell.querySelectorAll("[data-mock-tab]").forEach((button) => {
+          const active = button.getAttribute("data-mock-tab") === nextScreen;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+        const title = shell.querySelector("[data-phone-title]");
+        if (title) {
+          title.textContent = nextScreen === "learn" ? "Education" : "Check-in";
+        }
+        showTrackerDetail(false);
+        showLessonDetail(false);
+        const activeScreen = shell.querySelector(`[data-mock-screen="${nextScreen}"]`);
+        if (activeScreen) {
+          activeScreen.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function showTrackerDetail(open) {
+        const home = document.querySelector("[data-checkin-home]");
+        const detail = document.querySelector("[data-tracker-detail]");
+        if (!home || !detail) return;
+        home.hidden = Boolean(open);
+        detail.hidden = !open;
+        const screen = document.querySelector('[data-mock-screen="checkin"]');
+        if (screen) {
+          screen.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function showLessonDetail(open) {
+        const home = document.querySelector("[data-learn-home]");
+        const detail = document.querySelector("[data-lesson-detail]");
+        if (!home || !detail) return;
+        home.hidden = Boolean(open);
+        detail.hidden = !open;
+        const screen = document.querySelector('[data-mock-screen="learn"]');
+        if (screen) {
+          screen.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      document.querySelectorAll("[data-mock-tab]").forEach((button) => {
+        button.addEventListener("click", () => {
+          setMockAppScreen(button.getAttribute("data-mock-tab") || "checkin");
+        });
+      });
+
+      document.querySelectorAll("[data-jump-tab]").forEach((link) => {
+        link.addEventListener("click", () => {
+          setMockAppScreen(link.getAttribute("data-jump-tab") || "checkin");
+        });
+      });
+
+      document.querySelectorAll("[data-tracker-back]").forEach((button) => {
+        button.addEventListener("click", () => showTrackerDetail(false));
+      });
+
+      document.querySelectorAll("[data-open-lesson]").forEach((button) => {
+        button.addEventListener("click", () => showLessonDetail(true));
+      });
+
+      document.querySelectorAll("[data-lesson-back]").forEach((button) => {
+        button.addEventListener("click", () => showLessonDetail(false));
+      });
+
+      const checkinQuestions = Array.from(document.querySelectorAll("[data-checkin-question]"));
+      const checkinStatus = document.querySelector("[data-checkin-status]");
+      let selectedCheckinDate = "Today";
+
+      function updateCheckinStatus(message) {
+        if (!checkinStatus) return;
+        const yesCount = checkinQuestions.filter((question) =>
+          question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
+        ).length;
+        checkinStatus.textContent = message || `${selectedCheckinDate}: ${yesCount} of ${checkinQuestions.length} marked Yes`;
+      }
+
+      function updateCheckinScore(yesCount) {
+        const total = checkinQuestions.length || 1;
+        const percentage = Math.round((yesCount / total) * 100);
+        const scoreDegrees = Math.round((percentage / 100) * 360);
+        document.querySelectorAll("[data-checkin-score]").forEach((scoreBadge) => {
+          scoreBadge.textContent = `${percentage}`;
+          scoreBadge.style.setProperty("--score-deg", `${scoreDegrees}deg`);
+        });
+        return percentage;
+      }
+
+      function contextualizeCheckinCopy(copy) {
+        const text = String(copy || "");
+        if (selectedCheckinDate === "Yesterday") {
+          return text
+            .replace(" today?", " yesterday?")
+            .replace(" today", " yesterday");
+        }
+        if (selectedCheckinDate === "Last week") {
+          return text
+            .replace(" today?", " last week?")
+            .replace(" today", " last week");
+        }
+        return text;
+      }
+
+      function updateCheckinQuestions() {
+        checkinQuestions.forEach((question, index) => {
+          const heading = question.querySelector("[data-checkin-heading]");
+          const copy = question.querySelector("[data-checkin-copy]");
+          if (heading) {
+            heading.textContent = `${selectedCheckinDate} · ${index + 1} of ${checkinQuestions.length}`;
+          }
+          if (copy) {
+            copy.textContent = contextualizeCheckinCopy(copy.getAttribute("data-checkin-copy"));
+          }
+        });
+      }
+
+      document.querySelectorAll("[data-checkin-date]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedCheckinDate = button.getAttribute("data-checkin-date") || "Today";
+          document.querySelectorAll("[data-checkin-date]").forEach((option) => option.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          updateCheckinQuestions();
+          updateCheckinStatus();
+          showTrackerDetail(true);
+        });
+      });
+
+      document.querySelectorAll("[data-checkin-value]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const question = button.closest("[data-checkin-question]");
+          if (!question) return;
+          question.querySelectorAll("[data-checkin-value]").forEach((option) => option.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          updateCheckinStatus();
+        });
+      });
+
+      const completeCheckinButton = document.querySelector("[data-checkin-complete]");
+      if (completeCheckinButton) {
+        completeCheckinButton.addEventListener("click", () => {
+          const yesCount = checkinQuestions.filter((question) =>
+            question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
+          ).length;
+          const percentage = updateCheckinScore(yesCount);
+          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, score ${percentage}.`);
+          showTrackerDetail(false);
+        });
+      }
+
+      loadEducationProgrammeMedia();
+    </script>
+  </body>
+</html>
