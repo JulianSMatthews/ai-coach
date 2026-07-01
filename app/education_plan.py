@@ -4395,6 +4395,10 @@ def submit_education_quiz(
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
         selected_programme_day_id = _safe_int(programme_day_id)
+        selected_variant_id = _safe_int(lesson_variant_id)
+        selected_lesson_variant = session.get(EducationLessonVariant, int(selected_variant_id)) if selected_variant_id else None
+        if not selected_programme_day_id and selected_lesson_variant is not None:
+            selected_programme_day_id = _safe_int(getattr(selected_lesson_variant, "programme_day_id", None))
         if selected_programme_day_id:
             snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
             context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
@@ -4447,8 +4451,7 @@ def submit_education_quiz(
                 },
             )
             current_level = str(getattr(concept_level, "current_level", "") or "build").strip() or "build"
-            selected_variant_id = _safe_int(lesson_variant_id)
-            lesson_variant = session.get(EducationLessonVariant, int(selected_variant_id)) if selected_variant_id else None
+            lesson_variant = selected_lesson_variant
             if (
                 lesson_variant is None
                 or int(getattr(lesson_variant, "programme_day_id", 0) or 0) != int(programme_day.id)
@@ -4475,7 +4478,11 @@ def submit_education_quiz(
                     refresh_avatar_media=False,
                 )
                 state["quiz_submit_applied"] = False
-                state["quiz_submit_error"] = "No quiz is available for the selected lesson."
+                state["quiz_submit_error"] = (
+                    "No quiz is available for the selected lesson."
+                    f" programme_day_id={int(getattr(programme_day, 'id', 0) or 0) or 'missing'}"
+                    f" lesson_variant_id={int(getattr(lesson_variant, 'id', 0) or 0) or 'missing'}"
+                )
                 session.commit()
                 return state
             if _plan_last_programme_day_completed(session, plan=plan, programme=programme):
