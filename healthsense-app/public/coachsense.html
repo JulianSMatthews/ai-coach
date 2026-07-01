@@ -355,7 +355,7 @@
         width: min(43%, 238px);
         transform: translate(-50%, -50%) scale(0.68);
         opacity: 0;
-        animation: coach-icon-reveal 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-icon-reveal 48s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-preview-pillars {
@@ -389,7 +389,7 @@
         opacity: 0;
         transform: translateY(-150%) scale(0.92);
         box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
-        animation: coach-pillar-icon-feature 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-icon-feature 48s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
@@ -408,28 +408,28 @@
         opacity: 0;
         text-align: center;
         transform: translateY(150%) scale(0.96);
-        animation: coach-pillar-label-feature 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-pillar-label-feature 48s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
         animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-resilience {
         --pillar-color: #44abc3;
-        --pillar-delay: 5s;
+        --pillar-delay: 0s;
       }
 
       .splash-pillar-purpose {
         --pillar-color: #0f8b8d;
-        --pillar-delay: 13s;
+        --pillar-delay: 8s;
       }
 
       .splash-pillar-reflection {
         --pillar-color: #7c5cff;
-        --pillar-delay: 21s;
+        --pillar-delay: 16s;
       }
 
       .splash-pillar-recovery {
         --pillar-color: #c9764f;
-        --pillar-delay: 29s;
+        --pillar-delay: 24s;
       }
 
       .splash-preview-words {
@@ -449,7 +449,7 @@
         top: 50%;
         opacity: 0;
         transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 43s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        animation: coach-word-arrive 48s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
       }
 
       .splash-word-find {
@@ -483,12 +483,12 @@
 
       @keyframes coach-icon-reveal {
         0%,
-        90.2% {
+        83.3% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.68);
         }
-        91.2%,
-        99.5% {
+        85.4%,
+        98.5% {
           opacity: 1;
           transform: translate(-50%, -50%) scale(1);
         }
@@ -536,19 +536,19 @@
 
       @keyframes coach-word-arrive {
         0%,
-        84.5% {
+        66.7% {
           opacity: 0;
           transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
         }
-        87% {
+        68.8% {
           opacity: 1;
         }
-        88.5%,
-        89.7% {
+        70.8%,
+        76.5% {
           opacity: 1;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
         }
-        90.5%,
+        78.1%,
         100% {
           opacity: 0;
           transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
