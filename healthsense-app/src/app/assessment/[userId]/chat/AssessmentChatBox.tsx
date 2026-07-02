@@ -1814,12 +1814,16 @@ export default function AssessmentChatBox({
           userId,
           programme_day_id: programmeDayId || undefined,
           lesson_variant_id: activeEducationLessonVariantId || undefined,
+          quiz_id: Number(activeEducationQuiz?.id || activeEducationQuiz?.quiz_id || activeEducationQuiz?.quizId || 0) || undefined,
           answers,
         }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to submit quiz."));
+        const quizId = Number(activeEducationQuiz?.id || activeEducationQuiz?.quiz_id || activeEducationQuiz?.quizId || 0) || 0;
+        throw new Error(
+          `${parseApiError(text, "Failed to submit quiz.")} (programme_day_id=${programmeDayId || "missing"}, lesson_variant_id=${activeEducationLessonVariantId || "missing"}, quiz_id=${quizId || "missing"})`,
+        );
       }
       const payload = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
       if ((payload as any)?.quiz_submit_applied === false) {

@@ -8353,6 +8353,7 @@ def api_user_education_plan_quiz_submit(
         anchor=anchor,
         programme_day_id=_safe_int((body or {}).get("programme_day_id") or (body or {}).get("programmeDayId")),
         lesson_variant_id=_safe_int((body or {}).get("lesson_variant_id") or (body or {}).get("lessonVariantId")),
+        quiz_id=_safe_int((body or {}).get("quiz_id") or (body or {}).get("quizId")),
     )
     if result.get("quiz_submit_applied") is False:
         raise HTTPException(

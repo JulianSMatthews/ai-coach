@@ -4390,6 +4390,7 @@ def submit_education_quiz(
     anchor: date | None = None,
     programme_day_id: int | None = None,
     lesson_variant_id: int | None = None,
+    quiz_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
@@ -4397,6 +4398,14 @@ def submit_education_quiz(
         selected_programme_day_id = _safe_int(programme_day_id)
         selected_variant_id = _safe_int(lesson_variant_id)
         selected_lesson_variant = session.get(EducationLessonVariant, int(selected_variant_id)) if selected_variant_id else None
+        selected_quiz_id = _safe_int(quiz_id)
+        if selected_lesson_variant is None and selected_quiz_id:
+            selected_quiz = session.get(EducationQuiz, int(selected_quiz_id))
+            selected_lesson_variant = (
+                session.get(EducationLessonVariant, int(getattr(selected_quiz, "lesson_variant_id", 0) or 0))
+                if selected_quiz is not None
+                else None
+            )
         if selected_lesson_variant is None:
             answer_question_ids = [
                 _safe_int(row.get("question_id"))
