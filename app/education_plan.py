@@ -4397,6 +4397,28 @@ def submit_education_quiz(
         selected_programme_day_id = _safe_int(programme_day_id)
         selected_variant_id = _safe_int(lesson_variant_id)
         selected_lesson_variant = session.get(EducationLessonVariant, int(selected_variant_id)) if selected_variant_id else None
+        if selected_lesson_variant is None:
+            answer_question_ids = [
+                _safe_int(row.get("question_id"))
+                for row in answers or []
+                if isinstance(row, dict) and _safe_int(row.get("question_id"))
+            ]
+            if answer_question_ids:
+                question = (
+                    session.execute(
+                        select(EducationQuizQuestion)
+                        .where(EducationQuizQuestion.id.in_(answer_question_ids))
+                        .order_by(EducationQuizQuestion.id.asc())
+                    )
+                    .scalars()
+                    .first()
+                )
+                quiz = session.get(EducationQuiz, int(getattr(question, "quiz_id", 0) or 0)) if question is not None else None
+                selected_lesson_variant = (
+                    session.get(EducationLessonVariant, int(getattr(quiz, "lesson_variant_id", 0) or 0))
+                    if quiz is not None
+                    else None
+                )
         if not selected_programme_day_id and selected_lesson_variant is not None:
             selected_programme_day_id = _safe_int(getattr(selected_lesson_variant, "programme_day_id", None))
         if selected_programme_day_id:

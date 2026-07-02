@@ -25,6 +25,19 @@ function getCookieValue(cookieHeader: string, key: string): string | null {
   return match ? match[1] : null;
 }
 
+function parseUpstreamError(text: string, fallback: string) {
+  const raw = String(text || "").trim();
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown; detail?: unknown };
+    const message = parsed.detail || parsed.error;
+    if (message) return String(message);
+  } catch {
+    // Keep raw text when the upstream response is not JSON.
+  }
+  return raw;
+}
+
 function normalizeReportUrl(value: unknown, base: string): string | null {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -109,7 +122,7 @@ export async function POST(request: Request) {
     });
     const text = await res.text().catch(() => "");
     if (!res.ok) {
-      return NextResponse.json({ error: text || "Failed to submit education quiz" }, { status: res.status });
+      return NextResponse.json({ error: parseUpstreamError(text, "Failed to submit education quiz") }, { status: res.status });
     }
     const data = (text ? JSON.parse(text) : {}) as Record<string, unknown>;
     return NextResponse.json(normalizeEducationPlanMedia(data, base));
