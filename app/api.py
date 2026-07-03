@@ -5031,6 +5031,18 @@ def health():
         "reports_dir_exists": os.path.isdir(reports_dir),
     }
 
+@app.get("/api/version")
+def api_version():
+    return {
+        "ok": True,
+        "service": "coachsense-api",
+        "source_marker": "quiz-submit-debug-2026-07-03",
+        "expected_commit": "2fadf74",
+        "render_git_commit": os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT") or "",
+        "env": ENV,
+        "app_start_uk": APP_START_UK_STR,
+    }
+
 @app.get("/")
 def root():
     return {
