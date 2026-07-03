@@ -41,7 +41,7 @@ The reviewer should be able to test:
 
 ## Subscription/payment explanation
 
-HealthSense is currently free to access in this iOS version. No payment, subscription, external checkout, or support-led
+CoachSense is currently free to access in this iOS version. No payment, subscription, external checkout, or support-led
 subscription setup is offered in the app.
 
 If a future version charges for digital app features, it will use Apple's In-App Purchase before submission.
