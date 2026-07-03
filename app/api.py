@@ -442,6 +442,22 @@ def _uptime_seconds() -> int:
     except Exception:
         return 0
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    try:
+        return str(value)
+    except Exception:
+        return None
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Environment awareness (simple version)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -8430,7 +8446,13 @@ def api_user_education_plan_quiz_submit(
             {"user_id": user_id, "error": repr(exc)},
             tag="education",
         )
-    return result
+    try:
+        return JSONResponse(content=_json_safe(result))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Quiz submit response exception: {type(exc).__name__}: {exc}",
+        ) from exc
 
 
 @api_v1.get("/users/{user_id}/status")
