@@ -11,7 +11,8 @@ type PreferencesFormProps = {
   initialPillarSelections?: Record<string, boolean>;
 };
 
-const PREFERENCE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
+const PREFERENCE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery"];
+const HIDDEN_PILLAR_ORDER = ["nutrition", "training"];
 const PREFERENCE_PILLARS = PREFERENCE_PILLAR_ORDER.map((key) => PILLARS.find((pillar) => pillar.key === key)).filter(
   Boolean,
 ) as typeof PILLARS;
@@ -57,6 +58,9 @@ export default function PreferencesForm({
       for (const pillar of PREFERENCE_PILLARS) {
         const prefKey = PILLAR_PREF_KEYS[pillar.key];
         payload[prefKey] = pillarSelections[pillar.key] ? "1" : "0";
+      }
+      for (const pillarKey of HIDDEN_PILLAR_ORDER) {
+        payload[PILLAR_PREF_KEYS[pillarKey]] = "0";
       }
       const res = await fetch("/api/preferences", {
         method: "POST",

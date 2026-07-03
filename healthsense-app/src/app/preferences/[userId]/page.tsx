@@ -29,7 +29,7 @@ export default async function PreferencesPage(props: PageProps) {
       : "";
   const defaultPillarKeys = new Set(["reflection", "purpose", "resilience", "recovery"]);
   const initialPillarSelections = Object.fromEntries(
-    ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"].map((key) => {
+    ["reflection", "purpose", "resilience", "recovery"].map((key) => {
       const raw = String((prefs as Record<string, unknown>)[`home_pillar_${key}`] || "").trim().toLowerCase();
       const selected = raw ? isTruthyToken(raw) : defaultPillarKeys.has(key);
       return [key, selected];

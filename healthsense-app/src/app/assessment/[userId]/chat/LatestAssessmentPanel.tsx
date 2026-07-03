@@ -63,6 +63,7 @@ type StreakCalendarDay = {
 
 const PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
 const DEFAULT_SETUP_PILLARS = ["reflection", "purpose", "resilience", "recovery"];
+const SETUP_SELECTABLE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery"];
 const PILLAR_PREF_KEYS: Record<string, string> = {
   reflection: "home_pillar_reflection",
   purpose: "home_pillar_purpose",
@@ -221,7 +222,12 @@ function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | n
       .filter(Boolean),
   );
   const source = activeKeys.size ? activeKeys : new Set(DEFAULT_SETUP_PILLARS);
-  return Object.fromEntries(PILLAR_ORDER.map((pillarKey) => [pillarKey, source.has(pillarKey)]));
+  return Object.fromEntries(
+    PILLAR_ORDER.map((pillarKey) => [
+      pillarKey,
+      SETUP_SELECTABLE_PILLAR_ORDER.includes(pillarKey) && source.has(pillarKey),
+    ]),
+  );
 }
 
 function resolveWeeklyObjectiveDraftValue(concept?: WeeklyObjectiveConcept | null): number | null {
@@ -2427,7 +2433,7 @@ export default function LatestAssessmentPanel({
   }, [userId]);
 
   const saveAppSetup = useCallback(async () => {
-    const selectedKeys = PILLAR_ORDER.filter((pillarKey) => setupPillarSelections[pillarKey]);
+    const selectedKeys = SETUP_SELECTABLE_PILLAR_ORDER.filter((pillarKey) => setupPillarSelections[pillarKey]);
     if (!selectedKeys.length) {
       setSetupError("Choose at least one pillar to continue.");
       return;
@@ -2441,7 +2447,8 @@ export default function LatestAssessmentPanel({
         preferred_channel: "app",
       };
       PILLAR_ORDER.forEach((pillarKey) => {
-        payload[PILLAR_PREF_KEYS[pillarKey]] = setupPillarSelections[pillarKey] ? "1" : "0";
+        payload[PILLAR_PREF_KEYS[pillarKey]] =
+          SETUP_SELECTABLE_PILLAR_ORDER.includes(pillarKey) && setupPillarSelections[pillarKey] ? "1" : "0";
       });
       const res = await fetch("/api/preferences", {
         method: "POST",
@@ -3435,7 +3442,7 @@ export default function LatestAssessmentPanel({
                 </p>
               </article>
 
-              {PILLAR_ORDER.map((pillarKey) => {
+              {SETUP_SELECTABLE_PILLAR_ORDER.map((pillarKey) => {
                 const meta = getPillarMeta(pillarKey);
                 const selected = Boolean(setupPillarSelections[pillarKey]);
                 return (
