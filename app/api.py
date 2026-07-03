@@ -556,7 +556,19 @@ async def _block_requests_while_db_resetting(request: Request, call_next):
             content={"ok": False, "error": "database_reset_in_progress"},
             headers={"Retry-After": "5"},
         )
-    return await call_next(request)
+    try:
+        return await call_next(request)
+    except BaseException as exc:
+        if "/education-plan/quiz-submit" in str(request.url.path):
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "ok": False,
+                    "error": f"Quiz submit request exception: {type(exc).__name__}: {exc}",
+                    "path": str(request.url.path),
+                },
+            )
+        raise
 
 
 @app.on_event("startup")
