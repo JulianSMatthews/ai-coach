@@ -4339,9 +4339,15 @@ def _apply_education_quiz_submission(
     progress: UserEducationDayProgress,
     lesson_variant: EducationLessonVariant | None,
     answers: list[dict[str, Any]] | None,
+    quiz_id: int | None = None,
 ) -> bool:
     lesson_variant_id = int(getattr(lesson_variant, "id", 0) or 0) if lesson_variant is not None else 0
-    quiz = _quiz_row(session, lesson_variant_id)
+    selected_quiz_id = _safe_int(quiz_id)
+    quiz = session.get(EducationQuiz, int(selected_quiz_id)) if selected_quiz_id else None
+    if quiz is not None and int(getattr(quiz, "lesson_variant_id", 0) or 0) != lesson_variant_id:
+        quiz = None
+    if quiz is None:
+        quiz = _quiz_row(session, lesson_variant_id)
     if progress is None or quiz is None or not getattr(quiz, "id", None):
         return False
     question_rows = _question_rows(session, int(quiz.id))
@@ -4399,13 +4405,22 @@ def submit_education_quiz(
         selected_variant_id = _safe_int(lesson_variant_id)
         selected_lesson_variant = session.get(EducationLessonVariant, int(selected_variant_id)) if selected_variant_id else None
         selected_quiz_id = _safe_int(quiz_id)
-        if selected_lesson_variant is None and selected_quiz_id:
+        if selected_quiz_id:
             selected_quiz = session.get(EducationQuiz, int(selected_quiz_id))
-            selected_lesson_variant = (
+            quiz_lesson_variant = (
                 session.get(EducationLessonVariant, int(getattr(selected_quiz, "lesson_variant_id", 0) or 0))
                 if selected_quiz is not None
                 else None
             )
+            if quiz_lesson_variant is not None and (
+                selected_lesson_variant is None
+                or int(getattr(selected_lesson_variant, "id", 0) or 0) != int(getattr(quiz_lesson_variant, "id", 0) or 0)
+            ):
+                selected_lesson_variant = quiz_lesson_variant
+            if quiz_lesson_variant is not None:
+                quiz_programme_day_id = _safe_int(getattr(quiz_lesson_variant, "programme_day_id", None))
+                if quiz_programme_day_id and selected_programme_day_id != quiz_programme_day_id:
+                    selected_programme_day_id = quiz_programme_day_id
         if selected_lesson_variant is None:
             answer_question_ids = [
                 _safe_int(row.get("question_id"))
@@ -4500,6 +4515,7 @@ def submit_education_quiz(
                 progress=progress,
                 lesson_variant=lesson_variant,
                 answers=answers,
+                quiz_id=selected_quiz_id,
             )
             if not applied:
                 state = _lesson_state(
