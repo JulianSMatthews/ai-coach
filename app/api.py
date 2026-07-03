@@ -8623,6 +8623,12 @@ def api_user_status_v1(
             "interaction_days_count": len(unique_engagement_days),
             "latest_interaction_at": latest_interaction_at,
         }
+        admin_role = _user_admin_role(u)
+        is_admin_context = admin_role in {ADMIN_ROLE_CLUB, ADMIN_ROLE_GLOBAL} or _is_readonly_admin_preview_request(
+            request=request,
+            x_admin_token=x_admin_token,
+            x_admin_user_id=x_admin_user_id,
+        )
 
     data = {
         "user": {
@@ -8637,6 +8643,8 @@ def api_user_status_v1(
             "billing_status": getattr(u, "billing_status", None),
             "billing_provider": getattr(u, "billing_provider", None),
             "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
+            "admin_role": admin_role,
+            "is_admin_user": bool(is_admin_context),
         },
         "active_domain": active,
         "latest_run": None,
@@ -8650,8 +8658,8 @@ def api_user_status_v1(
             "home_pillar_purpose": pref_map.get("home_pillar_purpose", ""),
             "home_pillar_resilience": pref_map.get("home_pillar_resilience", ""),
             "home_pillar_recovery": pref_map.get("home_pillar_recovery", ""),
-            "home_pillar_nutrition": pref_map.get("home_pillar_nutrition", "off"),
-            "home_pillar_training": pref_map.get("home_pillar_training", "off"),
+            "home_pillar_nutrition": pref_map.get("home_pillar_nutrition", "on" if is_admin_context else "off"),
+            "home_pillar_training": pref_map.get("home_pillar_training", "on" if is_admin_context else "off"),
             "training_objective": training_objective.objective if training_objective else "",
             "preferred_channel": pref_map.get("preferred_channel", "app"),
             "marketing_opt_in": pref_map.get("marketing_opt_in", ""),

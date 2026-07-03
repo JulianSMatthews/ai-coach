@@ -279,6 +279,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   const onboarding = status.onboarding || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "light";
+  const isAdminUser = Boolean(status.user?.is_admin_user);
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(onboarding.assessment_completed_at) ||
@@ -316,6 +317,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           introAvatar={assessmentIntroAvatar}
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
+          isAdminUser={isAdminUser}
         />
       </section>
     </PageShell>

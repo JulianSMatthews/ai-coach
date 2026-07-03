@@ -33,6 +33,7 @@ type LatestAssessmentPanelProps = {
   initialSummary: PillarTrackerSummaryResponse;
   initialAssessmentReviewed?: boolean;
   initialInteractionDaysCount?: number | null;
+  isAdminUser?: boolean;
 };
 
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
@@ -215,17 +216,18 @@ function formatJournalDate(value?: string | null): string {
   });
 }
 
-function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | null): Record<string, boolean> {
+function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | null, includeAllPillars = false): Record<string, boolean> {
   const activeKeys = new Set(
     (Array.isArray(summary?.pillars) ? summary?.pillars : [])
       .map((pillar) => String(pillar?.pillar_key || "").trim().toLowerCase())
       .filter(Boolean),
   );
-  const source = activeKeys.size ? activeKeys : new Set(DEFAULT_SETUP_PILLARS);
+  const selectablePillars = includeAllPillars ? PILLAR_ORDER : SETUP_SELECTABLE_PILLAR_ORDER;
+  const source = activeKeys.size ? activeKeys : new Set(includeAllPillars ? PILLAR_ORDER : DEFAULT_SETUP_PILLARS);
   return Object.fromEntries(
     PILLAR_ORDER.map((pillarKey) => [
       pillarKey,
-      SETUP_SELECTABLE_PILLAR_ORDER.includes(pillarKey) && source.has(pillarKey),
+      selectablePillars.includes(pillarKey) && source.has(pillarKey),
     ]),
   );
 }
@@ -1526,6 +1528,7 @@ export default function LatestAssessmentPanel({
   initialSummary,
   initialAssessmentReviewed = false,
   initialInteractionDaysCount = null,
+  isAdminUser = false,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
@@ -1585,11 +1588,12 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("checkin");
   const [setupPillarSelections, setSetupPillarSelections] = useState<Record<string, boolean>>(() =>
-    initialSetupPillarSelections(initialSummary),
+    initialSetupPillarSelections(initialSummary, isAdminUser),
   );
   const [setupSaving, setSetupSaving] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const appSetupRequired = summary.app_setup_completed !== true;
+  const setupSelectablePillarOrder = isAdminUser ? PILLAR_ORDER : SETUP_SELECTABLE_PILLAR_ORDER;
   const modalOverlayOpen = (BIOMETRICS_ENABLED && biometricsModalOpen) || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -2433,7 +2437,7 @@ export default function LatestAssessmentPanel({
   }, [userId]);
 
   const saveAppSetup = useCallback(async () => {
-    const selectedKeys = SETUP_SELECTABLE_PILLAR_ORDER.filter((pillarKey) => setupPillarSelections[pillarKey]);
+    const selectedKeys = setupSelectablePillarOrder.filter((pillarKey) => setupPillarSelections[pillarKey]);
     if (!selectedKeys.length) {
       setSetupError("Choose at least one pillar to continue.");
       return;
@@ -2448,7 +2452,7 @@ export default function LatestAssessmentPanel({
       };
       PILLAR_ORDER.forEach((pillarKey) => {
         payload[PILLAR_PREF_KEYS[pillarKey]] =
-          SETUP_SELECTABLE_PILLAR_ORDER.includes(pillarKey) && setupPillarSelections[pillarKey] ? "1" : "0";
+          setupSelectablePillarOrder.includes(pillarKey) && setupPillarSelections[pillarKey] ? "1" : "0";
       });
       const res = await fetch("/api/preferences", {
         method: "POST",
@@ -2511,7 +2515,7 @@ export default function LatestAssessmentPanel({
     } finally {
       setSetupSaving(false);
     }
-  }, [refreshSummary, setupPillarSelections, userId]);
+  }, [refreshSummary, setupPillarSelections, setupSelectablePillarOrder, userId]);
 
   const pillarNeedsGeneratedCue = useCallback((pillar: PillarTrackerPillar | null | undefined) => {
     if (!pillar) return true;
@@ -3442,7 +3446,7 @@ export default function LatestAssessmentPanel({
                 </p>
               </article>
 
-              {SETUP_SELECTABLE_PILLAR_ORDER.map((pillarKey) => {
+              {setupSelectablePillarOrder.map((pillarKey) => {
                 const meta = getPillarMeta(pillarKey);
                 const selected = Boolean(setupPillarSelections[pillarKey]);
                 return (

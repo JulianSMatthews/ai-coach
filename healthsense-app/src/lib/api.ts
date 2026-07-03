@@ -11,6 +11,8 @@ export type UserStatusResponse = {
     consent_given?: boolean;
     consent_at?: string;
     last_inbound_message_at?: string | null;
+    admin_role?: string | null;
+    is_admin_user?: boolean;
   };
   active_domain?: string | null;
   latest_run?: { id?: number; finished_at?: string | null; combined_overall?: number };

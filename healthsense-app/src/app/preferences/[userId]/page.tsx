@@ -27,9 +27,13 @@ export default async function PreferencesPage(props: PageProps) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
-  const defaultPillarKeys = new Set(["reflection", "purpose", "resilience", "recovery"]);
+  const isAdminUser = Boolean(data.user?.is_admin_user);
+  const preferencePillarKeys = isAdminUser
+    ? ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"]
+    : ["reflection", "purpose", "resilience", "recovery"];
+  const defaultPillarKeys = new Set(preferencePillarKeys);
   const initialPillarSelections = Object.fromEntries(
-    ["reflection", "purpose", "resilience", "recovery"].map((key) => {
+    preferencePillarKeys.map((key) => {
       const raw = String((prefs as Record<string, unknown>)[`home_pillar_${key}`] || "").trim().toLowerCase();
       const selected = raw ? isTruthyToken(raw) : defaultPillarKeys.has(key);
       return [key, selected];
@@ -65,6 +69,7 @@ export default async function PreferencesPage(props: PageProps) {
           initialEmail={user.email || ""}
           initialTheme={themePreference}
           initialPillarSelections={initialPillarSelections}
+          isAdminUser={isAdminUser}
         />
       </section>
 

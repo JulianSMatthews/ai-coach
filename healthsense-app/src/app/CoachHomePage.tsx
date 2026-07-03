@@ -36,6 +36,7 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
+  const isAdminUser = Boolean(status.user?.is_admin_user);
 
   let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
   if (!statusLoadError) {
@@ -100,12 +101,14 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
           modernHomeOnly
           initialTrackerSummary={pillarTrackerSummary}
           initialInteractionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+          isAdminUser={isAdminUser}
         />
         <CoachHomeTrackerPanel
           userId={userId}
           initialSummary={pillarTrackerSummary}
           initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
           initialInteractionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+          isAdminUser={isAdminUser}
         />
       </section>
     </PageShell>

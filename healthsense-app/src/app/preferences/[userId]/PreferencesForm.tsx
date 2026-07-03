@@ -9,13 +9,12 @@ type PreferencesFormProps = {
   initialEmail?: string;
   initialTheme?: string;
   initialPillarSelections?: Record<string, boolean>;
+  isAdminUser?: boolean;
 };
 
 const PREFERENCE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery"];
+const ADMIN_PREFERENCE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
 const HIDDEN_PILLAR_ORDER = ["nutrition", "training"];
-const PREFERENCE_PILLARS = PREFERENCE_PILLAR_ORDER.map((key) => PILLARS.find((pillar) => pillar.key === key)).filter(
-  Boolean,
-) as typeof PILLARS;
 
 const PILLAR_PREF_KEYS: Record<string, string> = {
   reflection: "home_pillar_reflection",
@@ -31,7 +30,11 @@ export default function PreferencesForm({
   initialEmail = "",
   initialTheme = "dark",
   initialPillarSelections = {},
+  isAdminUser = false,
 }: PreferencesFormProps) {
+  const preferencePillars = (isAdminUser ? ADMIN_PREFERENCE_PILLAR_ORDER : PREFERENCE_PILLAR_ORDER)
+    .map((key) => PILLARS.find((pillar) => pillar.key === key))
+    .filter(Boolean) as typeof PILLARS;
   const [email, setEmail] = useState(initialEmail || "");
   const [theme, setTheme] = useState(() => {
     const stored = readStoredThemePreference();
@@ -39,7 +42,7 @@ export default function PreferencesForm({
     return normalized;
   });
   const [pillarSelections, setPillarSelections] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(PREFERENCE_PILLARS.map((pillar) => [pillar.key, Boolean(initialPillarSelections[pillar.key])])),
+    Object.fromEntries(preferencePillars.map((pillar) => [pillar.key, Boolean(initialPillarSelections[pillar.key])])),
   );
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -55,12 +58,14 @@ export default function PreferencesForm({
         theme,
         preferred_channel: "app",
       };
-      for (const pillar of PREFERENCE_PILLARS) {
+      for (const pillar of preferencePillars) {
         const prefKey = PILLAR_PREF_KEYS[pillar.key];
         payload[prefKey] = pillarSelections[pillar.key] ? "1" : "0";
       }
-      for (const pillarKey of HIDDEN_PILLAR_ORDER) {
-        payload[PILLAR_PREF_KEYS[pillarKey]] = "0";
+      if (!isAdminUser) {
+        for (const pillarKey of HIDDEN_PILLAR_ORDER) {
+          payload[PILLAR_PREF_KEYS[pillarKey]] = "0";
+        }
       }
       const res = await fetch("/api/preferences", {
         method: "POST",
@@ -107,7 +112,7 @@ export default function PreferencesForm({
       <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] p-5">
         <h3 className="text-xl font-semibold text-[var(--text-primary)]">Choose your pillars</h3>
         <div className="mt-5 grid gap-3">
-          {PREFERENCE_PILLARS.map((pillar) => {
+          {preferencePillars.map((pillar) => {
             const selected = Boolean(pillarSelections[pillar.key]);
             return (
               <button
