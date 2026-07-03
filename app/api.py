@@ -8336,8 +8336,16 @@ def api_user_education_plan_quiz_submit(
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
-    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
-    ensure_education_plan_schema()
+    try:
+        _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+        ensure_education_plan_schema()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Quiz submit setup exception: {type(exc).__name__}: {exc}",
+        ) from exc
     anchor = None
     anchor_date = str((body or {}).get("anchor_date") or "").strip()
     if anchor_date:
@@ -8390,19 +8398,26 @@ def api_user_education_plan_quiz_submit(
                 + f" submitted_quiz_id={submitted_quiz_id or 'missing'}"
             ),
         )
-    _log_app_engagement_event(
-        user_id=user_id,
-        unit_type="education_quiz_submit",
-        meta={
-            "page": "coach_home",
-            "pillar_key": result.get("pillar_key"),
-            "concept_key": result.get("concept_key"),
-            "day_index": result.get("day_index"),
-            "lesson_date": result.get("lesson_date"),
-            "quiz_score_pct": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("quiz_score_pct"),
-            "completion_status": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("completion_status"),
-        },
-    )
+    try:
+        _log_app_engagement_event(
+            user_id=user_id,
+            unit_type="education_quiz_submit",
+            meta={
+                "page": "coach_home",
+                "pillar_key": result.get("pillar_key"),
+                "concept_key": result.get("concept_key"),
+                "day_index": result.get("day_index"),
+                "lesson_date": result.get("lesson_date"),
+                "quiz_score_pct": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("quiz_score_pct"),
+                "completion_status": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("completion_status"),
+            },
+        )
+    except Exception as exc:
+        debug_log(
+            "education quiz submit engagement logging failed",
+            {"user_id": user_id, "error": repr(exc)},
+            tag="education",
+        )
     return result
 
 
