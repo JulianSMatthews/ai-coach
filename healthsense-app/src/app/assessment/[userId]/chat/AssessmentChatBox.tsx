@@ -921,6 +921,26 @@ function normalizeEducationQuizOption(raw: unknown): { value: unknown; label: st
   return { value, label };
 }
 
+function educationQuizAnswerToken(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function formatEducationQuizAnswer(value: unknown, options: { value: unknown; label: string }[] = []): string {
+  const valueToken = educationQuizAnswerToken(value);
+  const option = options.find((item) => educationQuizAnswerToken(item.value) === valueToken);
+  if (option?.label) return option.label;
+  if (Array.isArray(value)) {
+    return value.map((item) => formatEducationQuizAnswer(item, options)).filter(Boolean).join(", ");
+  }
+  if (typeof value === "boolean") return value ? "True" : "False";
+  if (value && typeof value === "object") {
+    const row = value as Record<string, unknown>;
+    const label = String(row.label ?? row.text ?? row.title ?? row.value ?? "").trim();
+    if (label) return label;
+  }
+  return String(value ?? "").trim() || "Not answered";
+}
+
 function normalizePromptSection(raw: unknown): AssessmentPromptSection | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -3727,20 +3747,42 @@ export default function AssessmentChatBox({
                           <div className="mt-4 space-y-5">
                             {activeEducationQuizQuestions.map((question: any, questionIndex: number) => {
                               const questionId = educationQuestionId(question, questionIndex);
-                              const selectedAnswer = educationQuizAnswers[questionId];
                               const options = Array.isArray(question?.options)
                                 ? question.options.map(normalizeEducationQuizOption).filter(Boolean)
                                 : [];
+                              const completed = Boolean(activeEducationQuizCompletedAt);
+                              const submittedAnswer = question?.submitted_answer;
+                              const selectedAnswer = educationQuizAnswers[questionId] ?? submittedAnswer;
+                              const correctAnswer = question?.correct_answer;
+                              const isCorrect = question?.is_correct === true;
+                              const hasResult = completed && question?.is_correct !== undefined && question?.is_correct !== null;
+                              const correctAnswerLabel = formatEducationQuizAnswer(correctAnswer, options);
+                              const submittedAnswerToken = educationQuizAnswerToken(selectedAnswer);
+                              const correctAnswerToken = educationQuizAnswerToken(correctAnswer);
                               return (
                                 <fieldset key={questionId} className="space-y-3">
-                                  <legend className="text-[1.05rem] font-semibold leading-6 text-[var(--text-primary)]">
-                                    {questionIndex + 1}. {String(question?.question_text || "").trim()}
-                                  </legend>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <legend className="text-[1.05rem] font-semibold leading-6 text-[var(--text-primary)]">
+                                      {questionIndex + 1}. {String(question?.question_text || "").trim()}
+                                    </legend>
+                                    {hasResult ? (
+                                      <span
+                                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                                          isCorrect
+                                            ? "bg-[#edf7e6] text-[#335f16]"
+                                            : "bg-[#f9e7dc] text-[#9b3218]"
+                                        }`}
+                                      >
+                                        {isCorrect ? "Correct" : "Incorrect"}
+                                      </span>
+                                    ) : null}
+                                  </div>
                                   <div className="space-y-2">
                                     {options.map((option: any, optionIndex: number) => {
-                                      const optionToken = JSON.stringify(option.value);
-                                      const selectedToken = JSON.stringify(selectedAnswer);
-                                      const selected = optionToken === selectedToken;
+                                      const optionToken = educationQuizAnswerToken(option.value);
+                                      const selected = optionToken === submittedAnswerToken;
+                                      const correct = hasResult && optionToken === correctAnswerToken;
+                                      const incorrectSelection = hasResult && selected && !isCorrect;
                                       return (
                                         <button
                                           key={`${questionId}-${optionIndex}`}
@@ -3753,19 +3795,44 @@ export default function AssessmentChatBox({
                                             setEducationQuizMessage(null);
                                             setEducationQuizError(null);
                                           }}
-                                          className="flex w-full items-center justify-between rounded-[18px] bg-[var(--surface)] px-4 py-3 text-left text-sm font-semibold text-[var(--text-primary)] transition"
+                                          className={`flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left text-sm font-semibold text-[var(--text-primary)] transition ${
+                                            correct
+                                              ? "border-[#7da64f] bg-[#f4faef]"
+                                              : incorrectSelection
+                                                ? "border-[#c76a42] bg-[#fff2ea]"
+                                                : "border-transparent bg-[var(--surface)]"
+                                          }`}
                                         >
                                           <span>{option.label}</span>
                                           <span
-                                            className={`ml-3 h-5 w-5 rounded-full border ${
-                                              selected ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)]" : "border-[var(--border)] bg-[var(--surface)]"
+                                            className={`ml-3 flex h-5 w-5 items-center justify-center rounded-full border text-[12px] leading-none ${
+                                              correct
+                                                ? "border-[#7da64f] bg-[#7da64f] text-white"
+                                                : incorrectSelection
+                                                  ? "border-[#c76a42] bg-[#c76a42] text-white"
+                                                  : selected
+                                                    ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)]"
+                                                    : "border-[var(--border)] bg-[var(--surface)]"
                                             }`}
                                             aria-hidden="true"
-                                          />
+                                          >
+                                            {correct ? "✓" : incorrectSelection ? "×" : ""}
+                                          </span>
                                         </button>
                                       );
                                     })}
                                   </div>
+                                  {hasResult ? (
+                                    <div className="rounded-[18px] bg-[var(--surface)] px-4 py-3 text-sm leading-6 text-[var(--text-secondary)]">
+                                      <p>
+                                        <span className="font-semibold text-[var(--text-primary)]">Correct answer: </span>
+                                        {correctAnswerLabel}
+                                      </p>
+                                      {question?.explanation ? (
+                                        <p className="mt-1">{String(question.explanation).trim()}</p>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
                                 </fieldset>
                               );
                             })}
