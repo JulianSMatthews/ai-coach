@@ -8347,18 +8347,48 @@ def api_user_education_plan_quiz_submit(
     answers = (body or {}).get("answers")
     if answers is not None and not isinstance(answers, list):
         raise HTTPException(status_code=400, detail="answers must be a list")
-    result = submit_education_quiz(
-        int(user_id),
-        answers=answers if isinstance(answers, list) else [],
-        anchor=anchor,
-        programme_day_id=_safe_int((body or {}).get("programme_day_id") or (body or {}).get("programmeDayId")),
-        lesson_variant_id=_safe_int((body or {}).get("lesson_variant_id") or (body or {}).get("lessonVariantId")),
-        quiz_id=_safe_int((body or {}).get("quiz_id") or (body or {}).get("quizId")),
-    )
+    submitted_programme_day_id = _safe_int((body or {}).get("programme_day_id") or (body or {}).get("programmeDayId"))
+    submitted_lesson_variant_id = _safe_int((body or {}).get("lesson_variant_id") or (body or {}).get("lessonVariantId"))
+    submitted_quiz_id = _safe_int((body or {}).get("quiz_id") or (body or {}).get("quizId"))
+    try:
+        result = submit_education_quiz(
+            int(user_id),
+            answers=answers if isinstance(answers, list) else [],
+            anchor=anchor,
+            programme_day_id=submitted_programme_day_id,
+            lesson_variant_id=submitted_lesson_variant_id,
+            quiz_id=submitted_quiz_id,
+        )
+    except Exception as exc:
+        debug_log(
+            "education quiz submit failed",
+            {
+                "user_id": user_id,
+                "programme_day_id": submitted_programme_day_id,
+                "lesson_variant_id": submitted_lesson_variant_id,
+                "quiz_id": submitted_quiz_id,
+                "error": repr(exc),
+            },
+            tag="education",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Quiz submit exception: {type(exc).__name__}: {exc}"
+                f" programme_day_id={submitted_programme_day_id or 'missing'}"
+                f" lesson_variant_id={submitted_lesson_variant_id or 'missing'}"
+                f" quiz_id={submitted_quiz_id or 'missing'}"
+            ),
+        ) from exc
     if result.get("quiz_submit_applied") is False:
         raise HTTPException(
             status_code=400,
-            detail=str(result.get("quiz_submit_error") or "Quiz could not be submitted for this lesson."),
+            detail=(
+                str(result.get("quiz_submit_error") or "Quiz could not be submitted for this lesson.")
+                + f" submitted_programme_day_id={submitted_programme_day_id or 'missing'}"
+                + f" submitted_lesson_variant_id={submitted_lesson_variant_id or 'missing'}"
+                + f" submitted_quiz_id={submitted_quiz_id or 'missing'}"
+            ),
         )
     _log_app_engagement_event(
         user_id=user_id,

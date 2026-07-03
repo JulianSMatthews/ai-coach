@@ -38,6 +38,15 @@ function parseUpstreamError(text: string, fallback: string) {
   return raw;
 }
 
+function quizSubmitUpstreamError(text: string, status: number) {
+  const parsed = parseUpstreamError(text, "");
+  const normalized = parsed.trim().toLowerCase();
+  if (!normalized || normalized === "internal server error") {
+    return `Quiz submit upstream failed with status ${status}${text ? `: ${String(text).trim()}` : ""}`;
+  }
+  return parsed;
+}
+
 function normalizeReportUrl(value: unknown, base: string): string | null {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -122,7 +131,7 @@ export async function POST(request: Request) {
     });
     const text = await res.text().catch(() => "");
     if (!res.ok) {
-      return NextResponse.json({ error: parseUpstreamError(text, "Failed to submit education quiz") }, { status: res.status });
+      return NextResponse.json({ error: quizSubmitUpstreamError(text, res.status) }, { status: res.status });
     }
     const data = (text ? JSON.parse(text) : {}) as Record<string, unknown>;
     return NextResponse.json(normalizeEducationPlanMedia(data, base));
