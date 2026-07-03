@@ -10,15 +10,10 @@ export default function LoginPage() {
   const [firstName, setFirstName] = useState("");
   const [surname, setSurname] = useState("");
   const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [signinPasswordStep, setSigninPasswordStep] = useState(false);
-  const [createPassword, setCreatePassword] = useState("");
-  const [createConfirmPassword, setCreateConfirmPassword] = useState("");
   const [otpId, setOtpId] = useState<number | null>(null);
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [setupRequired, setSetupRequired] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [restoringSession, setRestoringSession] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -40,10 +35,6 @@ export default function LoginPage() {
   const resetOtpState = () => {
     setOtpId(null);
     setCode("");
-    setSetupRequired(false);
-    setSigninPasswordStep(false);
-    setCreatePassword("");
-    setCreateConfirmPassword("");
     clearStoredLoginState();
   };
 
@@ -70,7 +61,6 @@ export default function LoginPage() {
     try {
       const savedOtpId = window.sessionStorage.getItem("hs_login_otp_id");
       const savedPhone = window.sessionStorage.getItem("hs_login_phone");
-      const savedSetup = window.sessionStorage.getItem("hs_login_setup");
       const savedMode = window.sessionStorage.getItem("hs_login_mode");
       const savedFirstName = window.sessionStorage.getItem("hs_login_first_name");
       const savedSurname = window.sessionStorage.getItem("hs_login_surname");
@@ -82,7 +72,6 @@ export default function LoginPage() {
       if (savedTerms === "true") setAcceptedTerms(true);
       if (savedOtpId && savedPhone) {
         setOtpId(Number(savedOtpId));
-        setSetupRequired(savedSetup === "true");
       }
     } catch {}
   }, []);
@@ -197,12 +186,6 @@ export default function LoginPage() {
     if (normalizedPhone !== phone) {
       setPhone(normalizedPhone);
     }
-    if (mode === "signin" && !signinPasswordStep) {
-      setSigninPasswordStep(true);
-      setStatus(null);
-      return;
-    }
-
     setLoading(true);
     setStatus(null);
     try {
@@ -212,7 +195,6 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: normalizedPhone,
-          password: mode === "signin" ? password || undefined : undefined,
           first_name: mode === "create" ? firstName : undefined,
           surname: mode === "create" ? surname : undefined,
           accepted_terms: mode === "create" ? acceptedTerms : undefined,
@@ -233,15 +215,13 @@ export default function LoginPage() {
       }
       const data = await res.json();
       setOtpId(Number(data.otp_id));
-      setSetupRequired(Boolean(data.setup_required));
       const channelUsed = data.channel || channel;
       const codeLabel = mode === "create" ? "an account code" : "a login code";
-      setStatus(channelUsed === "sms" ? `We sent ${codeLabel} by SMS.` : `We sent ${codeLabel} to your WhatsApp.`);
+      setStatus(channelUsed === "sms" ? `We sent ${codeLabel} by SMS.` : `We sent ${codeLabel}.`);
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.setItem("hs_login_otp_id", String(data.otp_id));
           window.sessionStorage.setItem("hs_login_phone", normalizedPhone);
-          window.sessionStorage.setItem("hs_login_setup", String(Boolean(data.setup_required)));
           window.sessionStorage.setItem("hs_login_mode", mode);
           window.sessionStorage.setItem("hs_login_first_name", firstName);
           window.sessionStorage.setItem("hs_login_surname", surname);
@@ -260,16 +240,8 @@ export default function LoginPage() {
     if (!otpId) return;
     const normalizedPhone = normalizePhoneForAuth(phone);
     if (mode === "create") {
-      if (!codeReadyForPassword) {
+      if (code.trim().length < 6) {
         setStatus("Enter the code from your SMS first.");
-        return;
-      }
-      if (createPassword.length < 8) {
-        setStatus("Password must be at least 8 characters.");
-        return;
-      }
-      if (createPassword !== createConfirmPassword) {
-        setStatus("Passwords do not match.");
         return;
       }
     }
@@ -306,21 +278,6 @@ export default function LoginPage() {
           window.localStorage.setItem("hs_user_id_local", String(userId));
         } catch {}
       }
-      if (mode === "create") {
-        const passwordRes = await fetch("/api/preferences", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            password: createPassword,
-            preferred_channel: "app",
-          }),
-        });
-        if (!passwordRes.ok) {
-          const text = await passwordRes.text().catch(() => "");
-          throw new Error(text || "Failed to save password.");
-        }
-      }
       clearStoredLoginState();
       let requestedNext = "";
       if (typeof window !== "undefined") {
@@ -330,12 +287,7 @@ export default function LoginPage() {
         requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
           ? requestedNext
           : "";
-      if (data.setup_required && mode !== "create") {
-        const setupNext = safeNext || "/";
-        window.location.href = `/setup-security?next=${encodeURIComponent(setupNext)}`;
-      } else {
-        window.location.href = safeNext || "/";
-      }
+      window.location.href = safeNext || "/";
     } catch (error) {
       setStatus(friendlyAuthError(error));
     } finally {
@@ -350,8 +302,6 @@ export default function LoginPage() {
     "min-h-13 w-full rounded-full border border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] px-5 py-3 text-[17px] font-semibold text-[var(--action-primary-text)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
   const secondaryButtonClass =
     "min-h-13 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-[17px] font-semibold text-[var(--text-primary)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
-  const codeReadyForPassword = code.trim().length >= 6;
-
   return (
     <main className="flex min-h-[100dvh] items-center overflow-x-hidden bg-[var(--background)] px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[var(--foreground)] sm:px-6">
       <section className="mx-auto flex w-full max-w-md flex-col gap-6">
@@ -368,7 +318,7 @@ export default function LoginPage() {
         </div>
 
         {!otpId ? (
-          <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-5" autoComplete="on">
+          <form onSubmit={(e) => requestOtp(e, "sms")} className="space-y-5" autoComplete="on">
             <div className="grid grid-cols-2 gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1 text-[16px]">
               <button
                 type="button"
@@ -421,63 +371,25 @@ export default function LoginPage() {
                 </div>
               </div>
             ) : null}
-            {mode === "signin" && signinPasswordStep ? (
-              <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-                <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">Mobile number</p>
-                <div className="mt-1 flex items-center justify-between gap-3">
-                  <p className="text-[17px] font-semibold text-[var(--text-primary)]">{phone}</p>
-                  <button
-                    type="button"
-                    className="text-[15px] font-semibold text-[var(--accent)] underline"
-                    onClick={() => {
-                      setSigninPasswordStep(false);
-                      setPassword("");
-                      setStatus(null);
-                    }}
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
-                <input
-                  id="mobile-number"
-                  name="tel"
-                  className={inputClass}
-                  type="tel"
-                  autoComplete="tel"
-                  inputMode="tel"
-                  enterKeyHint="next"
-                  autoFocus
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+44 7700 900000"
-                />
-              </div>
-            )}
-            {mode === "signin" && signinPasswordStep ? (
             <div>
-              <label className={labelClass}>Password</label>
+              <label className={labelClass} htmlFor="mobile-number">Mobile number</label>
               <input
+                id="mobile-number"
+                name="tel"
                 className={inputClass}
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Leave blank if first time"
+                type="tel"
+                autoComplete="tel"
+                inputMode="tel"
+                enterKeyHint="next"
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect="off"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+44 7700 900000"
               />
-              <div className="mt-2 text-right">
-                <a className="text-[15px] font-semibold text-[var(--accent)] underline" href="/reset-password">
-                  Forgot password?
-                </a>
-              </div>
             </div>
-            ) : mode === "create" ? (
+            {mode === "create" ? (
               <label className="flex items-start gap-3 text-[16px] leading-6 text-[var(--text-secondary)]">
                 <input
                   className="mt-1 h-5 w-5 accent-[var(--action-primary-bg)]"
@@ -507,9 +419,7 @@ export default function LoginPage() {
                 ? "Sending…"
                 : mode === "create"
                   ? "Create account"
-                  : signinPasswordStep
-                    ? "Send login code"
-                    : "Continue"}
+                  : "Send login code"}
             </button>
             <label className="flex items-center gap-3 text-[16px] text-[var(--text-secondary)]">
               <input
@@ -546,40 +456,10 @@ export default function LoginPage() {
               </div>
               <p className="text-[16px] leading-6 text-[var(--text-secondary)]">Use the code sent to your mobile number.</p>
             </form>
-            {mode === "create" && codeReadyForPassword ? (
-              <div className="space-y-4">
-                <div>
-                  <label className={labelClass}>Create password</label>
-                  <input
-                    className={inputClass}
-                    type="password"
-                    name="new-password"
-                    autoComplete="new-password"
-                    value={createPassword}
-                    onChange={(e) => setCreatePassword(e.target.value)}
-                    placeholder="Minimum 8 characters"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Confirm password</label>
-                  <input
-                    className={inputClass}
-                    type="password"
-                    name="confirm-new-password"
-                    autoComplete="new-password"
-                    value={createConfirmPassword}
-                    onChange={(e) => setCreateConfirmPassword(e.target.value)}
-                    placeholder="Re-enter password"
-                  />
-                </div>
-              </div>
-            ) : mode === "create" ? (
+            {mode === "create" ? (
               <p className="text-[16px] leading-6 text-[var(--text-secondary)]">
-                Enter the SMS code first, then set your password.
+                Enter the SMS code to finish creating your account.
               </p>
-            ) : null}
-            {setupRequired && mode === "signin" ? (
-              <p className="text-[16px] leading-6 text-[var(--text-secondary)]">First time login - you’ll be prompted to set your security after this step.</p>
             ) : null}
             <button
               className={primaryButtonClass}
@@ -588,14 +468,6 @@ export default function LoginPage() {
               disabled={loading || restoringSession}
             >
               {loading ? "Verifying…" : "Verify & continue"}
-            </button>
-            <button
-              type="button"
-              className={secondaryButtonClass}
-              onClick={() => requestOtp(null, "whatsapp")}
-              disabled={loading || restoringSession}
-            >
-              {loading ? "Sending…" : "Resend via WhatsApp"}
             </button>
             <button
               type="button"

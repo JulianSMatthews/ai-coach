@@ -1405,8 +1405,6 @@ export default function AssessmentChatBox({
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
   const [claimPhone, setClaimPhone] = useState("");
-  const [claimPassword, setClaimPassword] = useState("");
-  const [claimConfirmPassword, setClaimConfirmPassword] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState(false);
@@ -3083,8 +3081,6 @@ export default function AssessmentChatBox({
     const firstName = claimFirstName.trim();
     const surname = claimSurname.trim();
     const phone = claimPhone.trim();
-    const password = claimPassword;
-    const confirmPassword = claimConfirmPassword;
     if (claiming || claimSuccess) {
       return;
     }
@@ -3100,14 +3096,6 @@ export default function AssessmentChatBox({
       setClaimError("Enter a valid mobile number, ideally with country code.");
       return;
     }
-    if (!password || password.length < 8) {
-      setClaimError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setClaimError("Passwords do not match.");
-      return;
-    }
 
     setClaiming(true);
     setClaimError(null);
@@ -3121,7 +3109,6 @@ export default function AssessmentChatBox({
           first_name: firstName,
           surname,
           phone,
-          password,
           create_app_session: true,
           lead_token: leadToken || undefined,
         }),
@@ -3452,29 +3439,9 @@ export default function AssessmentChatBox({
             disabled={claiming || claimSuccess}
             required
           />
-          <input
-            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm"
-            type="password"
-            placeholder="Create password"
-            autoComplete="new-password"
-            value={claimPassword}
-            onChange={(event) => setClaimPassword(event.target.value)}
-            disabled={claiming || claimSuccess}
-            required
-          />
-          <input
-            className="rounded-xl rounded-[24px] bg-[#fcf8f0] px-3 py-2 text-sm"
-            type="password"
-            placeholder="Confirm password"
-            autoComplete="new-password"
-            value={claimConfirmPassword}
-            onChange={(event) => setClaimConfirmPassword(event.target.value)}
-            disabled={claiming || claimSuccess}
-            required
-          />
         </div>
         <p className="text-xs text-[#6b6257]">
-          Your mobile number is required and will be used for future login codes by WhatsApp or SMS.
+          Your mobile number is required and will be used for future login codes by SMS.
         </p>
 
         <div>

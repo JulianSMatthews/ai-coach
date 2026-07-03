@@ -4,10 +4,10 @@ Use these notes when submitting the iOS build to App Store Connect.
 
 ## App purpose
 
-HealthSense is a wellbeing coaching and habit-support app. It provides an assessment, coaching guidance from Gia,
+CoachSense is a wellbeing coaching and habit-support app. It provides an assessment, coaching guidance from Gia,
 daily habit tracking, and education.
 
-HealthSense is not a medical diagnosis, treatment, emergency, or clinical decision app.
+CoachSense is not a medical diagnosis, treatment, emergency, or clinical decision app.
 
 ## Native capabilities
 
@@ -19,10 +19,17 @@ HealthSense is not a medical diagnosis, treatment, emergency, or clinical decisi
 
 Provide Apple with a live test account before submission:
 
-- Mobile number:
-- Password:
-- Login code instructions:
-- User ID:
+- Mobile number: +447700900001
+- Password: Not required. CoachSense uses SMS code login only.
+- Login code: 123456
+- Login code instructions: Enter the mobile number above, tap Send login code, then enter 123456.
+- User ID: Created automatically when the reviewer requests the code.
+
+Before submission, configure the API service environment variables:
+
+- `APP_REVIEW_DEMO_ENABLED=1`
+- `APP_REVIEW_DEMO_PHONE=+447700900001`
+- `APP_REVIEW_DEMO_CODE=123456`
 
 The reviewer should be able to test:
 

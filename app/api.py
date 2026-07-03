@@ -3808,6 +3808,58 @@ def _send_auth_code(
         except Exception as sms_err:
             raise RuntimeError(f"whatsapp send failed: {wa_err}; sms fallback failed: {sms_err}")
 
+def _app_review_demo_enabled() -> bool:
+    return _is_truthy_token(os.getenv("APP_REVIEW_DEMO_ENABLED"))
+
+def _app_review_demo_phone() -> str:
+    raw = (os.getenv("APP_REVIEW_DEMO_PHONE") or "").strip()
+    return _norm_phone(raw) if raw else ""
+
+def _app_review_demo_code() -> str:
+    return (os.getenv("APP_REVIEW_DEMO_CODE") or "123456").strip() or "123456"
+
+def _is_app_review_demo_login(*, phone_raw: object, email_raw: object = None) -> bool:
+    if not _app_review_demo_enabled() or email_raw:
+        return False
+    demo_phone = _app_review_demo_phone()
+    if not demo_phone:
+        return False
+    try:
+        return _norm_phone(str(phone_raw or "")) == demo_phone
+    except Exception:
+        return False
+
+def _get_or_create_app_review_demo_user(session, *, phone_norm: str) -> User:
+    user = session.execute(select(User).where(User.phone.in_([phone_norm, f"whatsapp:{phone_norm}"]))).scalar_one_or_none()
+    now = datetime.utcnow()
+    if user is None:
+        user = User(
+            first_name="Apple",
+            surname="Reviewer",
+            phone=phone_norm,
+            club_id=_resolve_default_club_id(session),
+            created_on=now,
+            updated_on=now,
+            consent_given=True,
+            consent_at=now,
+            phone_verified_at=now,
+        )
+        session.add(user)
+        session.flush()
+    else:
+        user.phone = phone_norm
+        if getattr(user, "phone_verified_at", None) is None:
+            user.phone_verified_at = now
+        try:
+            user.updated_on = now
+        except Exception:
+            pass
+    user_id = int(getattr(user, "id", 0) or 0)
+    if user_id:
+        _set_pref_value(session, user_id, "app_review_demo_account", "1")
+        _set_pref_value(session, user_id, "preferred_channel", "app")
+    return user
+
 def _extract_session_token(request: Request) -> str | None:
     header = request.headers.get("X-Session-Token")
     if header:
@@ -6488,16 +6540,17 @@ def api_public_assessment_lead_first_reply(payload: dict | None, request: Reques
 def api_auth_login_request(payload: dict, request: Request):
     email_raw = (payload or {}).get("email")
     phone_raw = (payload or {}).get("phone")
-    password = (payload or {}).get("password")
     requested_channel = str((payload or {}).get("channel") or "auto").strip().lower() or "auto"
     if requested_channel not in {"auto", "email", "whatsapp", "sms"}:
         raise HTTPException(status_code=400, detail="channel must be auto|email|whatsapp|sms")
+    is_demo_login = _is_app_review_demo_login(phone_raw=phone_raw, email_raw=email_raw)
     with SessionLocal() as s:
-        user, email_val, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
-        has_password = bool(getattr(user, "password_hash", None))
-        if has_password:
-            if not password or not _verify_password(str(password), getattr(user, "password_hash", None)):
-                raise HTTPException(status_code=401, detail="invalid credentials")
+        if is_demo_login:
+            phone_norm = _norm_phone(str(phone_raw or ""))
+            user = _get_or_create_app_review_demo_user(s, phone_norm=phone_norm)
+            email_val = None
+        else:
+            user, email_val, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
         user_id = int(user.id)
         user_phone = str(getattr(user, "phone", "") or "").strip()
         user_email = _normalize_auth_email(getattr(user, "email", ""))
@@ -6507,7 +6560,9 @@ def api_auth_login_request(payload: dict, request: Request):
             raise HTTPException(status_code=400, detail="mobile number required")
         if requested_channel == "email" and not user_email:
             raise HTTPException(status_code=400, detail="email address required")
-        code = f"{secrets.randbelow(1_000_000):06d}"
+        if is_demo_login:
+            requested_channel = "sms"
+        code = _app_review_demo_code() if is_demo_login else f"{secrets.randbelow(1_000_000):06d}"
         otp = AuthOtp(
             user_id=user_id,
             channel=requested_channel,
@@ -6522,23 +6577,26 @@ def api_auth_login_request(payload: dict, request: Request):
         s.refresh(otp)
         otp_id = int(otp.id)
         otp_expires_at = otp.expires_at
-    try:
-        channel_used = _send_auth_code(
-            user_id=user_id,
-            user_phone=user_phone or None,
-            user_email=user_email or None,
-            code=code,
-            channel=requested_channel,
-            purpose_label="login code",
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(
-            f"[auth][otp] login send failed user_id={user_id} channel={requested_channel} "
-            f"phone={user_phone} email={user_email} error={e}"
-        )
-        raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
+    if is_demo_login:
+        channel_used = "sms"
+    else:
+        try:
+            channel_used = _send_auth_code(
+                user_id=user_id,
+                user_phone=user_phone or None,
+                user_email=user_email or None,
+                code=code,
+                channel=requested_channel,
+                purpose_label="login code",
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(
+                f"[auth][otp] login send failed user_id={user_id} channel={requested_channel} "
+                f"phone={user_phone} email={user_email} error={e}"
+            )
+            raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     with SessionLocal() as s:
         otp_row = s.query(AuthOtp).filter(AuthOtp.id == otp_id).one_or_none()
         if otp_row:
@@ -6547,8 +6605,9 @@ def api_auth_login_request(payload: dict, request: Request):
     return {
         "otp_id": otp_id,
         "expires_at": otp_expires_at.isoformat(),
-        "setup_required": not has_password,
+        "setup_required": False,
         "channel": channel_used,
+        "demo": bool(is_demo_login),
     }
 
 
@@ -6570,7 +6629,6 @@ def api_auth_login_verify(payload: dict, request: Request):
     first_login_marked = False
     with SessionLocal() as s:
         user, _, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
-        setup_required = not bool(getattr(user, "password_hash", None))
         otp = s.query(AuthOtp).filter(AuthOtp.id == otp_id, AuthOtp.user_id == user.id).one_or_none()
         if not otp or otp.purpose != "login_2fa":
             raise HTTPException(status_code=404, detail="otp not found")
@@ -6619,7 +6677,7 @@ def api_auth_login_verify(payload: dict, request: Request):
         "session_token": session_token,
         "user_id": user_id,
         "expires_at": expires_at.isoformat(),
-        "setup_required": setup_required,
+        "setup_required": False,
         "remember_days": _SESSION_TTL_DAYS_REMEMBER if remember_me else _SESSION_TTL_DAYS,
     }
 
@@ -6735,7 +6793,7 @@ def api_auth_register_request(payload: dict, request: Request):
         "otp_id": otp_id,
         "expires_at": otp_expires_at.isoformat(),
         "channel": channel_used,
-        "setup_required": True,
+        "setup_required": False,
     }
 
 
@@ -6810,7 +6868,7 @@ def api_auth_register_verify(payload: dict, request: Request):
         "session_token": session_token,
         "user_id": user_id,
         "expires_at": expires_at.isoformat(),
-        "setup_required": True,
+        "setup_required": False,
         "remember_days": _SESSION_TTL_DAYS_REMEMBER if remember_me else _SESSION_TTL_DAYS,
     }
 
@@ -7231,8 +7289,6 @@ def api_user_assessment_chat_claim_identity(
         raise HTTPException(status_code=400, detail="name is too long")
     if not phone_raw:
         raise HTTPException(status_code=400, detail="phone required")
-    if create_app_session and not password_val:
-        raise HTTPException(status_code=400, detail="password is required")
     if password_val and len(password_val) < 8:
         raise HTTPException(status_code=400, detail="password must be at least 8 characters")
     if preferred_channel_val and preferred_channel_val not in {"whatsapp", "app", "sms", "email"}:

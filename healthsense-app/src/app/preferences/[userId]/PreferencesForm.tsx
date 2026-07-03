@@ -40,9 +40,6 @@ export default function PreferencesForm({
   const [pillarSelections, setPillarSelections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(PREFERENCE_PILLARS.map((pillar) => [pillar.key, Boolean(initialPillarSelections[pillar.key])])),
   );
-  const [changePassword, setChangePassword] = useState(false);
-  const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -51,14 +48,6 @@ export default function PreferencesForm({
     setSaving(true);
     setStatus(null);
     try {
-      if (changePassword) {
-        if (password.length < 8) {
-          throw new Error("Password must be at least 8 characters.");
-        }
-        if (password !== passwordConfirm) {
-          throw new Error("Passwords do not match.");
-        }
-      }
       const payload: Record<string, unknown> = {
         userId,
         email: email.trim(),
@@ -68,9 +57,6 @@ export default function PreferencesForm({
       for (const pillar of PREFERENCE_PILLARS) {
         const prefKey = PILLAR_PREF_KEYS[pillar.key];
         payload[prefKey] = pillarSelections[pillar.key] ? "1" : "0";
-      }
-      if (changePassword) {
-        payload.password = password;
       }
       const res = await fetch("/api/preferences", {
         method: "POST",
@@ -84,11 +70,6 @@ export default function PreferencesForm({
       setStatus("Saved");
       if (typeof window !== "undefined") {
         applyThemePreference(theme, true);
-      }
-      if (changePassword) {
-        setPassword("");
-        setPasswordConfirm("");
-        setChangePassword(false);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -180,48 +161,6 @@ export default function PreferencesForm({
               placeholder="you@example.com"
             />
             <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Optional, used for account recovery and important updates.</p>
-          </div>
-          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">Password</label>
-              <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-[var(--border)]"
-                  checked={changePassword}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setChangePassword(next);
-                    if (!next) {
-                      setPassword("");
-                      setPasswordConfirm("");
-                    }
-                  }}
-                />
-                Change password
-              </label>
-            </div>
-            <input
-              className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base disabled:opacity-60"
-              type="password"
-              name="new_password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Set a password for login"
-              disabled={!changePassword}
-            />
-            <input
-              className="mt-3 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base disabled:opacity-60"
-              type="password"
-              name="confirm_new_password"
-              autoComplete="new-password"
-              value={passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.target.value)}
-              placeholder="Confirm password"
-              disabled={!changePassword}
-            />
-            <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Minimum 8 characters.</p>
           </div>
         </div>
       </section>

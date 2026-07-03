@@ -47,7 +47,7 @@ export default function TermsPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Account responsibility</h2>
         <p>
-          Keep your login code, password, and device secure. Only enter accurate information for your own account. You
+          Keep your login code and device secure. Only enter accurate information for your own account. You
           can contact support if you believe your account or data is incorrect.
         </p>
       </section>
