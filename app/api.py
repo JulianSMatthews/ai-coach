@@ -458,6 +458,14 @@ def _json_safe(value: Any) -> Any:
     except Exception:
         return None
 
+def _safe_int(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except Exception:
+        return None
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Environment awareness (simple version)
 # ──────────────────────────────────────────────────────────────────────────────
