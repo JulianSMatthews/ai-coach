@@ -52,8 +52,8 @@ _HOME_PILLAR_QUOTE_GUIDANCE: dict[str, str] = {
     "nutrition": "For Nutrition, make it about how food choices may be affecting energy, steadiness, or self-care, not diet compliance.",
     "training": "For Training, make it about body confidence, capability, and rhythm, not workout completion or progression.",
 }
-_QUOTE_LED_PILLARS = {"reflection", "purpose", "resilience"}
-_EDUCATION_INSIGHT_PILLARS = {"recovery", "nutrition", "training"}
+_QUOTE_LED_PILLARS = {"reflection", "purpose", "resilience", "recovery", "nutrition", "training"}
+_EDUCATION_INSIGHT_PILLARS: set[str] = set()
 _QUOTE_LED_CUE_BANK: dict[str, tuple[dict[str, str], ...]] = {
     "reflection": (
         {
@@ -104,6 +104,57 @@ _QUOTE_LED_CUE_BANK: dict[str, tuple[dict[str, str], ...]] = {
             "quote": "Our greatest glory is not in never falling, but in rising every time we fall.",
             "author": "Confucius",
             "reflection": "Resilience is less about avoiding difficulty and more about returning to yourself after difficult moments.",
+        },
+    ),
+    "recovery": (
+        {
+            "quote": "Rest is not idleness.",
+            "author": "John Lubbock",
+            "reflection": "Recovery is part of growth, not time away from it; your body needs space to restore before it can respond well.",
+        },
+        {
+            "quote": "There is more to life than increasing its speed.",
+            "author": "Mahatma Gandhi",
+            "reflection": "Recovery begins when you stop treating pace as proof of progress and let steadiness support your energy.",
+        },
+        {
+            "quote": "Take rest; a field that has rested gives a bountiful crop.",
+            "author": "Ovid",
+            "reflection": "Recovery creates the conditions for future effort, letting restoration become part of the work rather than an interruption.",
+        },
+    ),
+    "nutrition": (
+        {
+            "quote": "Moderation is the silken string running through the pearl chain of all virtues.",
+            "author": "Joseph Hall",
+            "reflection": "Nutrition works best when it supports steadiness and care, without turning every choice into pressure.",
+        },
+        {
+            "quote": "To eat is a necessity, but to eat intelligently is an art.",
+            "author": "Francois de La Rochefoucauld",
+            "reflection": "Nutrition becomes more useful when awareness guides the pattern, not perfection, rules or judgement.",
+        },
+        {
+            "quote": "First we make our habits, then our habits make us.",
+            "author": "John Dryden",
+            "reflection": "Nutrition improves through repeated small patterns that make steady energy easier than constant correction.",
+        },
+    ),
+    "training": (
+        {
+            "quote": "Well done is better than well said.",
+            "author": "Benjamin Franklin",
+            "reflection": "Training confidence grows through repeated effort, where small completed sessions matter more than perfect intentions.",
+        },
+        {
+            "quote": "Energy and persistence conquer all things.",
+            "author": "Benjamin Franklin",
+            "reflection": "Training is built by showing up with patience, letting consistent movement compound into capability.",
+        },
+        {
+            "quote": "The journey of a thousand miles begins with one step.",
+            "author": "Lao Tzu",
+            "reflection": "Training becomes sustainable when the next step feels possible, repeatable and connected to the body you are building.",
         },
     ),
 }
@@ -2016,8 +2067,22 @@ def _save_latest_daily_pillar_quote(
         )
 
 
-def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str, anchor: date) -> str:
+def _latest_generated_daily_pillar_quote(
+    session,
+    user_id: int,
+    pillar_key: str,
+    anchor: date,
+    *,
+    source_cache_keys: set[str] | None = None,
+) -> str:
     normalized_pillar_key = str(pillar_key or "").strip().lower()
+    allowed_sources = {str(value or "").strip() for value in (source_cache_keys or set()) if str(value or "").strip()}
+
+    def row_matches_source(row: PillarCueQuote | None) -> bool:
+        if not allowed_sources:
+            return True
+        return str(getattr(row, "source_cache_key", "") or "").strip() in allowed_sources
+
     exact_row = (
         session.query(PillarCueQuote)
         .filter(
@@ -2027,20 +2092,22 @@ def _latest_generated_daily_pillar_quote(session, user_id: int, pillar_key: str,
         )
         .first()
     )
-    quote = _stored_generated_daily_pillar_quote(getattr(exact_row, "quote", None))
+    quote = _stored_generated_daily_pillar_quote(getattr(exact_row, "quote", None)) if row_matches_source(exact_row) else ""
     if quote:
         return quote
-    latest_row = (
-        session.query(PillarCueQuote)
-        .filter(
-            PillarCueQuote.user_id == int(user_id),
-            PillarCueQuote.pillar_key == normalized_pillar_key,
-            PillarCueQuote.quote_date <= anchor,
-        )
-        .order_by(PillarCueQuote.quote_date.desc(), PillarCueQuote.generated_at.desc(), PillarCueQuote.id.desc())
-        .first()
+    latest_query = session.query(PillarCueQuote).filter(
+        PillarCueQuote.user_id == int(user_id),
+        PillarCueQuote.pillar_key == normalized_pillar_key,
+        PillarCueQuote.quote_date <= anchor,
     )
-    quote = _stored_generated_daily_pillar_quote(getattr(latest_row, "quote", None))
+    if allowed_sources:
+        latest_query = latest_query.filter(PillarCueQuote.source_cache_key.in_(allowed_sources))
+    latest_row = latest_query.order_by(
+        PillarCueQuote.quote_date.desc(),
+        PillarCueQuote.generated_at.desc(),
+        PillarCueQuote.id.desc(),
+    ).first()
+    quote = _stored_generated_daily_pillar_quote(getattr(latest_row, "quote", None)) if row_matches_source(latest_row) else ""
     if quote:
         return quote
     return ""
@@ -2092,7 +2159,14 @@ def _daily_pillar_quote(
     try:
         with SessionLocal() as session:
             if skip_generation:
-                latest_cached = _latest_generated_daily_pillar_quote(session, int(user_id), key, anchor)
+                cache_sources = {"home_pillar_quote_bank"} if key in _QUOTE_LED_PILLARS else None
+                latest_cached = _latest_generated_daily_pillar_quote(
+                    session,
+                    int(user_id),
+                    key,
+                    anchor,
+                    source_cache_keys=cache_sources,
+                )
                 if latest_cached:
                     return latest_cached
                 return ""

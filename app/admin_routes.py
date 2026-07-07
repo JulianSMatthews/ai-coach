@@ -4145,7 +4145,15 @@ async def save_prompt_template(
     return RedirectResponse(url="/admin/prompt-templates", status_code=303)
 
 
-_QUOTE_LED_ADMIN_PILLARS = ("reflection", "purpose", "resilience")
+_QUOTE_LED_ADMIN_PILLARS = ("reflection", "purpose", "resilience", "recovery", "nutrition", "training")
+_QUOTE_LED_ADMIN_PILLAR_GUIDANCE = {
+    "reflection": "Focus on self-awareness, emotional signals, reflection, learning from experience, and seeing patterns clearly.",
+    "purpose": "Focus on meaning, values, direction, contribution, identity, and staying connected to why something matters.",
+    "resilience": "Focus on steadiness under pressure, courage, perspective, adapting to challenge, and returning after setbacks.",
+    "recovery": "Focus on rest, restoration, rhythm, patience, energy protection, and the role of recovery in sustainable growth.",
+    "nutrition": "Focus on nourishment, consistency, appetite awareness, steady energy, habits, simplicity, and care. Avoid diet, weight-loss, treatment, or medical claims.",
+    "training": "Focus on movement, practice, consistency, patience, strength, discipline, capability, and sustainable progress. Avoid injury-treatment, body-image, or extreme-performance claims.",
+}
 
 
 def _normalise_pillar_quote_items(raw_items: object, *, limit: int = 90) -> list[dict[str, str]]:
@@ -4183,6 +4191,10 @@ def _build_pillar_quote_generation_prompt(
     avoid_quotes: list[str] | None = None,
 ) -> str:
     pillar_label = str(pillar_key or "").strip().title()
+    pillar_guidance = _QUOTE_LED_ADMIN_PILLAR_GUIDANCE.get(
+        str(pillar_key or "").strip().lower(),
+        "Keep the reflection aligned to everyday wellbeing and personal growth.",
+    )
     avoid = [str(value or "").strip() for value in (avoid_quotes or []) if str(value or "").strip()]
     avoid_block = ""
     if avoid:
@@ -4197,12 +4209,13 @@ def _build_pillar_quote_generation_prompt(
         '{"quotes":[{"quote":"short exact quote","author":"Author Name","reflection":"CoachSense reflection"}]}\n\n'
         f"Pillar: {pillar_label}\n"
         f"Required quote count: exactly {int(count)}.\n\n"
+        f"Pillar guidance: {pillar_guidance}\n\n"
         "Rules:\n"
         "- Use only widely known public-domain/classic quotations where the author attribution is reliable.\n"
         "- Prefer authors whose works are public domain. Do not use living authors, modern copyrighted song/film/book lines, or uncertain attributions.\n"
         "- Each quote must be under 25 words.\n"
         "- Each reflection must be 18-28 words, UK English, practical, warm, and aligned to the pillar.\n"
-        "- The reflection must explain what the quote means for everyday wellbeing.\n"
+        "- The reflection must explain what the quote means for this pillar in everyday life.\n"
         "- Do not mention scores, tracking, targets, streaks, apps, CoachSense, JSON, or being an AI.\n"
         "- Avoid duplicate quotes and avoid all reflections starting the same way.\n"
         "- Use plain author names only, with no dates or extra notes.\n"
@@ -4265,7 +4278,7 @@ def list_pillar_quotes():
         )
     body = (
         "<h1>Pillar Quote Banks</h1>"
-        "<p class='help'>Generate quote-led cue-card banks for Reflection, Purpose and Resilience. The app rotates active quotes by user/date/pillar; hardcoded quotes remain as fallback only.</p>"
+        "<p class='help'>Generate quote-led cue-card banks for all home pillars. The app rotates active quotes by user/date/pillar; hardcoded quotes remain as fallback only.</p>"
         + "".join(sections)
     )
     return _wrap_page("Pillar Quote Banks", body)
@@ -4280,7 +4293,7 @@ async def generate_pillar_quotes(
     ensure_pillar_tracker_schema()
     key = str(pillar_key or "").strip().lower()
     if key not in _QUOTE_LED_ADMIN_PILLARS:
-        raise HTTPException(400, "pillar_key must be reflection, purpose, or resilience")
+        raise HTTPException(400, "pillar_key must be one of the configured quote-led pillars")
     resolved_count = max(10, min(int(count or 90), 90))
     model_override = _normalize_model_override(model)
 

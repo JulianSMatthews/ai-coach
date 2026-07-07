@@ -10,8 +10,9 @@ export default function PrivacyPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">What we collect</h2>
         <p>
-          We collect the information needed to run your account, including your name, mobile number, email address,
-          login/session details, assessment answers, coaching preferences, app activity, and support requests.
+          We collect the information needed to run your account, including your name, mobile number, email address if
+          you choose to provide one, login/session details, assessment answers, coaching preferences, app activity, and
+          support requests.
         </p>
       </section>
 
