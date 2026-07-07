@@ -76,7 +76,7 @@ export default function AppSplash() {
         .splash-words {
           position: absolute;
           inset: 0;
-          color: #c54817;
+          color: #251208;
           font-size: clamp(4.75rem, 18.75vw, 9.4rem);
           font-weight: 700;
           line-height: 0.9;
@@ -103,6 +103,7 @@ export default function AppSplash() {
           --from-y: 56dvh;
           --to-x: 0.18em;
           --to-y: calc(-50% - 0.55em);
+          color: #d3541b;
           animation-delay: 0.13s;
         }
 
