@@ -118,11 +118,15 @@ type EducationExplorerPillar = {
   completed_lesson_count: number;
   concepts: EducationExplorerConcept[];
 };
-const APP_STORE_V1_HIDDEN_EDUCATION_PILLARS = new Set(["nutrition", "training"]);
-function isAppStoreV1EducationPillar(value: unknown, includeAllPillars = false): boolean {
+const DEFAULT_EDUCATION_PILLARS = new Set(["reflection", "purpose", "resilience", "recovery"]);
+function isAllowedEducationPillar(
+  value: unknown,
+  allowedPillars: ReadonlySet<string>,
+  includeAllPillars = false,
+): boolean {
   if (includeAllPillars) return true;
   const key = String(value || "").trim().toLowerCase();
-  return !key || !APP_STORE_V1_HIDDEN_EDUCATION_PILLARS.has(key);
+  return !key || allowedPillars.has(key);
 }
 type ConceptIconProps = {
   conceptKey?: string | null;
@@ -1545,8 +1549,18 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
-  const educationLesson = isAppStoreV1EducationPillar(
+  const allowedEducationPillars = useMemo(() => {
+    if (isAdminUser) return new Set<string>();
+    const activeKeys = new Set(
+      (Array.isArray(initialTrackerSummary?.pillars) ? initialTrackerSummary.pillars : [])
+        .map((pillar) => String(pillar?.pillar_key || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return activeKeys.size ? activeKeys : DEFAULT_EDUCATION_PILLARS;
+  }, [initialTrackerSummary?.pillars, isAdminUser]);
+  const educationLesson = isAllowedEducationPillar(
     (educationPlan?.lesson as Record<string, unknown> | null | undefined)?.pillar_key,
+    allowedEducationPillars,
     isAdminUser,
   )
     ? educationPlan?.lesson || null
@@ -1576,9 +1590,13 @@ export default function AssessmentChatBox({
   const educationLessonQueue = useMemo(
     () =>
       (Array.isArray(educationPlan?.lessons) ? educationPlan.lessons.filter(Boolean) : []).filter((lesson) =>
-        isAppStoreV1EducationPillar((lesson as Record<string, unknown> | null | undefined)?.pillar_key, isAdminUser),
+        isAllowedEducationPillar(
+          (lesson as Record<string, unknown> | null | undefined)?.pillar_key,
+          allowedEducationPillars,
+          isAdminUser,
+        ),
       ),
-    [educationPlan?.lessons, isAdminUser],
+    [allowedEducationPillars, educationPlan?.lessons, isAdminUser],
   );
   const educationCurrentLessonIndex = useMemo(
     () => educationLessonQueue.findIndex((lesson) => Boolean(lesson?.is_current)),
@@ -1609,9 +1627,9 @@ export default function AssessmentChatBox({
   const educationJourneyProgrammes = useMemo(
     () =>
       (Array.isArray(educationPlan?.journey?.programmes) ? educationPlan.journey.programmes.filter(Boolean) : []).filter(
-        (programme) => isAppStoreV1EducationPillar(programme?.pillar_key, isAdminUser),
+        (programme) => isAllowedEducationPillar(programme?.pillar_key, allowedEducationPillars, isAdminUser),
       ),
-    [educationPlan?.journey?.programmes, isAdminUser],
+    [allowedEducationPillars, educationPlan?.journey?.programmes, isAdminUser],
   );
   const educationExplorerPillars = useMemo<EducationExplorerPillar[]>(() => {
     const catalogPillars = Array.isArray(educationPlan?.explore_catalog?.pillars)
@@ -1621,7 +1639,7 @@ export default function AssessmentChatBox({
       const pillars: EducationExplorerPillar[] = [];
       for (const pillar of catalogPillars) {
         const pillarKey = String(pillar?.pillar_key || "").trim().toLowerCase();
-        if (!pillarKey || !isAppStoreV1EducationPillar(pillarKey, isAdminUser)) continue;
+        if (!pillarKey || !isAllowedEducationPillar(pillarKey, allowedEducationPillars, isAdminUser)) continue;
         const concepts: EducationExplorerConcept[] = [];
         for (const concept of Array.isArray(pillar?.concepts) ? pillar.concepts : []) {
           const conceptKey = String(concept?.concept_key || "").trim().toLowerCase();
@@ -1659,7 +1677,7 @@ export default function AssessmentChatBox({
       return pillars;
     }
     return [];
-  }, [educationPlan?.explore_catalog?.pillars, isAdminUser]);
+  }, [allowedEducationPillars, educationPlan?.explore_catalog?.pillars, isAdminUser]);
   const activeEducationExplorerPillarKey =
     educationExplorerPillarKey || educationExplorerPillars[0]?.pillar_key || null;
   const educationExplorerConcepts = useMemo<EducationExplorerConcept[]>(() => {
@@ -1733,7 +1751,7 @@ export default function AssessmentChatBox({
   }, [educationExplorerPillars, educationLessonRail, educationPlan?.programme_id, selectedEducationProgramme]);
   const openEducationLesson = useCallback((lesson: any, options?: { closeExplorer?: boolean }) => {
     const pillarKey = String(lesson?.pillar_key || "").trim().toLowerCase();
-    if (!isAppStoreV1EducationPillar(pillarKey, isAdminUser)) return;
+    if (!isAllowedEducationPillar(pillarKey, allowedEducationPillars, isAdminUser)) return;
     const lessonDayIndex = Number(lesson?.day_index || 0);
     const lessonTitle = lessonTitleWithIndex(
       lesson,
@@ -1770,7 +1788,7 @@ export default function AssessmentChatBox({
         }),
       );
     }
-  }, [isAdminUser]);
+  }, [allowedEducationPillars, isAdminUser]);
   const closeActiveEducationLesson = useCallback(() => {
     setActiveEducationLesson(null);
     setEducationQuizAnswers({});
