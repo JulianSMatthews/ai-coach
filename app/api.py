@@ -8274,12 +8274,12 @@ def api_user_education_plan_today(
     anchor_date: str | None = None,
     include_explore: bool = False,
     explore_cache_only: bool = False,
+    include_journey_lessons: bool = False,
     prefetch: bool = False,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
-    ensure_education_plan_schema()
     if anchor_date:
         anchor = parse_tracker_anchor(anchor_date)
         if anchor is None:
@@ -8292,6 +8292,7 @@ def api_user_education_plan_today(
             anchor=anchor,
             include_explore=bool(include_explore),
             explore_cache_only=True,
+            include_journey_lessons=bool(include_journey_lessons),
         )
         result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
             int(user_id),
@@ -8304,6 +8305,7 @@ def api_user_education_plan_today(
             anchor=anchor,
             include_explore=bool(include_explore),
             explore_cache_only=bool(explore_cache_only),
+            include_journey_lessons=bool(include_journey_lessons),
         )
         if not include_explore or bool(explore_cache_only) or result.get("explore_catalog_pending"):
             result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(

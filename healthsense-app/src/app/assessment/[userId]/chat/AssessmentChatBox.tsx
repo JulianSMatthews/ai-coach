@@ -1465,6 +1465,7 @@ export default function AssessmentChatBox({
   const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
   const [educationQuizError, setEducationQuizError] = useState<string | null>(null);
   const [educationProgrammeOpen, setEducationProgrammeOpen] = useState(false);
+  const [educationProgrammeLessonsLoading, setEducationProgrammeLessonsLoading] = useState(false);
   const [selectedEducationProgrammeId, setSelectedEducationProgrammeId] = useState<number | null>(null);
   const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
@@ -1476,6 +1477,7 @@ export default function AssessmentChatBox({
   });
   const [extraStreakCompletionDates, setExtraStreakCompletionDates] = useState<string[]>([]);
   const educationPlanRequestIdRef = useRef(0);
+  const educationPlanLoaderRef = useRef<((options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => Promise<void>) | null>(null);
   const educationExplorePrefetchStartedRef = useRef(false);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
@@ -1809,6 +1811,14 @@ export default function AssessmentChatBox({
     setEducationExplorerMode("pillars");
     setEducationExplorerPillarKey(null);
     setEducationExplorerConceptKey(null);
+    const existingLessons = Array.isArray(programme?.lessons) ? programme.lessons : [];
+    if (programmeId && existingLessons.length === 0) {
+      setEducationProgrammeLessonsLoading(true);
+      const loadLessons = educationPlanLoaderRef.current?.({ includeJourneyLessons: true }) || Promise.resolve();
+      void loadLessons.finally(() => {
+        setEducationProgrammeLessonsLoading(false);
+      });
+    }
   }, [educationPlan?.journey?.current_programme_id, educationPlan?.programme_id]);
   const activeEducationLessonContent = activeEducationLesson?.content || null;
   const activeEducationLessonAvatar = activeEducationLessonContent?.avatar || null;
@@ -2233,7 +2243,7 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; prefetch?: boolean }) => {
+  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => {
     const isBackgroundLoad = Boolean(options?.prefetch || options?.exploreCacheOnly);
     const requestId = isBackgroundLoad ? educationPlanRequestIdRef.current : educationPlanRequestIdRef.current + 1;
     if (!isBackgroundLoad) {
@@ -2252,6 +2262,9 @@ export default function AssessmentChatBox({
       if (options?.exploreCacheOnly) {
         params.set("exploreCacheOnly", "1");
       }
+      if (options?.includeJourneyLessons) {
+        params.set("includeJourneyLessons", "1");
+      }
       if (options?.prefetch) {
         params.set("prefetch", "1");
       }
@@ -2268,11 +2281,36 @@ export default function AssessmentChatBox({
       if (!isBackgroundLoad && requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      setEducationPlan((current) => ({
-        ...(current || {}),
-        ...data,
-        explore_catalog: data.explore_catalog || current?.explore_catalog,
-      }));
+      setEducationPlan((current) => {
+        const next: EducationPlanTodayResponse = {
+          ...(current || {}),
+          ...data,
+          explore_catalog: data.explore_catalog || current?.explore_catalog,
+        };
+        const currentProgrammes = Array.isArray(current?.journey?.programmes) ? current.journey.programmes : [];
+        const nextProgrammes = Array.isArray(data.journey?.programmes) ? data.journey.programmes : [];
+        if (currentProgrammes.length && nextProgrammes.length) {
+          const currentById = new Map(
+            currentProgrammes.map((programme: any) => [Number(programme?.programme_id || 0), programme]),
+          );
+          next.journey = {
+            ...(data.journey || {}),
+            programmes: nextProgrammes.map((programme: any) => {
+              const programmeId = Number(programme?.programme_id || 0);
+              const currentProgramme = currentById.get(programmeId);
+              if (
+                currentProgramme &&
+                !Array.isArray(programme?.lessons) &&
+                Array.isArray(currentProgramme?.lessons)
+              ) {
+                return { ...programme, lessons: currentProgramme.lessons };
+              }
+              return programme;
+            }),
+          };
+        }
+        return next;
+      });
     } catch (error) {
       if (!isBackgroundLoad && requestId !== educationPlanRequestIdRef.current) {
         return;
@@ -2289,6 +2327,7 @@ export default function AssessmentChatBox({
       }
     }
   }, [userId]);
+  educationPlanLoaderRef.current = loadEducationPlan;
 
   const openEducationExplorer = useCallback(() => {
     setEducationProgrammeOpen(false);
@@ -2726,10 +2765,10 @@ export default function AssessmentChatBox({
   }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
 
   useEffect(() => {
-    if (!showGuidedHomeChatPanel || educationExplorePrefetchStartedRef.current) return;
+    if (!showGuidedHomeChatPanel || !educationPlan || educationExplorePrefetchStartedRef.current) return;
     educationExplorePrefetchStartedRef.current = true;
     void loadEducationPlan({ prefetch: true, includeExplore: true, exploreCacheOnly: true });
-  }, [showGuidedHomeChatPanel, loadEducationPlan]);
+  }, [showGuidedHomeChatPanel, educationPlan, loadEducationPlan]);
 
   useEffect(() => {
     if (!educationExplorerOpen || educationPlan?.explore_catalog || educationPlanLoading) return;
@@ -3801,12 +3840,12 @@ export default function AssessmentChatBox({
                                             setEducationQuizMessage(null);
                                             setEducationQuizError(null);
                                           }}
-                                          className={`flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left text-sm font-semibold text-[var(--text-primary)] transition ${
+                                          className={`flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left text-sm font-semibold transition ${
                                             correct
-                                              ? "border-[#7da64f] bg-[#f4faef]"
+                                              ? "border-[#79b84a] bg-[#ffffff] text-[#1f5a14]"
                                               : incorrectSelection
-                                                ? "border-[#c76a42] bg-[#fff2ea]"
-                                                : "border-transparent bg-[var(--surface)]"
+                                                ? "border-[#c76a42] bg-[#fff2ea] text-[#9b3218]"
+                                                : "border-transparent bg-[var(--surface)] text-[var(--text-primary)]"
                                           }`}
                                         >
                                           <span>{option.label}</span>
@@ -3829,9 +3868,9 @@ export default function AssessmentChatBox({
                                     })}
                                   </div>
                                   {hasResult ? (
-                                    <div className="rounded-[18px] bg-[var(--surface)] px-4 py-3 text-sm leading-6 text-[var(--text-secondary)]">
+                                    <div className="rounded-[18px] border border-[#79b84a] bg-[#ffffff] px-4 py-3 text-sm leading-6 text-[#1f5a14]">
                                       <p>
-                                        <span className="font-semibold text-[var(--text-primary)]">Correct answer: </span>
+                                        <span className="font-semibold text-[#1f5a14]">Correct answer: </span>
                                         {correctAnswerLabel}
                                       </p>
                                       {question?.explanation ? (
@@ -4076,7 +4115,7 @@ export default function AssessmentChatBox({
                         ) : (
                           <div className="flex min-h-[9rem] min-w-full items-center rounded-[28px] border border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
                             <p className="text-[1.05rem] leading-7 text-[var(--text-secondary)]">
-                              Lessons are not available for this concept yet.
+                              {educationProgrammeLessonsLoading ? "Loading lessons..." : "Lessons are not available for this concept yet."}
                             </p>
                           </div>
                         )}

@@ -2868,6 +2868,7 @@ def _education_journey_payload(
     assessment: dict[str, Any],
     progress_by_day_id: dict[int, UserEducationDayProgress],
     concept_level_by_key: dict[tuple[str, str], UserEducationConceptLevel],
+    include_lessons: bool = False,
 ) -> dict[str, Any]:
     programmes = _released_concept_programmes_for_checkin_journey(session, int(user_id))
     if not programmes:
@@ -2981,20 +2982,22 @@ def _education_journey_payload(
         lesson_count = _programme_duration_days(session, programme)
         programme_days = days_by_programme.get(programme_id, [])
         programme_plan = (plans_by_programme.get(programme_id) or [active_plan])[-1]
-        lessons = [
-            _education_plan_lesson_payload(
-                session,
-                plan=programme_plan,
-                programme=programme,
-                programme_day=day,
-                anchor=anchor,
-                context=context,
-                assessment=assessment,
-                progress_by_day_id=progress_by_day_id,
-                concept_level_by_key=concept_level_by_key,
-            )
-            for day in programme_days
-        ]
+        lessons = []
+        if include_lessons:
+            lessons = [
+                _education_plan_lesson_payload(
+                    session,
+                    plan=programme_plan,
+                    programme=programme,
+                    programme_day=day,
+                    anchor=anchor,
+                    context=context,
+                    assessment=assessment,
+                    progress_by_day_id=progress_by_day_id,
+                    concept_level_by_key=concept_level_by_key,
+                )
+                for day in programme_days
+            ]
         completed_day_indexes = completed_day_indexes_by_programme.get(programme_id, set())
         completed_lesson_count = min(len(completed_day_indexes), lesson_count)
         programme_completed = programme_id in completed_programme_ids or (
@@ -3022,35 +3025,35 @@ def _education_journey_payload(
             str(getattr(programme, "concept_label", "") or "").strip()
             or (concept_key.replace("_", " ").title() if concept_key else "Concept")
         )
-        cards.append(
-            {
-                "sequence_index": sequence_index,
-                "programme_id": programme_id,
-                "code": str(getattr(programme, "code", "") or "").strip() or None,
-                "name": str(getattr(programme, "name", "") or "").strip() or concept_label,
-                "summary": (
-                    _normalize_lesson_text(getattr(first_day, "default_summary", "") or "")
-                    or _normalize_lesson_text(getattr(first_variant, "summary", "") or "")
-                    or _normalize_lesson_text(getattr(first_day, "lesson_goal", "") or "")
-                    or None
-                ),
-                "pillar_key": pillar_key or None,
-                "pillar_label": _pillar_label(pillar_key),
-                "concept_key": concept_key,
-                "concept_label": concept_label,
-                "journey_order": _programme_journey_order_value(programme),
-                "lesson_count": lesson_count,
-                "completed_lesson_count": completed_lesson_count,
-                "current_lesson_index": current_lesson_index,
-                "lessons": lessons,
-                "status": status,
-                "status_label": status.replace("_", " ").title(),
-                "is_current": is_current,
-                "is_completed": programme_completed,
-                "can_open": bool(lesson_count > 0),
-                "plan_count": len(plans_by_programme.get(programme_id, [])),
-            }
-        )
+        card = {
+            "sequence_index": sequence_index,
+            "programme_id": programme_id,
+            "code": str(getattr(programme, "code", "") or "").strip() or None,
+            "name": str(getattr(programme, "name", "") or "").strip() or concept_label,
+            "summary": (
+                _normalize_lesson_text(getattr(first_day, "default_summary", "") or "")
+                or _normalize_lesson_text(getattr(first_variant, "summary", "") or "")
+                or _normalize_lesson_text(getattr(first_day, "lesson_goal", "") or "")
+                or None
+            ),
+            "pillar_key": pillar_key or None,
+            "pillar_label": _pillar_label(pillar_key),
+            "concept_key": concept_key,
+            "concept_label": concept_label,
+            "journey_order": _programme_journey_order_value(programme),
+            "lesson_count": lesson_count,
+            "completed_lesson_count": completed_lesson_count,
+            "current_lesson_index": current_lesson_index,
+            "status": status,
+            "status_label": status.replace("_", " ").title(),
+            "is_current": is_current,
+            "is_completed": programme_completed,
+            "can_open": bool(lesson_count > 0),
+            "plan_count": len(plans_by_programme.get(programme_id, [])),
+        }
+        if include_lessons:
+            card["lessons"] = lessons
+        cards.append(card)
 
     if current_sequence_index is not None:
         up_next_card = next(
@@ -3925,6 +3928,7 @@ def _lesson_state(
     refresh_avatar_media: bool = True,
     include_explore: bool = False,
     explore_cache_only: bool = False,
+    include_journey_lessons: bool = False,
 ) -> dict[str, Any]:
     snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
     context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
@@ -4132,6 +4136,7 @@ def _lesson_state(
             assessment=assessment,
             progress_by_day_id=progress_by_day_id,
             concept_level_by_key=concept_level_by_key,
+            include_lessons=include_journey_lessons,
         ),
         "lesson": {
             "programme_day_id": int(programme_day.id),
@@ -4208,6 +4213,7 @@ def get_today_education_plan(
     anchor: date | None = None,
     include_explore: bool = False,
     explore_cache_only: bool = False,
+    include_journey_lessons: bool = False,
 ) -> dict[str, Any]:
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
@@ -4218,6 +4224,7 @@ def get_today_education_plan(
             anchor=resolved_anchor,
             include_explore=include_explore,
             explore_cache_only=explore_cache_only,
+            include_journey_lessons=include_journey_lessons,
         )
         session.commit()
         return payload

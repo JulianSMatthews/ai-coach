@@ -92,6 +92,7 @@ export async function GET(request: Request) {
     const anchorDate = String(url.searchParams.get("anchorDate") || "").trim();
     const includeExplore = String(url.searchParams.get("includeExplore") || url.searchParams.get("include_explore") || "").trim();
     const exploreCacheOnly = String(url.searchParams.get("exploreCacheOnly") || url.searchParams.get("explore_cache_only") || "").trim();
+    const includeJourneyLessons = String(url.searchParams.get("includeJourneyLessons") || url.searchParams.get("include_journey_lessons") || "").trim();
     const prefetch = String(url.searchParams.get("prefetch") || "").trim();
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
@@ -105,6 +106,9 @@ export async function GET(request: Request) {
     }
     if (exploreCacheOnly === "1" || exploreCacheOnly.toLowerCase() === "true") {
       params.set("explore_cache_only", "true");
+    }
+    if (includeJourneyLessons === "1" || includeJourneyLessons.toLowerCase() === "true") {
+      params.set("include_journey_lessons", "true");
     }
     if (prefetch === "1" || prefetch.toLowerCase() === "true") {
       params.set("prefetch", "true");
