@@ -76,7 +76,7 @@ export default function AppSplash() {
         .splash-words {
           position: absolute;
           inset: 0;
-          color: var(--accent);
+          color: #c54817;
           font-size: clamp(4.75rem, 18.75vw, 9.4rem);
           font-weight: 700;
           line-height: 0.9;

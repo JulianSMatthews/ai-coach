@@ -1477,7 +1477,8 @@ export default function AssessmentChatBox({
   });
   const [extraStreakCompletionDates, setExtraStreakCompletionDates] = useState<string[]>([]);
   const educationPlanRequestIdRef = useRef(0);
-  const educationPlanLoaderRef = useRef<((options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => Promise<void>) | null>(null);
+  const educationPlanLoaderRef = useRef<((options?: { background?: boolean; includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => Promise<void>) | null>(null);
+  const educationPlanWarmupPromiseRef = useRef<Promise<void> | null>(null);
   const educationExplorePrefetchStartedRef = useRef(false);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
@@ -2243,8 +2244,19 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-  const loadEducationPlan = useCallback(async (options?: { includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => {
-    const isBackgroundLoad = Boolean(options?.prefetch || options?.exploreCacheOnly);
+  const loadEducationPlan = useCallback(async (options?: { background?: boolean; includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => {
+    const isBasicPlanLoad = !options?.includeExplore && !options?.exploreCacheOnly && !options?.includeJourneyLessons && !options?.prefetch;
+    const isBackgroundLoad = Boolean(options?.background || options?.prefetch || options?.exploreCacheOnly);
+    if (!isBackgroundLoad && isBasicPlanLoad && educationPlanWarmupPromiseRef.current) {
+      setEducationPlanLoading(true);
+      setEducationPlanError(null);
+      try {
+        await educationPlanWarmupPromiseRef.current;
+      } finally {
+        setEducationPlanLoading(false);
+      }
+      return;
+    }
     const requestId = isBackgroundLoad ? educationPlanRequestIdRef.current : educationPlanRequestIdRef.current + 1;
     if (!isBackgroundLoad) {
       educationPlanRequestIdRef.current = requestId;
@@ -2757,6 +2769,21 @@ export default function AssessmentChatBox({
     finalGiaMessageError,
     requestFinalGiaMessage,
   ]);
+
+  useEffect(() => {
+    if (!showGuidedHomeChatPanel || educationPlan || educationPlanWarmupPromiseRef.current) return;
+    const timeout = window.setTimeout(() => {
+      const warmup = loadEducationPlan({ background: true });
+      let trackedWarmup: Promise<void>;
+      trackedWarmup = warmup.finally(() => {
+        if (educationPlanWarmupPromiseRef.current === trackedWarmup) {
+          educationPlanWarmupPromiseRef.current = null;
+        }
+      });
+      educationPlanWarmupPromiseRef.current = trackedWarmup;
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [showGuidedHomeChatPanel, loadEducationPlan, educationPlan]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || homeSurface !== "insight") return;
