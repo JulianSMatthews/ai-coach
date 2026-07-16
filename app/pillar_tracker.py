@@ -1082,11 +1082,11 @@ def _concept_okr_actual_achieved(
         for day in week_days
         if effective_start <= day <= anchor
     ]
-    elapsed_days = max(0, (anchor - effective_start).days + 1)
+    logged_days = len([value for value in logged_values if value is not None])
     return _okr_actual_achieved_from_logged_values(
         logged_values,
         resolved_target,
-        elapsed_days=elapsed_days,
+        elapsed_days=logged_days,
     )
 
 
@@ -1257,11 +1257,11 @@ def _sync_pillar_tracker_actuals_to_okrs(
                 continue
             value = _normalize_option_value(concept_def, getattr(row, "value_num", None))
             logged_values.append(value)
-        elapsed_days = max(0, (anchor_date - effective_start).days + 1)
+        logged_days = len([value for value in logged_values if value is not None])
         actual_progress = _okr_actual_achieved_from_logged_values(
             logged_values,
             resolved_target,
-            elapsed_days=elapsed_days,
+            elapsed_days=logged_days,
         )
         actual_value = _safe_float(actual_progress.get("actual_value"))
         kr.actual_num = actual_value
@@ -1627,6 +1627,7 @@ def _build_concept_week_evaluations(
         effective_start = _effective_okr_window_start(resolved_target, week_days, week_days[-1])
         concept_rows: dict[date, dict[str, Any]] = {}
         cumulative_value = 0.0
+        answered_days = 0
         for day in week_days:
             row = (entries_by_day.get(day) or {}).get(concept_key)
             value = None
@@ -1646,6 +1647,7 @@ def _build_concept_week_evaluations(
                 daily_status = _daily_display_status_for_value(concept_def, value, resolved_target)
                 daily_positive = daily_status == "success"
                 if day >= effective_start:
+                    answered_days += 1
                     cumulative_value += float(value)
             # Reflection and purpose are subjective Likert inputs; keep their displayed
             # score on the raw Likert 0-100 mapping instead of converting them into
@@ -1655,9 +1657,8 @@ def _build_concept_week_evaluations(
                 and resolved_target.target_period == "week"
                 and resolved_target.target_value is not None
             ):
-                elapsed_days = max(0, (day - effective_start).days + 1) if day >= effective_start else 0
-                expected = _weekly_expected_value(resolved_target, elapsed_days=elapsed_days)
-                if value is not None:
+                if value is not None and day >= effective_start:
+                    expected = _weekly_expected_value(resolved_target, elapsed_days=answered_days)
                     score = _weekly_score_against_target(
                         actual_value=cumulative_value,
                         expected_value=expected,
