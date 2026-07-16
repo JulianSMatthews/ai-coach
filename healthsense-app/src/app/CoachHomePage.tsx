@@ -88,7 +88,7 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
         <AppNav
           userId={userId}
           promptBadge={promptBadge}
-          overallScore={resolvePillarTrackerOverallScore(pillarTrackerSummary) ?? status.latest_run?.combined_overall ?? null}
+          overallScore={resolvePillarTrackerOverallScore(pillarTrackerSummary)}
           interactionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
           userFirstName={status.user?.first_name || null}
         />

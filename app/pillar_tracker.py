@@ -2287,10 +2287,8 @@ def _summary_pillar_payload(
     checkin_dates = list(editable_dates)
     if _week_has_completed_tracker_days(int(user_id), pillar_key, last_week_anchor):
         checkin_dates.insert(0, last_week_anchor)
-    resolved_score = tracker_score if tracker_score is not None else baseline_score
-    if resolved_score is None:
-        resolved_score = 0
-    resolved_source = "tracker" if tracker_score is not None else "assessment" if baseline_score is not None else "default"
+    resolved_score = tracker_score
+    resolved_source = "tracker" if tracker_score is not None else "none"
     label = _pillar_label(pillar_key)
     concept_context = _concept_score_context(required_concepts, evaluations_by_concept)
     daily_quote = _daily_pillar_quote(
@@ -2395,9 +2393,9 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
     total_pillars = len(pillars)
     today_completed_pillars_count = sum(1 for pillar in pillars if pillar.get("today_complete") is True)
     pillar_scores = [
-        int(round(float(pillar.get("score"))))
+        int(round(float(pillar.get("tracker_score"))))
         for pillar in pillars
-        if pillar.get("score") is not None
+        if pillar.get("tracker_score") is not None
     ]
     overall_score = int(round(sum(pillar_scores) / max(1, len(pillar_scores)))) if pillar_scores else None
     return {

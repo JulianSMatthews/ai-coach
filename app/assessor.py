@@ -1,23 +1,20 @@
 # app/assessor.py
 # PATCH NOTES — 2025-09-06 (consolidated replacement)
 # • Concepts loaded from DB per pillar; cached in session state.
-# • One main question per concept (primary only), pillars: nutrition → training → resilience → recovery.
-# • Clarifiers: LLM-generated only; do NOT count toward the 5; no deterministic fallback.
+# • One main question per configured concept (primary only), active pillars only.
+# • Clarifiers are deterministic numeric prompts and do not count as main questions.
 # • Strict de-duplication of assistant questions.
 # • Writes AssessmentRun/AssessmentTurn; per-concept summary rows with dialogue & kb_used and clarifier_count tracked.
 # • Inbound/outbound MessageLog restored; robust Twilio send with whatsapp: normalization.
 # • Review_log hooks and scheduler follow-ups preserved.
 # • Quick commands: "report"/"pdf" returns latest report link.
-# • NEW: Deep diagnostics around all LLM calls (request/response/exception) into JobAudit + terminal prints.
 # • NEW: Numeric-signal helper (_has_numeric_signal) recognizes digits, ranges, and number-words for sufficiency.
-# • No behavior changes beyond logging and sufficiency hint robustness.
 
 from __future__ import annotations
 
 import json
 import os
 import re
-import traceback
 import time 
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -45,12 +42,9 @@ from .models import (
     UserPreference,
     PsychProfile,
 )
-from .prompts import log_llm_prompt, _coerce_llm_content
-from .debug_utils import debug_log
 
-# Messaging + LLM
+# Messaging
 from .nudges import send_message
-from .llm import _llm
 
 from .job_queue import enqueue_job, should_use_worker
 from .seed import CONCEPTS, PILLAR_PREAMBLE_QUESTIONS
@@ -59,6 +53,7 @@ from .seed import CONCEPTS, PILLAR_PREAMBLE_QUESTIONS
 
 from .reporting import generate_progress_report_html, _fetch_okrs_for_run
 from . import psych
+from .concepts import CONCEPT_MEASURE_LABELS
 from .pillar_config import ACTIVE_PILLAR_KEYS, PILLAR_LABELS
 
 # Optional integrations (fail-safe no-ops if missing)
@@ -87,37 +82,8 @@ except Exception:  # pragma: no cover
 # ──────────────────────────────────────────────────────────────────────────────
 
 PILLAR_ORDER = list(ACTIVE_PILLAR_KEYS)
-MAIN_QUESTIONS_PER_PILLAR = 5
 CLARIFIER_SOFT_CAP = 6
 TURN_HARD_CAP = 60
-
-SYSTEM_TEMPLATE = """You are a concise WhatsApp assessor for __PILLAR__.
-Active concept: __CONCEPT__.
-Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
-If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., "daily", "every evening", "twice daily", "each morning"), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
-Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
-Return JSON only with these fields:
-{"action":"ask"|"finish","question":"","level":"Low"|"Moderate"|"High","confidence":<float 0.0–1.0>,
-"rationale":"","scores":{},
-"status":"scorable"|"needs_clarifier"|"insufficient",
-"why":"",
-"missing":[],
-"parsed_value":{"value":null,"unit":"","timeframe_ok":false}}
-Notes:
-- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
-- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
-- Polarity inference: When the behavior is one people should limit/avoid (e.g., ultra-processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
-- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
-- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., "daily"/"every evening" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
-- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
-- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
-- missing: list the specific fields you need (e.g., ["unit","days_per_week"]).
-- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
-- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
-- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., "every evening"), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
-- If uncertain, ask a clarifier instead of finishing.
-- Do NOT copy example values; set confidence per these rules.
-"""
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Utils
@@ -523,26 +489,6 @@ def _parse_habitual_count_signal(text: str, *, week_window: bool) -> tuple[float
     return None, ""
 
 
-def _extract_llm_response_meta(resp_obj):
-    model_name = getattr(resp_obj, "model", None)
-    response_meta = getattr(resp_obj, "response_metadata", None)
-    usage_meta = getattr(resp_obj, "usage_metadata", None)
-    provider_request_id = None
-    if isinstance(response_meta, dict):
-        provider_request_id = (
-            response_meta.get("request_id")
-            or response_meta.get("id")
-            or (response_meta.get("response") or {}).get("id")
-        )
-        if not model_name:
-            model_name = (
-                response_meta.get("model_name")
-                or response_meta.get("model")
-                or (response_meta.get("response") or {}).get("model")
-            )
-    return model_name, provider_request_id, response_meta, usage_meta
-
-
 def _level_from_score(score: float) -> str:
     try:
         s = float(score)
@@ -555,43 +501,6 @@ def _level_from_score(score: float) -> str:
     return "High"
 
 
-def _env_flag_true(name: str) -> bool:
-    raw = (os.getenv(name) or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _assessor_fast_path_enabled(user_id: int, state: dict | None = None) -> bool:
-    """
-    Fast-path gate precedence:
-    1) Global env switch ON => enabled for all users.
-    2) Otherwise, enable only for users with prompt_state_override=beta.
-    """
-    cache_key = "_assessor_fast_path_enabled"
-    if isinstance(state, dict) and cache_key in state:
-        return bool(state.get(cache_key))
-
-    # Global rollout switch: when enabled, all users use fast-path scoring.
-    # Keep backward-compatible alias for environment naming.
-    if _env_flag_true("ASSESSOR_FAST_MODE_ENABLED") or _env_flag_true("ASSESSOR_FAST_PATH_ENABLED"):
-        if isinstance(state, dict):
-            state[cache_key] = True
-        return True
-
-    if not user_id:
-        return False
-
-    # Fallback: beta-only per user.
-    enabled = False
-    try:
-        override = (_get_user_preference_value(user_id, "prompt_state_override") or "").strip().lower()
-        enabled = override == "beta"
-    except Exception:
-        enabled = False
-    if isinstance(state, dict):
-        state[cache_key] = bool(enabled)
-    return bool(enabled)
-
-
 def _score_from_bounds(zero: float, maxv: float, val: float) -> float:
     if zero > maxv:
         span = zero - maxv
@@ -600,6 +509,23 @@ def _score_from_bounds(zero: float, maxv: float, val: float) -> float:
         span = maxv - zero
         pct = ((val - zero) / span) * 100 if span else 0
     return max(0.0, min(100.0, pct))
+
+
+def _deterministic_clarifier_question(concept_code: str, last_question: str | None) -> str:
+    measure = (CONCEPT_MEASURE_LABELS.get(concept_code or "") or "number").strip()
+    q = (last_question or "").lower()
+    timeframe = "for the last 7 days"
+    if "per day" in q or measure.endswith("/day"):
+        timeframe = "on average per day over the last 7 days"
+    elif "night" in q or measure.startswith("nights"):
+        timeframe = "as a number of nights in the last 7 days"
+    elif "morning" in q or measure.startswith("mornings"):
+        timeframe = "as a number of mornings in the last 7 days"
+    elif "session" in measure:
+        timeframe = "as a number of sessions in the last 7 days"
+    elif "day" in measure:
+        timeframe = "as a number of days in the last 7 days"
+    return f"Please reply with a number in {measure}, {timeframe}."
 
 
 def _normalize_value_for_concept(pillar: str, concept: str, val: float, unit: str | None, answer_text: str | None) -> float:
@@ -710,20 +636,13 @@ def _compose_ack_with_message(ack_text: str | None, message: str | None) -> tupl
 def _pretty_concept(code: str) -> str:
     return (code or "").replace("_", " ").title()
 
-def _system_for(pillar: str, concept_code: str) -> str:
-    return (
-        SYSTEM_TEMPLATE
-        .replace("__PILLAR__", pillar.title())
-        .replace("__CONCEPT__", concept_code.replace("_"," ").title())
-    )
-
 def _ensure_total_questions(state: dict) -> int:
     """
     Ensure state['total_questions'] reflects the number of main questions
-    we plan to ask (sum of pillar concept counts, capped).
+    we plan to ask (sum of active pillar concept counts).
     """
     if not isinstance(state, dict):
-        return len(PILLAR_ORDER) * MAIN_QUESTIONS_PER_PILLAR
+        return 0
     try:
         current = int(state.get("total_questions") or 0)
     except Exception:
@@ -733,8 +652,6 @@ def _ensure_total_questions(state: dict) -> int:
         return current
     pillar_concepts = state.get("pillar_concepts") or {}
     total = sum(len(codes or []) for codes in pillar_concepts.values())
-    if total <= 0:
-        total = len(PILLAR_ORDER) * MAIN_QUESTIONS_PER_PILLAR
     state["total_questions"] = total
     return total
 
@@ -796,21 +713,9 @@ def _score_bar(label: str, score: float | None, slots: int = 5) -> str:
     return f"[{bar}] {pct}% - *{label.title()}*"
 
 def _compose_final_summary_message(user: User, state: dict) -> str:
-    results_map = state.get("results") or {}
-    def _pill_score(p):
-        v = results_map.get(p, {}) or {}
-        return v.get("overall")
-    n_sc = _pill_score("nutrition")
-    t_sc = _pill_score("training")
-    r_sc = _pill_score("resilience")
-    rc_sc = _pill_score("recovery")
-    per_list = [x for x in [n_sc, t_sc, r_sc, rc_sc] if x is not None]
-    combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
-    bars = []
-    if n_sc is not None: bars.append(_score_bar("Nutrition", n_sc))
-    if t_sc is not None: bars.append(_score_bar("Training", t_sc))
-    if r_sc is not None: bars.append(_score_bar("Resilience", r_sc))
-    if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
+    active_scores = _active_pillar_scores_from_state(state)
+    combined = _combined_overall_from_state(state)
+    bars = [_score_bar(PILLAR_LABELS.get(pillar, pillar.title()), score) for pillar, score in active_scores]
     breakdown = "\n".join(bars) if bars else "No pillar scores available"
     name = (getattr(user, "first_name", "") or "").strip()
     intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
@@ -828,23 +733,24 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
 
 
 def _combined_overall_from_state(state: dict) -> int:
-    results_map = state.get("results") or {}
+    scores = [score for _, score in _active_pillar_scores_from_state(state)]
+    return int(round(sum(scores) / max(1, len(scores)))) if scores else 0
 
-    def _pill_score(pillar_key: str):
-        v = results_map.get(pillar_key, {}) or {}
-        return v.get("overall")
 
-    per_list = [
-        x
-        for x in [
-            _pill_score("nutrition"),
-            _pill_score("training"),
-            _pill_score("resilience"),
-            _pill_score("recovery"),
-        ]
-        if x is not None
-    ]
-    return int(round(sum(per_list) / max(1, len(per_list)))) if per_list else 0
+def _active_pillar_scores_from_state(state: dict) -> list[tuple[str, float]]:
+    results_map = state.get("results") if isinstance(state, dict) else {}
+    if not isinstance(results_map, dict):
+        return []
+    out: list[tuple[str, float]] = []
+    for pillar_key in PILLAR_ORDER:
+        row = results_map.get(pillar_key)
+        if not isinstance(row, dict) or row.get("overall") is None:
+            continue
+        try:
+            out.append((pillar_key, float(row.get("overall"))))
+        except Exception:
+            continue
+    return out
 
 def _compose_pillar_message(state: dict, run_id: int | None, pillar: str) -> str:
     res = (state.get("results") or {}).get(pillar)
@@ -1240,9 +1146,9 @@ def _concept_alternates(session, pillar: str, concept_code: str) -> list[str]:
     ).scalars().all()
     return [r for r in rows if (r or "").strip()]
 
-def _load_pillar_concepts(session, cap: int = 5) -> dict[str, list[str]]:
+def _load_pillar_concepts(session, cap: int | None = None) -> dict[str, list[str]]:
     """
-    Returns mapping pillar_key -> list of concept codes (ordered, capped).
+    Returns mapping active pillar_key -> all configured concept codes.
     Order: concept.code asc (fallback to name).
     """
     rows = session.execute(select(Concept.pillar_key, Concept.code, Concept.name)).all()
@@ -1258,7 +1164,9 @@ def _load_pillar_concepts(session, cap: int = 5) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for pk, items in buckets.items():
         items.sort(key=lambda t: (t[0].lower(), t[1].lower()))
-        codes = [c for c, _ in items][:cap] if cap else [c for c, _ in items]
+        codes = [c for c, _ in items]
+        if cap is not None and cap > 0:
+            codes = codes[:cap]
         out[pk] = codes
     return out
 
@@ -1374,7 +1282,7 @@ def _send_first_concept_question_for_pillar(user: User, state: dict, pillar: str
 
 
 def _begin_scored_pillar_flow(user: User, state: dict, turns: list[dict], db_session) -> bool:
-    pillar = "nutrition"
+    pillar = PILLAR_ORDER[0] if PILLAR_ORDER else "reflection"
     state["phase"] = "pillars"
     state["current"] = pillar
     if _maybe_prompt_preamble_question(user, state, pillar, turns):
@@ -1669,274 +1577,8 @@ def _upsert_pillar_result(_unused_session, run_id: int, pillar_key: str, overall
         except Exception:
             pass
 
-# Clarifier regeneration (LLM-only; no deterministic text)
-def _regen_clarifier(pillar: str, concept_code: str, payload: dict, *, user_id: int | None = None) -> str:
-    """Ask the LLM explicitly to produce a fresh clarifier question (<=320 chars).
-    Returns an empty string on error."""
-    CLARIFIER_SYSTEM = (
-        "You are drafting clarifying questions in a health-assessment chat.\n"
-        "When a user's reply is vague or incomplete, ask a clarifying question that moves the dialog forward.\n"
-        "Guidance (give the model freedom, but avoid repetition):\n"
-        "- Prefer asking for what seems missing (e.g., number of days, portions per day, amount per day, timeframe).\n"
-        "- Do not simply repeat or paraphrase the original main question; change the angle and narrow the ask.\n"
-        "- Focus the question so the next reply is scorable (ideally a numeric value with a recent timeframe).\n"
-        "- Keep it concise (<= 280 chars), plain language.\n"
-        "- It's okay to ask more than one detail **only if truly necessary**, but avoid piling on.\n"
-        "\n"
-        "Examples (good):\n"
-        "Main: 'In the last 7 days, how many days did you have ultra-processed foods, and how many portions per day?'\n"
-        "User: 'Occasionally'\n"
-        "Clarifier: 'Over the past 7 days, on about how many days did you have ultra-processed foods?'\n"
-        "\n"
-        "Main: 'How many glasses of water per day did you usually drink in the last 7 days?'\n"
-        "User: 'A few'\n"
-        "Clarifier: 'Roughly how many glasses per day did you drink over those 7 days?'\n"
-        "\n"
-        "Main: 'In the last 7 days, on how many days did you do cardio for 20+ minutes?'\n"
-        "User: 'Most days'\n"
-        "Clarifier: 'Approximately how many days (0–7) did you do 20+ minutes of cardio?'\n"
-        "\n"
-        "Bad (avoid): Repeating the full main question verbatim; asking two or more different things when one will do.\n"
-    )
-    try:
-        # Log request shape
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="clarifier_request", status="ok",
-                                payload={"pillar": pillar, "concept": concept_code,
-                                         "hist_len": len(payload.get("history", [])),
-                                         "asked_len": len(payload.get("already_asked", []))}))
-                ss.commit()
-        except Exception:
-            pass
-
-        req_payload = {
-            "pillar": pillar,
-            "concept": concept_code,
-            "history": payload.get("history", []),
-            "already_asked": payload.get("already_asked", []),
-            "retrieval": payload.get("retrieval", []),
-            "main_question": payload.get("main_question", ""),
-            "last_user_reply": payload.get("last_user_reply", ""),
-            "what_seems_missing": payload.get("missing", [])
-        }
-        req_user_text = json.dumps(req_payload, ensure_ascii=False)
-        request_messages = [
-            {"role": "system", "content": CLARIFIER_SYSTEM},
-            {"role": "user", "content": req_user_text},
-        ]
-        llm_started_at = time.perf_counter()
-        resp_obj = _llm.invoke(request_messages)
-        llm_duration_ms = int((time.perf_counter() - llm_started_at) * 1000)
-        resp = _coerce_llm_content(getattr(resp_obj, "content", None))
-        model_name, provider_request_id, response_meta, usage_meta = _extract_llm_response_meta(resp_obj)
-        try:
-            log_llm_prompt(
-                user_id=user_id,
-                touchpoint="assessor_clarifier_regen",
-                prompt_text=CLARIFIER_SYSTEM + "\n\n" + req_user_text,
-                model=model_name,
-                duration_ms=llm_duration_ms,
-                response_preview=resp or None,
-                context_meta={
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "provider_request_id": provider_request_id,
-                    "response_metadata": response_meta if isinstance(response_meta, dict) else None,
-                    "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
-                },
-                prompt_variant="assessor_clarifier_regen",
-                task_label="assessor_clarifier_regen",
-                prompt_blocks={
-                    "system": CLARIFIER_SYSTEM,
-                    "assessor": req_user_text,
-                },
-                block_order=["system", "assessor"],
-            )
-        except Exception:
-            pass
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="clarifier_response", status="ok",
-                                payload={"pillar": pillar, "concept": concept_code,
-                                         "has_content": bool(resp), "len": len(resp or "")}))
-                ss.commit()
-        except Exception:
-            pass
-    except Exception as e:
-        try:
-            log_llm_prompt(
-                user_id=user_id,
-                touchpoint="assessor_clarifier_regen",
-                prompt_text=CLARIFIER_SYSTEM + "\n\n" + json.dumps({
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "history": payload.get("history", []),
-                    "already_asked": payload.get("already_asked", []),
-                    "retrieval": payload.get("retrieval", []),
-                    "main_question": payload.get("main_question", ""),
-                    "last_user_reply": payload.get("last_user_reply", ""),
-                    "what_seems_missing": payload.get("missing", [])
-                }, ensure_ascii=False),
-                model=None,
-                duration_ms=None,
-                response_preview=None,
-                context_meta={
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "error": repr(e),
-                },
-                prompt_variant="assessor_clarifier_regen",
-                task_label="assessor_clarifier_regen",
-            )
-        except Exception:
-            pass
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="clarifier_exception", status="error",
-                                payload={"pillar": pillar, "concept": concept_code},
-                                error=f"{e!r}\n{traceback.format_exc(limit=2)}"))
-                ss.commit()
-        except Exception:
-            pass
-        return ""
-    q = (resp or "").strip().strip('"').strip()
-    return q[:320]
-
-# Force-finish when numeric answer + timeframe are present, but the model hesitates
-def _force_finish(
-    pillar: str,
-    concept_code: str,
-    payload: dict,
-    extra_rules: str = "",
-    bounds=None,
-    *,
-    user_id: int | None = None,
-) -> str:
-    """
-    Ask the LLM to return a FINISH JSON when the user's answer appears sufficient (numeric + timeframe).
-    Returns raw JSON string (model content) or empty string on error.
-    """
-    FORCE_SYSTEM = (
-        "You already have enough to score this concept.\n"
-        "Evaluate the latest user reply against the latest main question.\n"
-        "The user's reply contains a NUMBER and the main question supplied the timeframe (e.g., last 7 days).\n"
-        "Return JSON for FINISH with: {\"action\":\"finish\",\"question\":\"\",\"level\":\"Low|Moderate|High\",\"confidence\":<float 0.0–1.0>,\"rationale\":\"\",\"scores\":{}}.\n"
-        "Set confidence 0.80–0.95 in this force-finish case (numeric + explicit timeframe). Do NOT copy example values; set confidence per this rule.\n"
-        "Do NOT ask another question. Do NOT include extra text outside JSON."
-    )
-    try:
-        # Log request
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="force_finish_request", status="ok",
-                                payload={"pillar": pillar, "concept": concept_code,
-                                         "hist_len": len(payload.get("history", [])),
-                                         "retrieval_len": len(payload.get("retrieval", [])),
-                                         "has_last_main_question": bool((payload.get("last_main_question") or "").strip()),
-                                         "has_last_user_reply": bool((payload.get("last_user_reply") or "").strip()),
-                                         "has_range_guide": bool(extra_rules),
-                                         "range_bounds": list(bounds) if bounds else None}))
-                ss.commit()
-        except Exception:
-            pass
-
-        req_payload = {
-            "pillar": pillar,
-            "concept": concept_code,
-            "last_main_question": payload.get("last_main_question", ""),
-            "last_user_reply": payload.get("last_user_reply", ""),
-            "history": payload.get("history", []),
-            "retrieval": payload.get("retrieval", []),
-            "extra_rules": (extra_rules or "")
-        }
-        req_user_text = json.dumps(req_payload, ensure_ascii=False)
-        request_messages = [
-            {"role": "system", "content": FORCE_SYSTEM},
-            {"role": "user", "content": req_user_text},
-        ]
-        llm_started_at = time.perf_counter()
-        resp_obj = _llm.invoke(request_messages)
-        llm_duration_ms = int((time.perf_counter() - llm_started_at) * 1000)
-        resp = _coerce_llm_content(getattr(resp_obj, "content", None))
-        model_name, provider_request_id, response_meta, usage_meta = _extract_llm_response_meta(resp_obj)
-        try:
-            log_llm_prompt(
-                user_id=user_id,
-                touchpoint="assessor_force_finish",
-                prompt_text=FORCE_SYSTEM + "\n\n" + req_user_text,
-                model=model_name,
-                duration_ms=llm_duration_ms,
-                response_preview=resp or None,
-                context_meta={
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "provider_request_id": provider_request_id,
-                    "response_metadata": response_meta if isinstance(response_meta, dict) else None,
-                    "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
-                    "range_bounds": list(bounds) if bounds else None,
-                    "has_range_guide": bool(extra_rules),
-                },
-                prompt_variant="assessor_force_finish",
-                task_label="assessor_force_finish",
-                prompt_blocks={
-                    "system": FORCE_SYSTEM,
-                    "assessor": req_user_text,
-                },
-                block_order=["system", "assessor"],
-            )
-        except Exception:
-            pass
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="force_finish_response", status="ok",
-                                payload={"pillar": pillar, "concept": concept_code,
-                                         "has_content": bool(resp), "len": len(resp or "")}))
-                ss.commit()
-        except Exception:
-            pass
-        return (resp or "")
-    except Exception as e:
-        try:
-            log_llm_prompt(
-                user_id=user_id,
-                touchpoint="assessor_force_finish",
-                prompt_text=FORCE_SYSTEM + "\n\n" + json.dumps({
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "last_main_question": payload.get("last_main_question", ""),
-                    "last_user_reply": payload.get("last_user_reply", ""),
-                    "history": payload.get("history", []),
-                    "retrieval": payload.get("retrieval", []),
-                    "extra_rules": (extra_rules or "")
-                }, ensure_ascii=False),
-                model=None,
-                duration_ms=None,
-                response_preview=None,
-                context_meta={
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "error": repr(e),
-                    "range_bounds": list(bounds) if bounds else None,
-                    "has_range_guide": bool(extra_rules),
-                },
-                prompt_variant="assessor_force_finish",
-                task_label="assessor_force_finish",
-            )
-        except Exception:
-            pass
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="_force_finish", status="error",
-                                payload={"pillar": pillar, "concept": concept_code},
-                                error=f"{e!r}\n{traceback.format_exc(limit=2)}"))
-                ss.commit()
-        except Exception:
-            pass
-        return ""
-
 # ──────────────────────────────────────────────────────────────────────────────
-# LLM
+# Deterministic result parsing
 # ──────────────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -1952,7 +1594,7 @@ class StepResult:
     missing: list = None
     parsed_value: dict = None
 
-def _parse_llm_json(s: str) -> StepResult:
+def _parse_step_json(s: str) -> StepResult:
     try:
         m = re.search(r"\{.*\}", s or "", re.S)
         j = json.loads(m.group(0)) if m else {}
@@ -2205,7 +1847,7 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
 
         # Load concepts from DB once for this session
         with SessionLocal() as s_lookup:
-            state["pillar_concepts"] = _load_pillar_concepts(s_lookup, cap=MAIN_QUESTIONS_PER_PILLAR)
+            state["pillar_concepts"] = _load_pillar_concepts(s_lookup)
             _ensure_total_questions(state)
 
         # Start run
@@ -2544,7 +2186,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         pcmap = state.get("pillar_concepts") or {}
         if not pcmap:
             with SessionLocal() as s_lookup:
-                pcmap = _load_pillar_concepts(s_lookup, cap=MAIN_QUESTIONS_PER_PILLAR)
+                pcmap = _load_pillar_concepts(s_lookup)
                 state["pillar_concepts"] = pcmap
 
         pillar_concepts = pcmap.get(pillar) or []
@@ -2619,7 +2261,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             kb_bucket.append(sni); seen.add(k)
         kb_used[pillar][concept_code] = kb_bucket
 
-        # LLM payload
+        # Deterministic scoring payload
         pillar_turns = [t for t in turns if t.get("pillar") == pillar]
         concept_turns = [t for t in pillar_turns if t.get("concept") == concept_code]
         already_asked = [
@@ -2629,7 +2271,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         ]
         dialogue = _as_dialogue_simple(concept_turns)
         # Sufficiency hint: if the user gave a number and the main question already had a last-7-days timeframe,
-        # nudge the LLM to prefer finishing with a score.
+        # deterministic scoring can finish without a clarifier.
         try:
             # Find the last assistant question for this pillar/concept
             last_q = ""
@@ -2647,12 +2289,12 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             week_window=q_has_week,
         )
         sufficient_for_scoring = bool(has_number and q_has_week)
-        # Send prior history only when this reply likely needs clarification.
-        history_for_llm = dialogue[-6:] if not sufficient_for_scoring else []
+        # Keep recent history only when this reply likely needs clarification.
+        history_for_scoring = dialogue[-6:] if not sufficient_for_scoring else []
         payload = {
             "last_main_question": last_q,
             "last_user_reply": msg,
-            "history": history_for_llm,
+            "history": history_for_scoring,
             "already_asked": already_asked,
             "turns_so_far": sum(1 for t in turns if t.get("pillar") == pillar and t.get("role") == "user"),
             "retrieval": retrieval_ctx,
@@ -2668,64 +2310,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         except Exception:
             pass
 
-        # Build system/user messages (for logging sizes) and invoke with diagnostics
-        _system_msg = _system_for(pillar, concept_code)
-
-        # If the concept defines numeric bounds (zero_score/max_score), add a concise scoring guide
+        # Load deterministic numeric bounds for this concept.
         bm_tuple = None
-        range_rule_text = ""
         try:
             with SessionLocal() as s_bounds:
                 bm_tuple = _concept_bounds(s_bounds, pillar, concept_code)
-            if bm_tuple:
-                z, m = bm_tuple
-                if z <= m:
-                    range_rule_text = (
-                        "SCORING_RANGE_GUIDE:\n"
-                        "- Higher is better; map linearly to 0–100.\n"
-                        f"- {z} → 0; {m}+ → 100; clamp outside bounds.\n"
-                        "- Treat 'none', 'no', 'zero', or 0 as numeric 0.\n"
-                        "- Parse number words (e.g., 'three', 'couple') when digits not given.\n"
-                        f"- In your JSON, put only the active concept key: \"scores\": {{ \"{concept_code}\": <0-100 integer> }}.\n"
-                    )
-                else:
-                    # Example target for directional clarity (e.g., processed_food 4→0,0→100 => 1 ≈ 75)
-                    example_val = m + ((z - m) * 0.25)
-                    try:
-                        example_score = max(0, min(100, round(((z - example_val) / (z - m)) * 100)))
-                    except Exception:
-                        example_score = 75
-                    range_rule_text = (
-                        "SCORING_RANGE_GUIDE:\n"
-                        "- Lower is better; map linearly to 0–100.\n"
-                        f"- {z} → 0; {m} or less → 100; clamp outside bounds.\n"
-                        "- Treat 'none', 'no', 'zero', or 0 as numeric 0 (which should map near 100 here).\n"
-                        "- Parse number words (e.g., 'three', 'couple') when digits not given.\n"
-                        f"- Example: if the answer is ~{example_val:.1f}, score around {example_score}.\n"
-                        f"- In your JSON, put only the active concept key: \"scores\": {{ \"{concept_code}\": <0-100 integer> }}.\n"
-                    )
-            else:
+            if not bm_tuple:
                 print(f"[range] no bounds for {pillar}.{concept_code}")
         except Exception as e:
             print(f"[range] failed to load bounds for {pillar}.{concept_code}: {e!r}")
             bm_tuple = None
-            range_rule_text = ""
 
-        # General scoring rules (wrapped to avoid dangling string literals)
-        general_rules = (
-            "GENERAL_SCORING_RULES:\n"
-            "- If bounds (zero_score, max_score) are provided, they OVERRIDE heuristics and KB for polarity (higher vs lower is better).\n"
-            "- When bounds are provided AND the user's answer is numeric (or parsed_number is present), compute the score linearly using those bounds; do not choose your own rubric.\n"
-            "- Treat 'none', 'no', 'zero', or 0 as numeric 0.\n"
-            "- Zero scores are valid; do NOT up-bias zero to a non-zero.\n"
-            "- Always clamp outputs to the provided range.\n"
-            "- Do not invent ranges; use exactly what is passed in.\n"
-        )
-        extra_rules = (range_rule_text + ("\n" if range_rule_text else "") + general_rules).strip()
-        
-        # Furtrher rules 
-
-        fast_path_enabled = _assessor_fast_path_enabled(int(getattr(user, "id", 0) or 0), state)
         fast_path_hit = False
         fast_path_raw = ""
         fast_path_value = None
@@ -2737,263 +2332,127 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             fast_path_value = habitual_num_hint
             fast_path_value_source = habitual_hint_source or "habitual_phrase"
 
-        if fast_path_enabled:
-            fast_path_miss_reason = ""
-            if bm_tuple is None:
-                fast_path_miss_reason = "no_bounds"
-            elif not q_has_week:
-                fast_path_miss_reason = "no_week_window"
-            elif fast_path_value is None:
-                fast_path_miss_reason = "no_parse"
-            else:
-                try:
-                    normalized_fast = _normalize_value_for_concept(
-                        pillar,
-                        concept_code,
-                        float(fast_path_value),
-                        None,
-                        msg,
-                    )
-                except Exception:
-                    normalized_fast = float(fast_path_value)
-                try:
-                    fast_score = _score_from_bounds(
-                        float(bm_tuple[0]),
-                        float(bm_tuple[1]),
-                        float(normalized_fast),
-                    )
-                    fast_score_i = int(round(max(0.0, min(100.0, fast_score))))
-                    fast_conf = 0.88 if fast_path_value_source == "parsed_number" else 0.72
-                    fast_level = _level_from_score(fast_score_i)
-                    fast_payload = {
-                        "action": "finish",
-                        "question": "",
-                        "level": fast_level,
-                        "confidence": fast_conf,
-                        "rationale": f"Deterministic fast-path score from {fast_path_value_source}.",
-                        "scores": {concept_code: fast_score_i},
-                        "status": "scorable",
-                        "why": "Parsed answer and timeframe were sufficient for deterministic scoring.",
-                        "missing": [],
-                        "parsed_value": {
-                            "value": float(fast_path_value),
-                            "unit": "",
-                            "timeframe_ok": True,
-                        },
-                    }
-                    fast_path_raw = json.dumps(fast_payload, ensure_ascii=False)
-                    fast_path_hit = True
-                    try:
-                        with SessionLocal() as ss:
-                            ss.add(
-                                JobAudit(
-                                    job_name="assessor_fast_path_hit",
-                                    status="ok",
-                                    payload={
-                                        "pillar": pillar,
-                                        "concept": concept_code,
-                                        "source": fast_path_value_source,
-                                        "value": float(fast_path_value),
-                                        "normalized_value": float(normalized_fast),
-                                        "score": fast_score_i,
-                                    },
-                                )
-                            )
-                            ss.commit()
-                    except Exception:
-                        pass
-                except Exception:
-                    fast_path_miss_reason = "score_failed"
-
-            if (not fast_path_hit) and fast_path_miss_reason:
+        fast_path_miss_reason = ""
+        if bm_tuple is None:
+            fast_path_miss_reason = "no_bounds"
+        elif fast_path_value is None:
+            fast_path_miss_reason = "no_parse"
+        else:
+            try:
+                normalized_fast = _normalize_value_for_concept(
+                    pillar,
+                    concept_code,
+                    float(fast_path_value),
+                    None,
+                    msg,
+                )
+            except Exception:
+                normalized_fast = float(fast_path_value)
+            try:
+                fast_score = _score_from_bounds(
+                    float(bm_tuple[0]),
+                    float(bm_tuple[1]),
+                    float(normalized_fast),
+                )
+                fast_score_i = int(round(max(0.0, min(100.0, fast_score))))
+                fast_conf = 0.9 if fast_path_value_source == "parsed_number" else 0.75
+                fast_level = _level_from_score(fast_score_i)
+                fast_payload = {
+                    "action": "finish",
+                    "question": "",
+                    "level": fast_level,
+                    "confidence": fast_conf,
+                    "rationale": f"Deterministic score from {fast_path_value_source}.",
+                    "scores": {concept_code: fast_score_i},
+                    "status": "scorable",
+                    "why": "Parsed answer was sufficient for deterministic scoring.",
+                    "missing": [],
+                    "parsed_value": {
+                        "value": float(fast_path_value),
+                        "unit": "",
+                        "timeframe_ok": bool(q_has_week),
+                    },
+                }
+                fast_path_raw = json.dumps(fast_payload, ensure_ascii=False)
+                fast_path_hit = True
                 try:
                     with SessionLocal() as ss:
                         ss.add(
                             JobAudit(
-                                job_name="assessor_fast_path_miss",
+                                job_name="assessor_deterministic_score",
                                 status="ok",
                                 payload={
                                     "pillar": pillar,
                                     "concept": concept_code,
-                                    "reason": fast_path_miss_reason,
-                                    "has_bounds": bool(bm_tuple),
-                                    "q_has_week": bool(q_has_week),
-                                    "has_parsed_num": parsed_num_hint is not None,
-                                    "has_habitual_num": habitual_num_hint is not None,
+                                    "source": fast_path_value_source,
+                                    "value": float(fast_path_value),
+                                    "normalized_value": float(normalized_fast),
+                                    "score": fast_score_i,
                                 },
                             )
                         )
                         ss.commit()
                 except Exception:
                     pass
+            except Exception:
+                fast_path_miss_reason = "score_failed"
 
-        _user_msg = (
-            "Continue this concept.\n"
-            "Primary task: evaluate payload.last_user_reply against payload.last_main_question.\n"
-            f"Payload (JSON): {json.dumps(payload, ensure_ascii=False)}\n"
-            "Rules:\n"
-            "- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.\n"
-            "- If these two fields are clear enough, finish with a score and do not ask a clarifier.\n"
-            "- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.\n"
-            "- Clarifiers do NOT count toward the 5-per-pillar main questions.\n"
-            "- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.\n"
-            "- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.\n"
-            "- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.\n"
-            "- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).\n"
-            "- Always populate: status, why, missing, parsed_value in your JSON.\n"
-            "- Finish this concept when you can assign an appropriate score (including 0).\n"
-            "- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.\n"
-            f"{range_rule_text}"
-            'Return JSON only: {"action":"ask"|"finish","question":"","level":"","confidence":<float 0.0–1.0>,"rationale":"","scores":{},'
-            '"status":"","why":"","missing":[],"parsed_value":{"value":null,"unit":"","timeframe_ok":false}}'
-        )
         if not fast_path_hit:
+            clarifier = _deterministic_clarifier_question(concept_code, last_q)
+            fast_path_raw = json.dumps(
+                {
+                    "action": "ask",
+                    "question": clarifier,
+                    "level": "Moderate",
+                    "confidence": 0.0,
+                    "rationale": "Numeric answer required for deterministic scoring.",
+                    "scores": {},
+                    "status": "needs_clarifier",
+                    "why": fast_path_miss_reason or "no_parse",
+                    "missing": ["numeric_value"],
+                    "parsed_value": {"value": None, "unit": "", "timeframe_ok": bool(q_has_week)},
+                },
+                ensure_ascii=False,
+            )
+            fast_path_hit = True
             try:
                 with SessionLocal() as ss:
-                    ss.add(JobAudit(job_name="assessor_llm_request", status="ok",
-                                     payload={
-                                         "pillar": pillar,
-                                         "concept": concept_code,
-                                         "system_len": len(_system_msg or ""),
-                                         "user_len": len(_user_msg or ""),
-                                         "sufficient_for_scoring": payload.get("sufficient_for_scoring"),
-                                         "has_range_guide": bool(range_rule_text),
-                                         "range_bounds": list(bm_tuple) if bm_tuple else None,
-                                     }))
+                    ss.add(
+                        JobAudit(
+                            job_name="assessor_deterministic_clarifier",
+                            status="ok",
+                            payload={
+                                "pillar": pillar,
+                                "concept": concept_code,
+                                "reason": fast_path_miss_reason or "no_parse",
+                                "has_bounds": bool(bm_tuple),
+                                "has_parsed_num": parsed_num_hint is not None,
+                                "has_habitual_num": habitual_num_hint is not None,
+                            },
+                        )
+                    )
                     ss.commit()
             except Exception:
                 pass
-        llm_duration_ms = None
-        request_messages = [
-            {"role": "system", "content": _system_msg},
-            {"role": "user", "content": _user_msg},
-        ]
-        raw = ""
-        if fast_path_hit:
-            raw = fast_path_raw
-        else:
-            debug_log(
-                "assessor_llm_request_exact",
-                {
-                    "touchpoint": "assessor_system",
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "messages": request_messages,
-                },
-                tag="assessor",
-            )
-            try:
-                _llm_started_wall = datetime.utcnow()
-                _llm_started_at = time.perf_counter()
-                _resp = _llm.invoke(request_messages)
-                llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
-                _llm_finished_wall = datetime.utcnow()
-                raw = _coerce_llm_content(getattr(_resp, "content", None))
-                resp_meta = getattr(_resp, "response_metadata", None)
-                usage_meta = getattr(_resp, "usage_metadata", None)
-                provider_request_id = None
-                if isinstance(resp_meta, dict):
-                    provider_request_id = (
-                        resp_meta.get("request_id")
-                        or resp_meta.get("id")
-                        or (resp_meta.get("response") or {}).get("id")
-                    )
-                debug_log(
-                    "assessor_llm_response_exact",
-                    {
-                        "touchpoint": "assessor_system",
-                        "pillar": pillar,
-                        "concept": concept_code,
-                        "duration_ms": llm_duration_ms,
-                        "response_text": raw,
-                    },
-                    tag="assessor",
-                )
-                try:
-                    log_llm_prompt(
-                        user_id=state.get("user_id") or (user.id if user else None),
-                        touchpoint="assessor_system",
-                        prompt_text=_system_msg + "\n\n" + _user_msg,
-                        model=getattr(_resp, "model", None),
-                        duration_ms=llm_duration_ms,
-                        response_preview=raw or None,
-                        context_meta={
-                            "pillar": pillar,
-                            "concept": concept_code,
-                            "has_range": bool(range_rule_text),
-                            "provider_request_id": provider_request_id,
-                            "response_metadata": resp_meta if isinstance(resp_meta, dict) else None,
-                            "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
-                            "llm_started_at_utc": _llm_started_wall.isoformat() + "Z",
-                            "llm_finished_at_utc": _llm_finished_wall.isoformat() + "Z",
-                        },
-                        prompt_variant="assessor_system",
-                        task_label="assessor_system",
-                        prompt_blocks={
-                            "system": _system_msg,
-                            "assessor": _user_msg,
-                        },
-                        block_order=["system", "assessor"],
-                    )
-                except Exception:
-                    pass
-                try:
-                    preview = (raw[:220] + "…") if len(raw) > 220 else raw
-                    with SessionLocal() as ss:
-                        ss.add(JobAudit(job_name="assessor_llm_response", status="ok",
-                                        payload={"pillar": pillar, "concept": concept_code,
-                                                 "type": type(_resp).__name__,
-                                                 "has_content": bool(raw), "content_len": len(raw or ""),
-                                                 "preview": preview, "duration_ms": llm_duration_ms}))
-                        ss.commit()
-                except Exception:
-                    pass
-            except Exception as e:
-                if llm_duration_ms is None:
-                    try:
-                        llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
-                    except Exception:
-                        llm_duration_ms = None
-                raw = ""
-                tb = traceback.format_exc(limit=2)
-                debug_log(
-                    "assessor_llm_exception_exact",
-                    {
-                        "touchpoint": "assessor_system",
-                        "pillar": pillar,
-                        "concept": concept_code,
-                        "duration_ms": llm_duration_ms,
-                        "error": repr(e),
-                        "traceback": tb,
-                        "messages": request_messages,
-                    },
-                    tag="assessor",
-                )
-                try:
-                    with SessionLocal() as ss:
-                        ss.add(JobAudit(job_name="assessor_llm_exception", status="error",
-                                        payload={"pillar": pillar, "concept": concept_code, "duration_ms": llm_duration_ms},
-                                        error=f"{e!r}\n{tb}"))
-                        ss.commit()
-                except Exception:
-                    pass
 
-        # Log empty/short LLM responses for debugging
+        raw = fast_path_raw
+
+        # Log empty/short deterministic responses for debugging
         if not raw or len((raw or "").strip()) < 5:
             try:
                 with SessionLocal() as ss:
-                    ss.add(JobAudit(job_name="assessor_llm_empty", status="warn",
+                    ss.add(JobAudit(job_name="assessor_deterministic_empty", status="warn",
                                     payload={"pillar": pillar, "concept": concept_code},
-                                    error="empty_or_short_llm_response"))
+                                    error="empty_or_short_deterministic_response"))
                     ss.commit()
             except Exception:
                 pass
 
-        out = _parse_llm_json(raw)
+        out = _parse_step_json(raw)
         # Optional: quick audit of the meta so you can see why it didn’t finish
         try:
             with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="assessor_llm_meta",
+                ss.add(JobAudit(job_name="assessor_deterministic_meta",
                                 status="ok",
                                 payload={"pillar": pillar, "concept": concept_code,
                                          "status": out.status, "why": out.why,
@@ -3018,27 +2477,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 except Exception:
                     this_concept_score = 0.0
 
-        # If not done yet, but the input looks sufficient, try a force-finish pass first
+        # If deterministic parsing cannot score it, ask a deterministic clarifier.
         wants_finish = (out.action == "finish_domain") or (this_concept_score > 0.0)
-        if not wants_finish and payload.get("sufficient_for_scoring"):
-            raw_ff = _force_finish(
-                pillar,
-                concept_code,
-                payload,
-                extra_rules=range_rule_text,
-                bounds=bm_tuple,
-                user_id=state.get("user_id") or (user.id if user else None),
-            )
-            if raw_ff:
-                out_ff = _parse_llm_json(raw_ff)
-                c_scores_ff = out_ff.scores or {}
-                try:
-                    this_concept_score = float(next(iter(c_scores_ff.values()))) if c_scores_ff else 0.0
-                except Exception:
-                    this_concept_score = 0.0
-                if out_ff.action == "finish_domain" or this_concept_score > 0.0:
-                    out = out_ff
-                    wants_finish = True
 
         if not wants_finish:
             # bump clarifier count for this concept
@@ -3047,7 +2487,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             })
             cprog["clarifiers"] = int(cprog.get("clarifiers", 0)) + 1
 
-            # LLM clarifier regeneration logic
             # Find last main question for this concept (for similarity checks and payload)
             last_main_q = ""
             for t in reversed(pillar_turns):
@@ -3061,32 +2500,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 cand = ""
 
             if (not cand) or (_norm(cand) in asked):
-                # Enrich payload for a better clarifier
-                regen_payload = dict(payload)
-                regen_payload["main_question"] = last_main_q
-                regen_payload["last_user_reply"] = msg
-                regen_payload["missing"] = (out.missing or [])
-
-                regen = _regen_clarifier(
-                    pillar,
-                    concept_code,
-                    regen_payload,
-                    user_id=state.get("user_id") or (user.id if user else None),
-                )
-                if regen and _norm(regen) not in asked and not _too_similar(regen, last_main_q):
-                    cand = regen
-                else:
-                    # One more attempt with the same enriched payload (still LLM-authored)
-                    regen2 = _regen_clarifier(
-                        pillar,
-                        concept_code,
-                        regen_payload,
-                        user_id=state.get("user_id") or (user.id if user else None),
-                    )
-                    if regen2 and _norm(regen2) not in asked and not _too_similar(regen2, last_main_q):
-                        cand = regen2
-                    else:
-                        cand = ""
+                cand = _deterministic_clarifier_question(concept_code, last_main_q)
 
             if not cand:
                 pending_msg, ack_text = _compose_ack_with_message(ack_text, None)
@@ -3099,7 +2513,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     with SessionLocal() as ss:
                         ss.add(JobAudit(job_name="assessor_no_clarifier", status="warn",
                                         payload={"pillar": pillar, "concept": concept_code, "asked_norm": list(asked)},
-                                        error="llm_failed_to_generate_clarifier"))
+                                        error="deterministic_clarifier_unavailable"))
                         ss.commit()
                 except Exception:
                     pass
@@ -3270,7 +2684,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Advance concept index
         concept_idx_map[pillar] = int(concept_idx_map.get(pillar, 0)) + 1
 
-        finished_pillar = concept_idx_map[pillar] >= min(MAIN_QUESTIONS_PER_PILLAR, len(pillar_concepts))
+        finished_pillar = concept_idx_map[pillar] >= len(pillar_concepts)
 
         if finished_pillar:
             handoff_started_at = time.perf_counter()
@@ -3290,7 +2704,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 "pillar_okr_sync_job_id": None,
             }
             # Pillar summary
-            codes = pillar_concepts[:MAIN_QUESTIONS_PER_PILLAR]
+            codes = list(pillar_concepts)
             raw_vals = [concept_scores.get(pillar, {}).get(k, None) for k in codes]
             kept = [float(v) for v in raw_vals if v is not None]
             if not kept:
@@ -3468,24 +2882,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 return True
             else:
 
-                # ── Finalize: compute combined score, show breakdown, persist, and finish run ──
-                results_map = state.get("results", {}) or {}
-                def _pill_score(p):
-                    v = results_map.get(p, {}) or {}
-                    return v.get("overall")
-                n_sc = _pill_score("nutrition")
-                t_sc = _pill_score("training")
-                r_sc = _pill_score("resilience")
-                rc_sc = _pill_score("recovery")
-                per_list = [x for x in [n_sc, t_sc, r_sc, rc_sc] if x is not None]
-                combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
+                # Finalize: compute combined score from completed active pillars only.
+                combined = _combined_overall_from_state(state)
 
-                # Per-pillar breakdown with colored bars
-                bars = []
-                if n_sc is not None: bars.append(_score_bar("Nutrition", n_sc))
-                if t_sc is not None: bars.append(_score_bar("Training", t_sc))
-                if r_sc is not None: bars.append(_score_bar("Resilience", r_sc))
-                if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
+                bars = [
+                    _score_bar(PILLAR_LABELS.get(pillar_key, pillar_key.title()), score)
+                    for pillar_key, score in _active_pillar_scores_from_state(state)
+                ]
                 breakdown = "\n".join(bars) if bars else "No pillar scores available"
 
                 # Build final message (will be sent after psych check completes)

@@ -1202,7 +1202,7 @@ function resolveScore(value?: number | null): number | null {
 }
 
 function resolvePillarDisplayScore(pillar: PillarTrackerPillar): number | null {
-  return resolveScore(pillar.score ?? pillar.tracker_score ?? pillar.baseline_score);
+  return resolveScore(pillar.tracker_score ?? pillar.score);
 }
 
 function circleDayTone(theme: DisplayTheme, status?: string | null, isActive?: boolean): string {
