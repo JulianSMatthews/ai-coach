@@ -236,12 +236,24 @@ class PillarTrackerResolvedTarget:
     start_date: date | None = None
 
 
-_REFLECTION_PURPOSE_OPTIONS = (
-    PillarTrackerOption(0, "No"),
+_SUBJECTIVE_OPTIONS = (
+    PillarTrackerOption(0, "Not at all"),
     PillarTrackerOption(1, "A little"),
     PillarTrackerOption(2, "Mostly"),
-    PillarTrackerOption(3, "Yes"),
+    PillarTrackerOption(3, "Completely"),
 )
+
+# Resilience and recovery were originally binary, so their historical "Yes"
+# values are stored as 1. Keep 1 as the ceiling when adding intermediate
+# choices so old entries retain their original score and meaning.
+_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE = (
+    PillarTrackerOption(0, "Not at all"),
+    PillarTrackerOption(1 / 3, "A little"),
+    PillarTrackerOption(2 / 3, "Mostly"),
+    PillarTrackerOption(1, "Completely"),
+)
+
+_BINARY_OPTIONS = (PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes"))
 
 
 PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
@@ -324,18 +336,17 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             concept_key="self_awareness",
             label="Self-Awareness",
             helper="Did you take time to reflect on your thoughts, actions or decisions today?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            options=_BINARY_OPTIONS,
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_ceiling=3,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="emotional_awareness",
             label="Emotional Awareness",
-            helper="Were you aware of how you were feeling emotionally today?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            helper="How emotionally aware did you feel today?",
+            options=_SUBJECTIVE_OPTIONS,
+            target_value=2,
             target_direction="gte",
             score_mode="likert",
             score_ceiling=3,
@@ -343,9 +354,9 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="mindfulness_presence",
             label="Presence",
-            helper="Were you present and focused for most of today?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            helper="How present and focused were you for most of today?",
+            options=_SUBJECTIVE_OPTIONS,
+            target_value=2,
             target_direction="gte",
             score_mode="likert",
             score_ceiling=3,
@@ -354,20 +365,19 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             concept_key="pattern_recognition",
             label="Learning & Patterns",
             helper="Did you notice a pattern or learn something about yourself today?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            options=_BINARY_OPTIONS,
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_ceiling=3,
+            score_mode="binary",
         ),
     ),
     "purpose": (
         PillarTrackerConceptDefinition(
             concept_key="meaning_fulfilment",
             label="Meaning",
-            helper="Did today feel meaningful and worthwhile?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            helper="How meaningful and worthwhile did today feel?",
+            options=_SUBJECTIVE_OPTIONS,
+            target_value=2,
             target_direction="gte",
             score_mode="likert",
             score_ceiling=3,
@@ -376,18 +386,17 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             concept_key="direction_vision",
             label="Direction",
             helper="Did your actions move you closer to what matters most?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            options=_BINARY_OPTIONS,
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_ceiling=3,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="values_alignment",
             label="Values",
-            helper="Did you act in line with your values today?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            helper="How closely did you act in line with your values today?",
+            options=_SUBJECTIVE_OPTIONS,
+            target_value=2,
             target_direction="gte",
             score_mode="likert",
             score_ceiling=3,
@@ -396,22 +405,22 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             concept_key="contribution_connection",
             label="Contribution",
             helper="Did you positively contribute to or connect with someone today?",
-            options=_REFLECTION_PURPOSE_OPTIONS,
-            target_value=3,
+            options=_BINARY_OPTIONS,
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_ceiling=3,
+            score_mode="binary",
         ),
     ),
     "resilience": (
         PillarTrackerConceptDefinition(
             concept_key="emotional_regulation",
             label="Calm & Control",
-            helper="Did you feel calm and in control for most of today?",
-            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
-            target_value=1,
+            helper="How calm and in control did you feel for most of today?",
+            options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE,
+            target_value=2 / 3,
             target_direction="gte",
-            score_mode="binary",
+            score_mode="likert",
+            score_ceiling=1,
         ),
         PillarTrackerConceptDefinition(
             concept_key="positive_connection",
@@ -434,11 +443,12 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="optimism_perspective",
             label="Perspective",
-            helper="Did you stay positive and keep perspective today?",
-            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
-            target_value=1,
+            helper="How positive and balanced was your perspective today?",
+            options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE,
+            target_value=2 / 3,
             target_direction="gte",
-            score_mode="binary",
+            score_mode="likert",
+            score_ceiling=1,
         ),
         PillarTrackerConceptDefinition(
             concept_key="support_openness",
@@ -463,11 +473,12 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="sleep_quality",
             label="Rested",
-            helper="Did you wake up rested and refreshed this morning?",
-            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
-            target_value=1,
+            helper="How rested and refreshed did you feel when you woke up?",
+            options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE,
+            target_value=2 / 3,
             target_direction="gte",
-            score_mode="binary",
+            score_mode="likert",
+            score_ceiling=1,
         ),
         PillarTrackerConceptDefinition(
             concept_key="bedtime_consistency",
@@ -1601,9 +1612,9 @@ def _daily_display_status_for_value(
     if defn.score_mode == "binary":
         return "success" if value >= 1 else "danger"
     score = _score_for_value(defn, value, resolved_target)
-    if score >= 100:
+    if defn.score_mode == "likert" and _target_met_for_value(defn, value, resolved_target):
         return "success"
-    if score >= 50:
+    if score > 0:
         return "warning"
     return "danger"
 
@@ -1649,9 +1660,9 @@ def _build_concept_week_evaluations(
                 if day >= effective_start:
                     answered_days += 1
                     cumulative_value += float(value)
-            # Reflection and purpose are subjective Likert inputs; keep their displayed
-            # score on the raw Likert 0-100 mapping instead of converting them into
-            # weekly progress when an OKR target exists.
+            # Subjective Likert inputs keep their displayed score on the raw 0-100
+            # mapping instead of being converted into weekly progress when an OKR
+            # target exists.
             if (
                 concept_def.score_mode != "likert"
                 and resolved_target.target_period == "week"
