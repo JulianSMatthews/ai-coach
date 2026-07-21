@@ -1722,6 +1722,69 @@
         box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2), inset 0 0 0 4px #ebcfc3, 0 0 0 5px #dfa289;
       }
 
+      .about {
+        display: grid;
+        grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+        gap: clamp(40px, 8vw, 112px);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: clamp(48px, 7vw, 88px) 0;
+      }
+
+      .about-heading {
+        align-self: start;
+      }
+
+      .about-kicker {
+        margin: 0 0 16px;
+        color: var(--accent-dark);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .about h2 {
+        max-width: 340px;
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: clamp(40px, 5vw, 64px);
+        font-weight: 300;
+        line-height: 1.02;
+      }
+
+      .about-copy {
+        max-width: 700px;
+      }
+
+      .about-copy p {
+        margin: 0 0 22px;
+        color: var(--body-copy);
+        font-size: 16px;
+        line-height: 1.7;
+      }
+
+      .about-copy .about-intro {
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: clamp(23px, 2.5vw, 30px);
+        font-weight: 400;
+        line-height: 1.35;
+      }
+
+      .about-copy .about-statement {
+        margin: 30px 0;
+        color: var(--accent-dark);
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 500;
+        line-height: 1.2;
+      }
+
+      .about-copy p:last-child {
+        margin-bottom: 0;
+      }
+
       .faq {
         display: block;
         counter-reset: faq;
@@ -1964,6 +2027,11 @@
 
         .quote {
           grid-template-columns: 1fr;
+        }
+
+        .about {
+          grid-template-columns: 1fr;
+          gap: 32px;
         }
 
         footer {
@@ -2211,6 +2279,7 @@
           <a href="#top">Home</a>
           <a href="#pillars">Pillars</a>
           <a href="#how">How it works</a>
+          <a href="#about">About</a>
           <a href="#faq">FAQ</a>
         </nav>
         <a class="button download-button" href="#download">Download the App</a>
@@ -2226,6 +2295,7 @@
             <a href="#top">Home</a>
             <a href="#pillars">Pillars</a>
             <a href="#how">How it works</a>
+            <a href="#about">About</a>
             <a href="#faq">FAQ</a>
             <a class="button download-button" href="#download">Download the App</a>
           </div>
@@ -2665,6 +2735,51 @@
           </div>
         </section>
 
+        <section class="about" id="about" aria-labelledby="about-title">
+          <div class="about-heading">
+            <p class="about-kicker">About CoachSense</p>
+            <h2 id="about-title">Built from life, leadership and purpose.</h2>
+          </div>
+          <div class="about-copy">
+            <p class="about-intro">
+              I’m the founder of CoachSense, but before that I’m a father, entrepreneur, and someone who believes our
+              greatest potential comes from understanding ourselves.
+            </p>
+            <p>
+              For more than 20 years I’ve built a technology company and led a team through the challenges of growing a
+              business. Alongside that, I’ve always been passionate about health, endurance sport and personal
+              development. Across all of these experiences, one lesson has remained constant: lasting success is built
+              from dedication that comes from resilience, recovery, reflection and purpose.
+            </p>
+            <p class="about-statement">CoachSense was created from that belief.</p>
+            <p>
+              Watching my three sons grow up has reinforced how different today’s world is. Young people have access to
+              more information than ever before, yet many face increasing pressure from social media, constant
+              comparison and digital distraction. I wanted to explore whether technology could do more than capture
+              attention—could it help people better understand themselves?
+            </p>
+            <p class="about-statement">CoachSense is my answer.</p>
+            <p>
+              Rather than telling people what to do, CoachSense helps them develop the skills that matter most through
+              small daily actions centred on four foundations: Resilience, Recovery, Reflection and Purpose.
+            </p>
+            <p>
+              While CoachSense is designed for everyone, I believe it has particular value for young people. Academic
+              success alone isn’t enough to prepare them for life. They also need emotional awareness, confidence,
+              resilience and the ability to make thoughtful decisions in an increasingly complex world.
+            </p>
+            <p>
+              As AI becomes part of everyday life, these human qualities become even more important. Technology should
+              strengthen our judgement, not replace it.
+            </p>
+            <p>
+              My hope is that CoachSense becomes a trusted companion that helps people build their inner sense, one small
+              step at a time. If it helps even one young person discover greater confidence, resilience or purpose, it
+              will have achieved what I set out to do.
+            </p>
+          </div>
+        </section>
+
         <section class="quote" id="download">
           <div class="quote-content">
             <p>
@@ -2731,6 +2846,7 @@
               <li><a href="#top">Home</a></li>
               <li><a href="#pillars">Pillars</a></li>
               <li><a href="#how">How it works</a></li>
+              <li><a href="#about">About</a></li>
               <li><a href="#download">Download</a></li>
               <li><a href="#faq">FAQ</a></li>
             </ul>
