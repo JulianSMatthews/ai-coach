@@ -125,7 +125,9 @@ export default function PreferencesForm({
                   }))
                 }
                 aria-pressed={selected}
-                className="flex min-h-[5.75rem] w-full items-center gap-3 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-left text-[var(--text-primary)] transition"
+                className={`flex min-h-[5.75rem] w-full items-center gap-3 rounded-[28px] border bg-[var(--surface)] px-4 py-4 text-left text-[var(--text-primary)] transition ${
+                  selected ? "border-[var(--action-primary-border)]" : "border-[var(--border)]"
+                }`}
               >
                 <span className="min-w-0 flex-1">
                   <span className="block text-lg font-semibold leading-6">{pillar.label}</span>
@@ -135,7 +137,9 @@ export default function PreferencesForm({
                 </span>
                 <span
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${
-                    selected ? "border-[#111111] bg-white text-[#111111]" : "border-[var(--border)] bg-[var(--surface)]"
+                    selected
+                      ? "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-transparent"
                   }`}
                   aria-hidden="true"
                 >
