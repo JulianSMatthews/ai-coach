@@ -3859,6 +3859,8 @@ def _get_or_create_app_review_demo_user(session, *, phone_norm: str) -> User:
     if user_id:
         _set_pref_value(session, user_id, "app_review_demo_account", "1")
         _set_pref_value(session, user_id, "preferred_channel", "app")
+        _set_pref_value(session, user_id, "home_pillar_nutrition", "1")
+        _set_pref_value(session, user_id, "home_pillar_training", "1")
     return user
 
 def _extract_session_token(request: Request) -> str | None:
@@ -8578,6 +8580,7 @@ def api_user_status_v1(
                         "home_pillar_recovery",
                         "home_pillar_nutrition",
                         "home_pillar_training",
+                        "app_review_demo_account",
                     )
                 ),
             )
@@ -8643,6 +8646,11 @@ def api_user_status_v1(
             x_admin_token=x_admin_token,
             x_admin_user_id=x_admin_user_id,
         )
+        extended_pillars_enabled = bool(
+            is_admin_context
+            or _is_truthy_token(pref_map.get("app_review_demo_account"))
+            or _is_truthy_token(os.getenv("EXTENDED_PILLARS_PUBLIC_ENABLED"))
+        )
 
     data = {
         "user": {
@@ -8659,6 +8667,7 @@ def api_user_status_v1(
             "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
             "admin_role": admin_role,
             "is_admin_user": bool(is_admin_context),
+            "extended_pillars_enabled": extended_pillars_enabled,
         },
         "active_domain": active,
         "latest_run": None,
@@ -8672,8 +8681,8 @@ def api_user_status_v1(
             "home_pillar_purpose": pref_map.get("home_pillar_purpose", ""),
             "home_pillar_resilience": pref_map.get("home_pillar_resilience", ""),
             "home_pillar_recovery": pref_map.get("home_pillar_recovery", ""),
-            "home_pillar_nutrition": pref_map.get("home_pillar_nutrition", "on" if is_admin_context else "off"),
-            "home_pillar_training": pref_map.get("home_pillar_training", "on" if is_admin_context else "off"),
+            "home_pillar_nutrition": pref_map.get("home_pillar_nutrition", "on" if extended_pillars_enabled else "off"),
+            "home_pillar_training": pref_map.get("home_pillar_training", "on" if extended_pillars_enabled else "off"),
             "training_objective": training_objective.objective if training_objective else "",
             "preferred_channel": pref_map.get("preferred_channel", "app"),
             "marketing_opt_in": pref_map.get("marketing_opt_in", ""),

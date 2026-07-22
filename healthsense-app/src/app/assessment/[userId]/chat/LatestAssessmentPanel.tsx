@@ -34,6 +34,7 @@ type LatestAssessmentPanelProps = {
   initialAssessmentReviewed?: boolean;
   initialInteractionDaysCount?: number | null;
   isAdminUser?: boolean;
+  extendedPillarsEnabled?: boolean;
 };
 
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
@@ -1529,6 +1530,7 @@ export default function LatestAssessmentPanel({
   initialAssessmentReviewed = false,
   initialInteractionDaysCount = null,
   isAdminUser = false,
+  extendedPillarsEnabled = false,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
@@ -1588,12 +1590,12 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("checkin");
   const [setupPillarSelections, setSetupPillarSelections] = useState<Record<string, boolean>>(() =>
-    initialSetupPillarSelections(initialSummary, isAdminUser),
+    initialSetupPillarSelections(initialSummary, extendedPillarsEnabled),
   );
   const [setupSaving, setSetupSaving] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const appSetupRequired = summary.app_setup_completed !== true;
-  const setupSelectablePillarOrder = isAdminUser ? PILLAR_ORDER : SETUP_SELECTABLE_PILLAR_ORDER;
+  const setupSelectablePillarOrder = extendedPillarsEnabled ? PILLAR_ORDER : SETUP_SELECTABLE_PILLAR_ORDER;
   const modalOverlayOpen = (BIOMETRICS_ENABLED && biometricsModalOpen) || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[3.75rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] border px-1.5 py-1.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";

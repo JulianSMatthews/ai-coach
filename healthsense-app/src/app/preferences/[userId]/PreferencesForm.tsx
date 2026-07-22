@@ -9,7 +9,7 @@ type PreferencesFormProps = {
   initialEmail?: string;
   initialTheme?: string;
   initialPillarSelections?: Record<string, boolean>;
-  isAdminUser?: boolean;
+  extendedPillarsEnabled?: boolean;
 };
 
 const PREFERENCE_PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery"];
@@ -30,9 +30,9 @@ export default function PreferencesForm({
   initialEmail = "",
   initialTheme = "dark",
   initialPillarSelections = {},
-  isAdminUser = false,
+  extendedPillarsEnabled = false,
 }: PreferencesFormProps) {
-  const preferencePillars = (isAdminUser ? ADMIN_PREFERENCE_PILLAR_ORDER : PREFERENCE_PILLAR_ORDER)
+  const preferencePillars = (extendedPillarsEnabled ? ADMIN_PREFERENCE_PILLAR_ORDER : PREFERENCE_PILLAR_ORDER)
     .map((key) => PILLARS.find((pillar) => pillar.key === key))
     .filter(Boolean) as typeof PILLARS;
   const [email, setEmail] = useState(initialEmail || "");
@@ -62,7 +62,7 @@ export default function PreferencesForm({
         const prefKey = PILLAR_PREF_KEYS[pillar.key];
         payload[prefKey] = pillarSelections[pillar.key] ? "1" : "0";
       }
-      if (!isAdminUser) {
+      if (!extendedPillarsEnabled) {
         for (const pillarKey of HIDDEN_PILLAR_ORDER) {
           payload[PILLAR_PREF_KEYS[pillarKey]] = "0";
         }

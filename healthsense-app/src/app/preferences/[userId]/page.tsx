@@ -27,8 +27,8 @@ export default async function PreferencesPage(props: PageProps) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
-  const isAdminUser = Boolean(data.user?.is_admin_user);
-  const preferencePillarKeys = isAdminUser
+  const extendedPillarsEnabled = Boolean(data.user?.extended_pillars_enabled);
+  const preferencePillarKeys = extendedPillarsEnabled
     ? ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"]
     : ["reflection", "purpose", "resilience", "recovery"];
   const defaultPillarKeys = new Set(preferencePillarKeys);
@@ -69,7 +69,7 @@ export default async function PreferencesPage(props: PageProps) {
           initialEmail={user.email || ""}
           initialTheme={themePreference}
           initialPillarSelections={initialPillarSelections}
-          isAdminUser={isAdminUser}
+          extendedPillarsEnabled={extendedPillarsEnabled}
         />
       </section>
 

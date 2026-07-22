@@ -102,6 +102,13 @@ def active_pillar_keys(user_id: int | None = None) -> tuple[str, ...]:
     )
     configured = _dedupe_known(raw.split(",")) if raw.strip() else ()
     base = list(configured or DEFAULT_ACTIVE_PILLARS)
+    public_extended_enabled = str(os.getenv("EXTENDED_PILLARS_PUBLIC_ENABLED") or "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if public_extended_enabled:
+        for key in ("nutrition", "training"):
+            if key not in base:
+                base.append(key)
     if user_id is not None:
         resolved_home_prefs = _resolve_home_pillar_preferences(user_id)
         for key, value in resolved_home_prefs.items():

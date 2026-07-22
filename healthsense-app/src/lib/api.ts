@@ -13,6 +13,7 @@ export type UserStatusResponse = {
     last_inbound_message_at?: string | null;
     admin_role?: string | null;
     is_admin_user?: boolean;
+    extended_pillars_enabled?: boolean;
   };
   active_domain?: string | null;
   latest_run?: { id?: number; finished_at?: string | null; combined_overall?: number };
