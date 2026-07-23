@@ -35,6 +35,34 @@ HealthKit entitlement, HealthKit plugin registration, Camera plugin dependency, 
 strings. The web UI can be re-enabled later with `NEXT_PUBLIC_BIOMETRICS_ENABLED=1`, but a future iOS release should
 also restore the native permissions/plugins and updated App Review notes before submitting those features.
 
+## Capacitor Android Shell
+
+The native Android project lives under `android/` and uses the same hosted-shell architecture and application ID as iOS.
+It targets Android API 36 with a minimum API level of 24.
+
+Prerequisites:
+
+- Android Studio with the Android 16/API 36 SDK
+- Java 21 or the compatible JDK bundled with Android Studio
+
+Useful commands:
+
+```bash
+npm run cap:sync:android
+npm run cap:open:android
+npm run cap:run:android
+```
+
+To build from the command line after Java and the Android SDK are configured:
+
+```bash
+cd android
+./gradlew assembleDebug
+./gradlew bundleRelease
+```
+
+Release keystores and `local.properties` are intentionally excluded from version control.
+
 ## Getting Started
 
 First, run the development server:
