@@ -21,8 +21,8 @@
     "@capacitor/android": "8.4.2",
     "@capacitor/core": "8.4.2",
     "@capacitor/ios": "8.4.2",
-    "microsoft-cognitiveservices-speech-sdk": "^1.48.0",
-    "next": "16.1.4",
+    "microsoft-cognitiveservices-speech-sdk": "1.51.0",
+    "next": "16.2.11",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
@@ -33,7 +33,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.4",
+    "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

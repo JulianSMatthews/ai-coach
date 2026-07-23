@@ -62,6 +62,18 @@ cd android
 ```
 
 Release keystores and `local.properties` are intentionally excluded from version control.
+The CoachSense source artwork is kept in `assets/`. Regenerate Android launcher and splash
+resources with:
+
+```bash
+npx --yes --package @capacitor/assets@3.0.5 capacitor-assets generate --android \
+  --iconBackgroundColor '#fffdf9' \
+  --iconBackgroundColorDark '#17130f' \
+  --splashBackgroundColor '#fffdf9' \
+  --splashBackgroundColorDark '#17130f'
+```
+
+See `ANDROID_RELEASE_CHECKLIST.md` for the Play Console submission and device-test steps.
 
 ## Getting Started
 
