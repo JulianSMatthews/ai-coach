@@ -37,6 +37,7 @@ from app.coach_home_refresh import run_coach_home_tracker_refresh
 from app.education_plan import (
     EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND,
     generate_all_education_programme_avatar_videos,
+    generate_education_marketing_video,
     generate_education_programme_avatar_videos,
     warm_education_explore_catalog,
 )
@@ -402,6 +403,40 @@ def _process_education_avatar_generate_programme(payload: dict) -> dict:
     return result
 
 
+def _process_education_marketing_video(payload: dict) -> dict:
+    programme_id = payload.get("programme_id")
+    if not programme_id:
+        raise ValueError("education_marketing_video requires programme_id")
+    result = generate_education_marketing_video(
+        int(programme_id),
+        refresh_only=bool(payload.get("refresh_only", False)),
+    )
+    if bool(result.get("pending")):
+        current_job_id = payload.get("job_id")
+        poll_attempt = max(0, int(payload.get("poll_attempt") or 0)) + 1
+        delay_seconds = max(10, queue_requeue_delay_seconds(poll_attempt))
+        next_job_id, created = enqueue_job_once(
+            "education_marketing_video",
+            {
+                "programme_id": int(programme_id),
+                "refresh_only": True,
+                "poll_attempt": poll_attempt,
+                "trigger": "worker_education_marketing_video",
+            },
+            available_at=datetime.utcnow() + timedelta(seconds=delay_seconds),
+            payload_match={
+                "programme_id": int(programme_id),
+                "refresh_only": True,
+                "trigger": "worker_education_marketing_video",
+            },
+            exclude_job_id=int(current_job_id) if current_job_id is not None else None,
+            running_stale_minutes=60,
+        )
+        result["requeued_job_id"] = int(next_job_id)
+        result["requeued_created"] = bool(created)
+    return result
+
+
 def _process_education_explore_catalog_warmup(payload: dict) -> dict:
     user_id = payload.get("user_id")
     if not user_id:
@@ -444,6 +479,8 @@ def process_job(kind: str, payload: dict) -> dict:
         return _process_education_avatar_generate_all(payload)
     if kind == "education_avatar_generate_programme":
         return _process_education_avatar_generate_programme(payload)
+    if kind == "education_marketing_video":
+        return _process_education_marketing_video(payload)
     raise ValueError(f"Unknown job kind: {kind}")
 
 

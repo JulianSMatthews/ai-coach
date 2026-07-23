@@ -116,6 +116,13 @@ _EDUCATION_SCHEMA_COLUMNS = {
         "journey_order": "integer DEFAULT 0 NOT NULL",
         "llm_task_description": "text",
         "llm_video_duration": "varchar(120)",
+        "marketing_video_script": "text",
+        "marketing_video_url": "varchar(512)",
+        "marketing_video_status": "varchar(32)",
+        "marketing_video_job_id": "varchar(128)",
+        "marketing_video_error": "text",
+        "marketing_video_generated_at": "timestamp",
+        "marketing_video_payload_json": "jsonb",
         "is_released": "boolean DEFAULT false NOT NULL",
     },
     "education_programme_days": {
@@ -2304,6 +2311,206 @@ def generate_education_lesson_avatar(
             "avatar": avatar,
             "pending": bool(result.get("timed_out")) or status not in {"Succeeded", "Failed"},
         }
+
+
+def _education_marketing_source(session, programme: EducationProgramme) -> str:
+    days = (
+        session.query(EducationProgrammeDay)
+        .filter(EducationProgrammeDay.programme_id == int(programme.id))
+        .order_by(EducationProgrammeDay.day_index.asc(), EducationProgrammeDay.id.asc())
+        .all()
+    )
+    day_ids = [int(row.id) for row in days]
+    variants = (
+        session.query(EducationLessonVariant)
+        .filter(
+            EducationLessonVariant.programme_day_id.in_(day_ids),
+            EducationLessonVariant.is_active.is_(True),
+        )
+        .order_by(EducationLessonVariant.programme_day_id.asc(), EducationLessonVariant.level.asc())
+        .all()
+        if day_ids
+        else []
+    )
+    variants_by_day: dict[int, list[EducationLessonVariant]] = {}
+    for variant in variants:
+        variants_by_day.setdefault(int(variant.programme_day_id), []).append(variant)
+    sections: list[str] = []
+    for day in days:
+        lesson_parts = [
+            str(getattr(day, "default_title", "") or "").strip(),
+            str(getattr(day, "default_summary", "") or "").strip(),
+            str(getattr(day, "lesson_goal", "") or "").strip(),
+        ]
+        for variant in variants_by_day.get(int(day.id), []):
+            lesson_parts.extend(
+                [
+                    str(getattr(variant, "title", "") or "").strip(),
+                    str(getattr(variant, "summary", "") or "").strip(),
+                    str(getattr(variant, "script", "") or "").strip(),
+                    str(getattr(variant, "action_prompt", "") or "").strip(),
+                ]
+            )
+        content = "\n".join(part for part in lesson_parts if part)
+        if content:
+            sections.append(f"Lesson {int(day.day_index or 0)}:\n{content}")
+    return "\n\n".join(sections)[:24000]
+
+
+def _clean_marketing_video_script(value: str) -> str:
+    text_value = str(value or "").strip()
+    text_value = re.sub(r"^```(?:text)?|```$", "", text_value, flags=re.IGNORECASE).strip()
+    text_value = re.sub(r"^(?:script|narration|voiceover)\s*:\s*", "", text_value, flags=re.IGNORECASE)
+    text_value = text_value.strip().strip('"').strip()
+    words = text_value.split()
+    if len(words) > 26:
+        text_value = " ".join(words[:26]).rstrip(".,;:") + "."
+    return text_value
+
+
+def _generate_education_marketing_video_impl(
+    programme_id: int,
+    *,
+    refresh_only: bool = False,
+) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    if not azure_avatar_enabled():
+        raise RuntimeError("Azure avatar generation is not enabled.")
+    with SessionLocal() as session:
+        programme = session.get(EducationProgramme, int(programme_id))
+        if programme is None:
+            raise ValueError("Education programme not found.")
+
+        if refresh_only:
+            job_id = str(getattr(programme, "marketing_video_job_id", "") or "").strip()
+            if not job_id:
+                raise ValueError("Marketing video has no Azure job to refresh.")
+            latest = get_batch_avatar(job_id)
+            status = str(latest.get("status") or "").strip() or "Running"
+            outputs = latest.get("outputs") if isinstance(latest.get("outputs"), dict) else {}
+            result_url = str((outputs or {}).get("result") or "").strip()
+            video_bytes = (
+                download_batch_avatar_output(result_url)
+                if status == "Succeeded" and result_url
+                else None
+            )
+            result = {
+                "job_id": job_id,
+                "status": status,
+                "video_bytes": video_bytes,
+                "response": latest,
+            }
+        else:
+            source = _education_marketing_source(session, programme)
+            if not source:
+                raise ValueError("Add lesson summaries or scripts before generating a marketing video.")
+            concept = str(getattr(programme, "concept_label", "") or getattr(programme, "concept_key", "") or programme.name).strip()
+            prompt = (
+                "Create one spoken marketing narration for a 10-second CoachSense video. "
+                "Use 18 to 24 words, speak directly to the viewer, summarise the practical benefit "
+                "of the concept, use plain British English, and finish with a gentle invitation to act. "
+                "Do not mention lessons, programmes, young people, medical outcomes, diagnoses, guarantees, "
+                "or unsupported claims. Return only the narration, with no label or quotation marks.\n\n"
+                f"Concept: {concept}\nProgramme: {programme.name}\n\nSource lesson content:\n{source}"
+            )
+            from .prompts import run_llm_prompt
+
+            generated = run_llm_prompt(
+                prompt,
+                touchpoint="education_marketing_video_script",
+                model="gpt-5-mini",
+                context_meta={"programme_id": int(programme.id), "concept": concept, "duration_seconds": 10},
+                prompt_variant="concept_marketing_video_10s",
+                task_label=f"Generate 10-second marketing video: {programme.name}",
+                prompt_blocks={"context": source, "task": "Create an 18–24 word marketing narration."},
+                block_order=["context", "task"],
+            )
+            script = _clean_marketing_video_script(generated)
+            if not script:
+                raise RuntimeError("The marketing script generator returned no content.")
+            programme.marketing_video_script = script
+            programme.marketing_video_status = "running"
+            programme.marketing_video_error = None
+            session.add(programme)
+            session.commit()
+
+            defaults = azure_avatar_defaults()
+            result = generate_batch_avatar_video(
+                script=script,
+                title=f"CoachSense – {concept}",
+                character=defaults.get("character"),
+                style=defaults.get("style"),
+                voice=defaults.get("voice"),
+            )
+
+        status = str(result.get("status") or "").strip() or "Running"
+        response_payload = result.get("response") if isinstance(result.get("response"), dict) else {}
+        programme.marketing_video_status = status.lower()
+        programme.marketing_video_job_id = str(result.get("job_id") or "").strip() or None
+        programme.marketing_video_error = (
+            str(response_payload or "")[:1000] if status.lower() == "failed" else None
+        )
+        programme.marketing_video_payload_json = response_payload
+        video_bytes = result.get("video_bytes")
+        if status.lower() == "succeeded" and isinstance(video_bytes, (bytes, bytearray)):
+            filename = f"education-marketing-{int(programme.id)}-{_safe_avatar_asset_token(programme.marketing_video_job_id)}.mp4"
+            programme.marketing_video_url = _write_education_report_bytes(
+                f"content/education/marketing/{filename}",
+                bytes(video_bytes),
+            )
+            programme.marketing_video_generated_at = _now_utc()
+            if isinstance(response_payload, dict):
+                log_azure_batch_avatar_usage_once(
+                    response_payload,
+                    session=session,
+                    tag="education_marketing",
+                    model="batch_education_marketing_avatar",
+                    extra_meta={
+                        "programme_id": int(programme.id),
+                        "programme_code": str(programme.code or ""),
+                        "programme_name": str(programme.name or ""),
+                        "concept_key": str(programme.concept_key or ""),
+                        "duration_seconds": 10,
+                        "title": f"CoachSense – {str(programme.concept_label or programme.concept_key or programme.name)}",
+                    },
+                    commit=False,
+                )
+        session.add(programme)
+        session.commit()
+        return {
+            "ok": status.lower() == "succeeded",
+            "pending": status.lower() not in {"succeeded", "failed"},
+            "programme_id": int(programme.id),
+            "script": str(programme.marketing_video_script or ""),
+            "video_url": str(programme.marketing_video_url or ""),
+            "status": str(programme.marketing_video_status or ""),
+            "job_id": str(programme.marketing_video_job_id or ""),
+            "error": str(programme.marketing_video_error or ""),
+        }
+
+
+def generate_education_marketing_video(
+    programme_id: int,
+    *,
+    refresh_only: bool = False,
+) -> dict[str, Any]:
+    try:
+        return _generate_education_marketing_video_impl(
+            int(programme_id),
+            refresh_only=refresh_only,
+        )
+    except Exception as exc:
+        try:
+            with SessionLocal() as session:
+                programme = session.get(EducationProgramme, int(programme_id))
+                if programme is not None:
+                    programme.marketing_video_status = "failed"
+                    programme.marketing_video_error = str(exc)[:2000]
+                    session.add(programme)
+                    session.commit()
+        except Exception:
+            pass
+        raise
 
 
 def refresh_education_lesson_avatar(lesson_variant_id: int) -> dict[str, Any]:

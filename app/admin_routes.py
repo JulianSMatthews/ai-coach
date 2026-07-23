@@ -539,6 +539,12 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "journey_order": 0,
             "llm_task_description": "",
             "llm_video_duration": "",
+            "marketing_video_script": "",
+            "marketing_video_url": "",
+            "marketing_video_status": "",
+            "marketing_video_job_id": "",
+            "marketing_video_error": "",
+            "marketing_video_generated_at": "",
             "is_active": True,
             "is_released": False,
             "days": [],
@@ -668,6 +674,16 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         "journey_order": int(getattr(row, "journey_order", 0) or 0),
         "llm_task_description": str(getattr(row, "llm_task_description", "") or ""),
         "llm_video_duration": str(getattr(row, "llm_video_duration", "") or ""),
+        "marketing_video_script": str(getattr(row, "marketing_video_script", "") or ""),
+        "marketing_video_url": str(getattr(row, "marketing_video_url", "") or ""),
+        "marketing_video_status": str(getattr(row, "marketing_video_status", "") or ""),
+        "marketing_video_job_id": str(getattr(row, "marketing_video_job_id", "") or ""),
+        "marketing_video_error": str(getattr(row, "marketing_video_error", "") or ""),
+        "marketing_video_generated_at": (
+            getattr(row, "marketing_video_generated_at", None).isoformat()
+            if getattr(row, "marketing_video_generated_at", None)
+            else ""
+        ),
         "is_active": bool(row.is_active),
         "is_released": bool(getattr(row, "is_released", False)),
         "days": payload_days,
@@ -5839,6 +5855,38 @@ def refresh_education_programme_avatars(programme_id: int):
     return _education_avatar_bulk_result_page("Education Programme Avatar Refresh", result)
 
 
+@admin.post("/education-programmes/{programme_id}/marketing-video/generate")
+def queue_education_programme_marketing_video(programme_id: int):
+    ensure_education_plan_schema()
+    ensure_job_table()
+    with SessionLocal() as s:
+        row = s.get(EducationProgramme, int(programme_id))
+        if row is None:
+            raise HTTPException(404, "Education programme not found")
+        row.marketing_video_status = "queued"
+        row.marketing_video_error = None
+        s.add(row)
+        s.commit()
+    enqueue_job_once(
+        "education_marketing_video",
+        {
+            "programme_id": int(programme_id),
+            "refresh_only": False,
+            "trigger": "admin_education_marketing_video",
+        },
+        payload_match={
+            "programme_id": int(programme_id),
+            "refresh_only": False,
+            "trigger": "admin_education_marketing_video",
+        },
+        running_stale_minutes=60,
+    )
+    return RedirectResponse(
+        url=f"/admin/education-programmes/edit?id={int(programme_id)}",
+        status_code=303,
+    )
+
+
 @admin.post("/education-programmes/lesson-variants/{variant_id}/avatar/generate")
 async def generate_education_programme_lesson_avatar(variant_id: int, request: Request):
     try:
@@ -6501,9 +6549,53 @@ def edit_education_programme(id: int | None = None):
     }
     delete_form_html = ""
     avatar_bulk_html = ""
+    marketing_video_html = ""
     summary_rationalise_current_html = ""
     if row is not None:
         programme_id = html.escape(str(programme_payload.get("id") or ""))
+        marketing_url = str(programme_payload.get("marketing_video_url") or "").strip()
+        marketing_script = str(programme_payload.get("marketing_video_script") or "").strip()
+        marketing_status = str(programme_payload.get("marketing_video_status") or "").strip()
+        marketing_error = str(programme_payload.get("marketing_video_error") or "").strip()
+        marketing_generated_at = str(programme_payload.get("marketing_video_generated_at") or "").strip()
+        marketing_preview = (
+            f"<video controls playsinline preload='metadata' src='{html.escape(marketing_url, quote=True)}' "
+            "style='width:100%; max-width:420px; border-radius:8px; background:#000;'></video>"
+            f"<p><a class='button-link' href='{html.escape(marketing_url, quote=True)}' target='_blank' "
+            "rel='noopener' download>Open or download marketing video</a></p>"
+            if marketing_url
+            else ""
+        )
+        marketing_error_html = (
+            f"<p class='error'>{html.escape(marketing_error)}</p>"
+            if marketing_error
+            else ""
+        )
+        marketing_narration_html = (
+            html.escape(marketing_script)
+            if marketing_script
+            else "<span class='subtle'>Generated with the video.</span>"
+        )
+        marketing_video_html = (
+            "<div class='card' style='margin-bottom:12px;'>"
+            "<h3 class='section-title'>10-second concept marketing video</h3>"
+            "<p class='help'>Summarises the stored lesson summaries and scripts into a short, direct-to-user "
+            "CoachSense narration, then generates a reusable avatar video for marketing.</p>"
+            f"<p><strong>Status:</strong> {html.escape(marketing_status or 'Not generated')}"
+            f"{' · ' + html.escape(marketing_generated_at) if marketing_generated_at else ''}</p>"
+            f"{marketing_preview}"
+            f"<p><strong>Narration:</strong> {marketing_narration_html}</p>"
+            f"{marketing_error_html}"
+        )
+        marketing_video_html += (
+            f"<form method='post' action='/admin/education-programmes/{programme_id}/marketing-video/generate' "
+            "onsubmit=\"return confirm('Generate a new 10-second marketing video from this concept programme? "
+            "Any existing marketing video will be replaced when generation succeeds.');\">"
+            f"<button type='submit'>{'Regenerate marketing video' if marketing_url else 'Generate marketing video'}</button>"
+            "</form>"
+            "<p class='help'>Generation runs in the background. Return to or refresh this page to see the result.</p>"
+            "</div>"
+        )
         avatar_bulk_html = (
             "<div class='programme-video-actions' style='margin-top:12px; padding-top:12px; border-top:1px solid var(--border);'>"
             "<h3 class='section-title'>Avatar videos</h3>"
@@ -6583,6 +6675,7 @@ def edit_education_programme(id: int | None = None):
       {avatar_bulk_html}
       {summary_rationalise_current_html}
     </div>
+    {marketing_video_html}
     <form method="post" action="/admin/education-programmes/save" id="education-programme-form">
       <input type="hidden" name="id" value="{html.escape(str(programme_payload.get('id') or ''))}" />
       <input type="hidden" name="structure_json" id="structure_json" value="" />
