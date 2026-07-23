@@ -8472,6 +8472,11 @@ def api_user_education_plan_quiz_submit(
     submitted_programme_day_id = _safe_int((body or {}).get("programme_day_id") or (body or {}).get("programmeDayId"))
     submitted_lesson_variant_id = _safe_int((body or {}).get("lesson_variant_id") or (body or {}).get("lessonVariantId"))
     submitted_quiz_id = _safe_int((body or {}).get("quiz_id") or (body or {}).get("quizId"))
+    submission_id = str(
+        (body or {}).get("submission_id")
+        or request.headers.get("X-Quiz-Submission-Id")
+        or ""
+    ).strip()[:120]
     try:
         result = submit_education_quiz(
             int(user_id),
@@ -8489,6 +8494,7 @@ def api_user_education_plan_quiz_submit(
                 "programme_day_id": submitted_programme_day_id,
                 "lesson_variant_id": submitted_lesson_variant_id,
                 "quiz_id": submitted_quiz_id,
+                "submission_id": submission_id,
                 "error": repr(exc),
             },
             tag="education",
@@ -8524,6 +8530,7 @@ def api_user_education_plan_quiz_submit(
                 "lesson_date": result.get("lesson_date"),
                 "quiz_score_pct": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("quiz_score_pct"),
                 "completion_status": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("completion_status"),
+                "submission_id": submission_id or None,
             },
         )
     except Exception as exc:

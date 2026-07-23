@@ -103,6 +103,38 @@ function normalizeEducationPlanMedia(data: Record<string, unknown>, base: string
   return data;
 }
 
+const RETRYABLE_QUIZ_SUBMIT_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
+async function submitQuizUpstream(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+) {
+  let lastResponse: Response | null = null;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+      lastResponse = response;
+      if (!RETRYABLE_QUIZ_SUBMIT_STATUSES.has(response.status) || attempt === 1) {
+        return response;
+      }
+      await response.arrayBuffer().catch(() => undefined);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 1) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (lastResponse) return lastResponse;
+  throw lastError instanceof Error ? lastError : new Error("Quiz submission failed before receiving a response.");
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -123,12 +155,13 @@ export async function POST(request: Request) {
     } else {
       Object.assign(headers, getAdminHeaders());
     }
-    const res = await fetch(`${base}/api/v1/users/${encodeURIComponent(userId)}/education-plan/quiz-submit`, {
-      method: "POST",
+    const submissionId = String(body.submission_id || "").trim() || crypto.randomUUID();
+    headers["X-Quiz-Submission-Id"] = submissionId;
+    const res = await submitQuizUpstream(
+      `${base}/api/v1/users/${encodeURIComponent(userId)}/education-plan/quiz-submit`,
       headers,
-      body: JSON.stringify({ ...body, userId }),
-      cache: "no-store",
-    });
+      { ...body, userId, submission_id: submissionId },
+    );
     const text = await res.text().catch(() => "");
     if (!res.ok) {
       return NextResponse.json({ error: quizSubmitUpstreamError(text, res.status) }, { status: res.status });

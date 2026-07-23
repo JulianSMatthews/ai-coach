@@ -4555,6 +4555,21 @@ def _apply_education_quiz_submission(
     answers: list[dict[str, Any]] | None,
     quiz_id: int | None = None,
 ) -> bool:
+    # Serialise repeated or closely timed submissions for the same lesson. The
+    # operation replaces the existing answer set, so this lock prevents two
+    # requests from interleaving their delete/insert cycles.
+    locked_progress = (
+        session.execute(
+            select(UserEducationDayProgress)
+            .where(UserEducationDayProgress.id == int(progress.id))
+            .with_for_update()
+        )
+        .scalars()
+        .first()
+    )
+    if locked_progress is None:
+        return False
+    progress = locked_progress
     lesson_variant_id = int(getattr(lesson_variant, "id", 0) or 0) if lesson_variant is not None else 0
     selected_quiz_id = _safe_int(quiz_id)
     quiz = session.get(EducationQuiz, int(selected_quiz_id)) if selected_quiz_id else None

@@ -1875,6 +1875,10 @@ export default function AssessmentChatBox({
         };
       });
       const programmeDayId = educationLessonProgrammeDayId(activeEducationLesson);
+      const submissionId =
+        typeof globalThis.crypto?.randomUUID === "function"
+          ? globalThis.crypto.randomUUID()
+          : `quiz-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const res = await fetch("/api/education-plan/quiz-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1884,6 +1888,7 @@ export default function AssessmentChatBox({
           lesson_variant_id: activeEducationLessonVariantId || undefined,
           quiz_id: Number(activeEducationQuiz?.id || activeEducationQuiz?.quiz_id || activeEducationQuiz?.quizId || 0) || undefined,
           answers,
+          submission_id: submissionId,
         }),
       });
       const text = await res.text().catch(() => "");
