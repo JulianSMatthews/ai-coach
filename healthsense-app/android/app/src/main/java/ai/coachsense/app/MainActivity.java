@@ -1,4 +1,4 @@
-package coach.healthsense.app;
+package ai.coachsense.app;
 
 import com.getcapacitor.BridgeActivity;
 

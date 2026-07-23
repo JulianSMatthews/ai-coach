@@ -5,7 +5,7 @@ This is the release checklist for the first Google Play release of CoachSense.
 ## Release configuration
 
 - Application name: `CoachSense`
-- Application ID: `coach.healthsense.app`
+- Application ID: `ai.coachsense.app`
 - Version name: `1.0`
 - Version code: `1`
 - Minimum Android version: API 24 (Android 7.0)
@@ -51,7 +51,7 @@ and Training are not visible to an ordinary account.
 
 ## Google Play Console
 
-1. Create the app in Play Console using package name `coach.healthsense.app`.
+1. Create the app in Play Console using package name `ai.coachsense.app`.
 2. Enrol in Play App Signing.
 3. Create and securely back up the upload keystore. Never commit it to this repository.
 4. Add a local Gradle signing configuration or sign the release bundle in Android Studio.

@@ -5,9 +5,8 @@ const serverUrl = String(process.env.CAP_SERVER_URL || DEFAULT_SERVER_URL).trim(
 const APP_VERSION = "1.1";
 
 const config: CapacitorConfig = {
-  // Keep this ID stable so future Android builds and the existing iOS listing
-  // share the same application identity.
-  appId: "coach.healthsense.app",
+  // Keep the native identity aligned with the CoachSense domain and iOS listing.
+  appId: "ai.coachsense.app",
   appName: "CoachSense",
   webDir: "capacitor-web",
   backgroundColor: "#f6f1e7",

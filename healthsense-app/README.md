@@ -37,7 +37,8 @@ also restore the native permissions/plugins and updated App Review notes before 
 
 ## Capacitor Android Shell
 
-The native Android project lives under `android/` and uses the same hosted-shell architecture and application ID as iOS.
+The native Android project lives under `android/` and uses the same hosted-shell architecture and
+CoachSense application ID (`ai.coachsense.app`) as iOS.
 It targets Android API 36 with a minimum API level of 24.
 
 Prerequisites:
