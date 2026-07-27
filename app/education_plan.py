@@ -59,6 +59,7 @@ _CONCEPT_INSIGHT_COUNT = 12
 EDUCATION_EXPLORE_CATALOG_CACHE_VERSION = 3
 EDUCATION_EXPLORE_CATALOG_CACHE_KEY = f"education_explore_catalog_cache_v{EDUCATION_EXPLORE_CATALOG_CACHE_VERSION}"
 EDUCATION_EXPLORE_CATALOG_WARMUP_JOB_KIND = "education_explore_catalog_warmup"
+EDUCATION_QUIZ_STATE_REFRESH_JOB_KIND = "education_quiz_state_refresh"
 
 
 def _title_case_token(value: str) -> str:
@@ -4459,6 +4460,44 @@ def warm_education_explore_catalog(user_id: int, *, anchor: date | None = None) 
         }
 
 
+def refresh_education_programme_state(user_id: int, *, anchor: date | None = None) -> dict[str, Any]:
+    """Rebuild derived programme state and warm its exploration cache after a quiz."""
+    return warm_education_explore_catalog(int(user_id), anchor=anchor)
+
+
+def queue_education_quiz_state_refresh(
+    user_id: int,
+    *,
+    submission_id: str,
+    anchor: date | None = None,
+) -> dict[str, Any]:
+    from .job_queue import enqueue_job_once, should_use_worker
+
+    resolved_anchor = _resolve_plan_date(anchor)
+    payload = {
+        "user_id": int(user_id),
+        "anchor_date": resolved_anchor.isoformat(),
+        "submission_id": str(submission_id or "").strip()[:120],
+    }
+    if should_use_worker():
+        job_id, created = enqueue_job_once(
+            EDUCATION_QUIZ_STATE_REFRESH_JOB_KIND,
+            payload,
+            user_id=int(user_id),
+            payload_match={"submission_id": payload["submission_id"]},
+            running_stale_minutes=15,
+        )
+        return {"queued": True, "worker": True, "job_id": int(job_id), "created": bool(created)}
+
+    thread = threading.Thread(
+        target=refresh_education_programme_state,
+        kwargs={"user_id": int(user_id), "anchor": resolved_anchor},
+        daemon=True,
+    )
+    thread.start()
+    return {"queued": True, "worker": False, "background": True}
+
+
 def queue_education_explore_catalog_warmup(
     user_id: int,
     *,
@@ -4766,7 +4805,6 @@ def submit_education_quiz(
                 plan.status = "completed"
             else:
                 plan.current_day_index = _next_incomplete_programme_day_index(session, plan=plan, programme=programme)
-            _sync_plan_streaks(session, plan)
             session.add(plan)
             _clear_education_explore_catalog_cache(session, int(user_id))
             session.flush()
@@ -4781,14 +4819,19 @@ def submit_education_quiz(
                 progress_by_day_id={int(programme_day.id): progress},
                 concept_level_by_key={(pillar_key, concept_key): concept_level},
             )
-            state = _lesson_state(
-                session,
-                user_id=int(user_id),
-                anchor=resolved_anchor,
-                refresh_avatar_media=False,
-            )
-            state["submitted_lesson"] = submitted_lesson
-            state["quiz_submit_applied"] = True
+            state = {
+                "available": True,
+                "user_id": int(user_id),
+                "lesson_date": resolved_anchor.isoformat(),
+                "plan_id": int(plan.id),
+                "programme_id": int(programme.id),
+                "submitted_lesson": submitted_lesson,
+                "progress": submitted_lesson.get("progress"),
+                "quiz": submitted_lesson.get("quiz"),
+                "takeaway": submitted_lesson.get("takeaway"),
+                "quiz_submit_applied": True,
+                "state_refresh_pending": True,
+            }
             session.commit()
             return state
 

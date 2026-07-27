@@ -230,6 +230,7 @@ from .education_plan import (
     ensure_education_plan_schema,
     get_today_education_plan,
     queue_education_explore_catalog_warmup,
+    queue_education_quiz_state_refresh,
     record_education_video_progress,
     submit_education_quiz,
 )
@@ -8533,6 +8534,19 @@ def api_user_education_plan_quiz_submit(
                 + f" submitted_lesson_variant_id={submitted_lesson_variant_id or 'missing'}"
                 + f" submitted_quiz_id={submitted_quiz_id or 'missing'}"
             ),
+        )
+    try:
+        result["state_refresh"] = queue_education_quiz_state_refresh(
+            int(user_id),
+            submission_id=submission_id,
+            anchor=anchor,
+        )
+    except Exception as exc:
+        result["state_refresh"] = {"queued": False, "error": str(exc)}
+        debug_log(
+            "education quiz state refresh queue failed",
+            {"user_id": user_id, "submission_id": submission_id, "error": repr(exc)},
+            tag="education",
         )
     try:
         _log_app_engagement_event(
