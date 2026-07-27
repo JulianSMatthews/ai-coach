@@ -1479,7 +1479,7 @@ export default function AssessmentChatBox({
   const educationPlanRequestIdRef = useRef(0);
   const educationPlanLoaderRef = useRef<((options?: { background?: boolean; includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => Promise<void>) | null>(null);
   const educationPlanWarmupPromiseRef = useRef<Promise<void> | null>(null);
-  const educationExplorePrefetchStartedRef = useRef(false);
+  const educationInsightAutoOpenedRef = useRef(false);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
@@ -1821,6 +1821,37 @@ export default function AssessmentChatBox({
       });
     }
   }, [educationPlan?.journey?.current_programme_id, educationPlan?.programme_id]);
+
+  useEffect(() => {
+    if (homeSurface !== "insight") {
+      educationInsightAutoOpenedRef.current = false;
+      return;
+    }
+    if (
+      educationInsightAutoOpenedRef.current ||
+      !educationPlan?.available ||
+      educationPlanLoading ||
+      activeEducationLesson ||
+      educationProgrammeOpen ||
+      educationExplorerOpen
+    ) {
+      return;
+    }
+    const currentLesson = educationLessonRail[0] || educationLesson || null;
+    if (!currentLesson) return;
+    educationInsightAutoOpenedRef.current = true;
+    openEducationLesson(currentLesson);
+  }, [
+    activeEducationLesson,
+    educationExplorerOpen,
+    educationLesson,
+    educationLessonRail,
+    educationPlan?.available,
+    educationPlanLoading,
+    educationProgrammeOpen,
+    homeSurface,
+    openEducationLesson,
+  ]);
   const activeEducationLessonContent = activeEducationLesson?.content || null;
   const activeEducationLessonAvatar = activeEducationLessonContent?.avatar || null;
   const activeEducationLessonVideoUrl = firstNonEmptyString(
@@ -2346,17 +2377,6 @@ export default function AssessmentChatBox({
   }, [userId]);
   educationPlanLoaderRef.current = loadEducationPlan;
 
-  const openEducationExplorer = useCallback(() => {
-    setEducationProgrammeOpen(false);
-    setEducationExplorerOpen(true);
-    setEducationExplorerMode("pillars");
-    setEducationExplorerPillarKey(null);
-    setEducationExplorerConceptKey(null);
-    if (!educationPlan?.explore_catalog) {
-      void loadEducationPlan({ includeExplore: true });
-    }
-  }, [educationPlan?.explore_catalog, loadEducationPlan]);
-
   useEffect(() => {
     if (!educationLessonQueue.length) {
       setSelectedEducationLessonDayIndex(null);
@@ -2795,12 +2815,6 @@ export default function AssessmentChatBox({
     if (educationPlan) return;
     void loadEducationPlan();
   }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
-
-  useEffect(() => {
-    if (!showGuidedHomeChatPanel || !educationPlan || educationExplorePrefetchStartedRef.current) return;
-    educationExplorePrefetchStartedRef.current = true;
-    void loadEducationPlan({ prefetch: true, includeExplore: true, exploreCacheOnly: true });
-  }, [showGuidedHomeChatPanel, educationPlan, loadEducationPlan]);
 
   useEffect(() => {
     if (!educationExplorerOpen || educationPlan?.explore_catalog || educationPlanLoading) return;
@@ -3786,7 +3800,16 @@ export default function AssessmentChatBox({
                       >
                         <span className="text-3xl leading-none">‹</span>
                       </button>
-                      <div className="h-12 w-12" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveEducationLesson(null);
+                          openEducationProgramme(selectedEducationProgramme);
+                        }}
+                        className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-primary)] transition"
+                      >
+                        Programme overview
+                      </button>
                     </div>
                   </div>
                   <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-44 sm:px-6 sm:pb-52">
@@ -4122,7 +4145,13 @@ export default function AssessmentChatBox({
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
-                        onClick={() => setEducationProgrammeOpen(false)}
+                        onClick={() => {
+                          setEducationProgrammeOpen(false);
+                          const currentLesson = educationLessonRail[0] || educationLesson || null;
+                          if (currentLesson) {
+                            openEducationLesson(currentLesson);
+                          }
+                        }}
                         className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] transition"
                         aria-label="Back"
                       >
@@ -4159,8 +4188,8 @@ export default function AssessmentChatBox({
                 <div className="flex min-h-full flex-col">
                   <div className="-mt-[0.5cm] flex-none py-4">
                     <div className="space-y-3">
-                      {educationJourneyProgrammes.length ? (
-                        educationJourneyProgrammes.map((programme, index) => renderEducationProgrammeCard(programme, index))
+                      {selectedEducationProgramme ? (
+                        renderEducationProgrammeCard(selectedEducationProgramme, 0)
                       ) : educationLessonRail.length ? (
                         renderEducationLessonCard(educationLessonRail[0], {
                           featured: true,
@@ -4175,20 +4204,6 @@ export default function AssessmentChatBox({
                         </div>
                       )}
                     </div>
-                  </div>
-                  <div className="mt-[calc(0.75rem-2mm)] pb-2 sm:mt-[calc(1rem-2mm)]">
-                    <button
-                      type="button"
-                      onClick={() => void openEducationExplorer()}
-                      className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
-                      style={{
-                        backgroundColor: "var(--surface)",
-                        color: "var(--text-primary)",
-                        borderColor: "var(--border)",
-                      }}
-                    >
-                      {educationPlanLoading && !educationPlan?.explore_catalog ? "Loading topics..." : "Explore topics"}
-                    </button>
                   </div>
                 </div>
               )
