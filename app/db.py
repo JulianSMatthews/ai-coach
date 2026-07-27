@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -99,6 +99,23 @@ def _table_exists(conn, table_name: str) -> bool:
             return bool(res)
     except Exception:
         return False
+
+
+def ensure_auth_session_schema() -> None:
+    """Add app-access tracking to existing auth session tables."""
+    inspector = inspect(engine)
+    if not inspector.has_table("auth_sessions"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("auth_sessions")}
+    with engine.begin() as conn:
+        if "last_seen_at" not in columns:
+            conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN last_seen_at timestamp;"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_auth_sessions_last_seen_at "
+                "ON auth_sessions (last_seen_at);"
+            )
+        )
 
 def ensure_pgvector_and_indexes() -> None:
     """

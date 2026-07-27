@@ -46,7 +46,7 @@ except Exception:
 
 COACH_NAME = (os.getenv("COACH_NAME") or "Gia").strip() or "Gia"
 
-from .db import engine, SessionLocal, _is_postgres
+from .db import engine, SessionLocal, _is_postgres, ensure_auth_session_schema
 from .debug_utils import debug_log
 from .models import (
     Base,
@@ -582,6 +582,13 @@ async def _block_requests_while_db_resetting(request: Request, call_next):
 
 @app.on_event("startup")
 async def _startup_init() -> None:
+    try:
+        ensure_auth_session_schema()
+        debug_log("auth session access tracking schema ensured", tag="startup")
+    except Exception as e:
+        debug_log(f"auth session access tracking schema ensure failed: {e!r}", tag="startup")
+        raise
+
     # Education admin and lesson routing depend on these columns existing before
     # the first request arrives, so ensure them synchronously at startup.
     try:
@@ -3899,10 +3906,19 @@ def _get_active_session_meta(request: Request) -> dict | None:
             request.state._hs_session_meta = None
             request.state._hs_session_meta_loaded = True
             return None
+        # Admin app previews must not appear as activity by the user. Throttle
+        # writes for genuine app sessions to at most once every five minutes.
+        user_agent = str(getattr(sess, "user_agent", "") or "")
+        last_seen_at = getattr(sess, "last_seen_at", None)
+        if not user_agent.startswith("admin-app-session:") and (
+            last_seen_at is None or last_seen_at < now - timedelta(minutes=5)
+        ):
+            sess.last_seen_at = now
+            s.commit()
         meta = {
             "id": int(sess.id),
             "user_id": int(sess.user_id),
-            "user_agent": str(getattr(sess, "user_agent", "") or ""),
+            "user_agent": user_agent,
         }
     request.state._hs_session_meta = meta
     request.state._hs_session_meta_loaded = True
@@ -21619,7 +21635,6 @@ def admin_kb_snippet_update(snippet_id: int, payload: dict, admin_user: User = D
 @admin.get("/users")
 def admin_list_users(
     q: str | None = None,
-    inbound_window: str | None = None,
     limit: int = 2000,
     admin_user: User = Depends(_require_admin),
 ):
@@ -21627,7 +21642,6 @@ def admin_list_users(
     List users in the admin's club scope with optional search.
     Query params:
       - q: filter by id, name, phone, or email
-      - inbound_window: all|outside_24h|inside_24h
       - limit: max results (default 2000, max 5000)
     """
     try:
@@ -21635,10 +21649,8 @@ def admin_list_users(
     except Exception:
         limit = 2000
     limit = max(1, min(limit, 5000))
-    inbound_filter = (inbound_window or "all").strip().lower()
-    if inbound_filter not in {"all", "outside_24h", "inside_24h"}:
-        inbound_filter = "all"
-    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+    now = datetime.utcnow()
+    cutoff_24h = now - timedelta(hours=24)
     club_scope_id = getattr(admin_user, "club_id", None)
     with SessionLocal() as s:
         query = select(User)
@@ -21663,15 +21675,6 @@ def admin_list_users(
                     User.email.ilike(like),
                 )
             )
-        if inbound_filter == "outside_24h":
-            query = query.where(
-                or_(
-                    User.last_inbound_message_at.is_(None),
-                    User.last_inbound_message_at < cutoff_24h,
-                )
-            )
-        elif inbound_filter == "inside_24h":
-            query = query.where(User.last_inbound_message_at >= cutoff_24h)
         query = query.order_by(desc(User.id)).limit(limit)
         users = list(s.execute(query).scalars().all())
         user_ids = [u.id for u in users]
@@ -21682,7 +21685,39 @@ def admin_list_users(
         prompt_overrides: dict[int, str] = {}
         coaching_pref: dict[int, tuple[datetime | None, str]] = {}
         last_template_sent: dict[int, datetime | None] = {}
+        last_app_access: dict[int, datetime | None] = {}
         if user_ids:
+            session_access_rows = s.execute(
+                select(
+                    AuthSession.user_id,
+                    func.max(func.coalesce(AuthSession.last_seen_at, AuthSession.created_at)),
+                )
+                .where(
+                    AuthSession.user_id.in_(user_ids),
+                    or_(
+                        AuthSession.user_agent.is_(None),
+                        ~AuthSession.user_agent.like("admin-app-session:%"),
+                    ),
+                )
+                .group_by(AuthSession.user_id)
+            ).all()
+            last_app_access = {int(uid): ts for uid, ts in session_access_rows if uid and ts}
+            app_activity_rows = s.execute(
+                select(UsageEvent.user_id, func.max(UsageEvent.created_at))
+                .where(
+                    UsageEvent.user_id.in_(user_ids),
+                    UsageEvent.provider == APP_ENGAGEMENT_PROVIDER,
+                    UsageEvent.product == APP_ENGAGEMENT_PRODUCT,
+                    UsageEvent.tag == APP_ENGAGEMENT_TAG,
+                )
+                .group_by(UsageEvent.user_id)
+            ).all()
+            for uid, ts in app_activity_rows:
+                if not uid or not ts:
+                    continue
+                existing = last_app_access.get(int(uid))
+                if existing is None or ts > existing:
+                    last_app_access[int(uid)] = ts
             run_rows = s.execute(
                 select(AssessmentRun.user_id, func.max(AssessmentRun.id))
                 .where(AssessmentRun.user_id.in_(user_ids))
@@ -21750,6 +21785,11 @@ def admin_list_users(
         elif first_assessment_completed:
             status = "completed"
         next_scheduled = next_scheduled_map.get(u.id)
+        last_accessed = last_app_access.get(u.id)
+        days_since_last_accessed = None
+        if isinstance(last_accessed, datetime):
+            comparable_last_accessed = last_accessed.replace(tzinfo=None) if last_accessed.tzinfo else last_accessed
+            days_since_last_accessed = max(0, (now.date() - comparable_last_accessed.date()).days)
         next_scheduled_iso = None
         if isinstance(next_scheduled, datetime):
             try:
@@ -21766,6 +21806,8 @@ def admin_list_users(
                 "phone": getattr(u, "phone", None),
                 "created_on": getattr(u, "created_on", None),
                 "updated_on": getattr(u, "updated_on", None),
+                "last_app_access_at": last_accessed,
+                "days_since_last_accessed": days_since_last_accessed,
                 "consent_given": bool(getattr(u, "consent_given", False)),
                 "consent_at": getattr(u, "consent_at", None),
                 "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),

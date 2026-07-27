@@ -1309,6 +1309,8 @@ export type AdminUserSummary = {
   phone?: string | null;
   created_on?: string | null;
   updated_on?: string | null;
+  last_app_access_at?: string | null;
+  days_since_last_accessed?: number | null;
   consent_given?: boolean | null;
   consent_at?: string | null;
   last_inbound_message_at?: string | null;
@@ -2140,13 +2142,11 @@ export async function updateKbSnippet(id: number, payload: Record<string, unknow
 
 export async function listAdminUsers(
   query?: string,
-  inboundWindow?: "all" | "outside_24h" | "inside_24h",
   limit = 2000,
 ): Promise<AdminUserSummary[]> {
   const data = await apiAdmin<{ users: AdminUserSummary[] }>("/admin/users", {
     query: {
       q: query || undefined,
-      inbound_window: inboundWindow && inboundWindow !== "all" ? inboundWindow : undefined,
       limit: Number.isFinite(limit) && limit > 0 ? String(limit) : undefined,
     },
   });

@@ -7,7 +7,7 @@ import {
 } from "@/lib/api";
 
 type UsersPageProps = {
-  searchParams: Promise<{ q?: string; inbound_window?: string }>;
+  searchParams: Promise<{ q?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -27,14 +27,7 @@ async function createUserAction(formData: FormData) {
 export default async function UsersPage({ searchParams }: UsersPageProps) {
   const resolvedSearchParams = await searchParams;
   const query = (resolvedSearchParams?.q || "").trim();
-  const inboundWindowRaw = (resolvedSearchParams?.inbound_window || "").trim().toLowerCase();
-  const inboundWindow: "all" | "outside_24h" | "inside_24h" =
-    inboundWindowRaw === "outside_24h"
-      ? "outside_24h"
-      : inboundWindowRaw === "inside_24h"
-        ? "inside_24h"
-        : "all";
-  const users = await listAdminUsers(query || undefined, inboundWindow);
+  const users = await listAdminUsers(query || undefined);
   const formatDate = (value?: string | null) => {
     if (!value) return "—";
     try {
@@ -52,30 +45,10 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       return "—";
     }
   };
-  const formatDateTime = (value?: string | null) => {
-    if (!value) return "—";
-    try {
-      const dt = new Date(value);
-      if (Number.isNaN(dt.getTime())) return "—";
-      return dt
-        .toLocaleString("en-GB", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: "Europe/London",
-        })
-        .replace(",", "");
-    } catch {
-      return "—";
-    }
-  };
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
-        <AdminNav title="User Ops" subtitle="Search users, start assessments, and review user app state." />
+        <AdminNav title="User Ops" subtitle="Search users and review account activity and app state." />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <h2 className="text-lg font-semibold">Create a new user</h2>
@@ -114,15 +87,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 placeholder="Search id, name, phone or email"
                 className="rounded-full border border-[#efe7db] px-3 py-2 text-sm"
               />
-              <select
-                name="inbound_window"
-                defaultValue={inboundWindow}
-                className="rounded-full border border-[#efe7db] px-3 py-2 text-sm"
-              >
-                <option value="all">All users</option>
-                <option value="outside_24h">Outside 24h window</option>
-                <option value="inside_24h">Inside 24h window</option>
-              </select>
               <button
                 type="submit"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
@@ -141,9 +105,9 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                   <th className="sticky left-[240px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">Surname</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Phone</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Consent given</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Last inbound</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">First assessment</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Next scheduled</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Date created</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Last app access</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Days since last accessed</th>
                   <th className="py-2 whitespace-nowrap">Action</th>
                 </tr>
               </thead>
@@ -156,16 +120,14 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="sticky left-[240px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.surname || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.phone || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.consent_given ? "Yes" : "No"}</td>
-                    <td
-                      className={`py-3 pr-6 whitespace-nowrap ${u.outside_24h ? "text-[#b42318] font-semibold" : "text-[#6b6257]"}`}
-                    >
-                      {formatDateTime(u.last_inbound_message_at)}
+                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
+                      {formatDate(u.created_on)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {formatDate(u.first_assessment_completed_at)}
+                      {formatDate(u.last_app_access_at)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {formatDateTime(u.next_scheduled_at)}
+                      {u.days_since_last_accessed ?? "Never"}
                     </td>
                     <td className="py-3 whitespace-nowrap">
                       <Link
