@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   AppleHealthRestingHeartRateResponse,
   BiometricMetricKey,
@@ -1582,7 +1582,18 @@ export default function LatestAssessmentPanel({
   const urinePhotoCameraInputRef = useRef<HTMLInputElement | null>(null);
   const urinePhotoLibraryInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
+  const pillarCueCarouselRef = useRef<HTMLDivElement | null>(null);
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
+  const pillarQuoteGestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startQuoteScrollTop: number;
+    startCarouselScrollLeft: number;
+    axis: "x" | "y" | null;
+    quote: HTMLDivElement;
+    carousel: HTMLDivElement | null;
+  } | null>(null);
   const [returnToPillarKey, setReturnToPillarKey] = useState<string | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
@@ -3387,6 +3398,51 @@ export default function LatestAssessmentPanel({
     }
   };
 
+  const startPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const quote = event.currentTarget;
+    const carousel = pillarCueCarouselRef.current;
+    pillarQuoteGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startQuoteScrollTop: quote.scrollTop,
+      startCarouselScrollLeft: carousel?.scrollLeft || 0,
+      axis: null,
+      quote,
+      carousel,
+    };
+    quote.setPointerCapture?.(event.pointerId);
+  }, []);
+
+  const movePillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = pillarQuoteGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (!gesture.axis) {
+      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 5) return;
+      gesture.axis = Math.abs(deltaY) >= Math.abs(deltaX) ? "y" : "x";
+    }
+    event.preventDefault();
+    if (gesture.axis === "y") {
+      gesture.quote.scrollTop = gesture.startQuoteScrollTop - deltaY;
+    } else if (gesture.carousel) {
+      gesture.carousel.scrollLeft = gesture.startCarouselScrollLeft - deltaX;
+    }
+  }, []);
+
+  const endPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = pillarQuoteGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    try {
+      gesture.quote.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // The browser may already have released capture after cancellation.
+    }
+    pillarQuoteGestureRef.current = null;
+  }, []);
+
   const openDailyMenuSurface = (surface: "tracking" | "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
       const bridge = window as Window & {
@@ -3527,6 +3583,7 @@ export default function LatestAssessmentPanel({
         >
           <div className="relative -translate-y-[0.5cm] overflow-hidden">
             <div
+              ref={pillarCueCarouselRef}
               className="overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               style={{
                 scrollPaddingInline: "max(1rem, calc((100% - 25rem) / 2))",
@@ -3594,7 +3651,11 @@ export default function LatestAssessmentPanel({
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div
                           className="h-[9.5rem] max-w-[18rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-2 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
-                          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}
+                          style={{ WebkitOverflowScrolling: "touch", touchAction: "none" }}
+                          onPointerDown={startPillarQuoteGesture}
+                          onPointerMove={movePillarQuoteGesture}
+                          onPointerUp={endPillarQuoteGesture}
+                          onPointerCancel={endPillarQuoteGesture}
                           tabIndex={0}
                           aria-label={`${pillar.label} quote. Scroll to read more.`}
                         >
