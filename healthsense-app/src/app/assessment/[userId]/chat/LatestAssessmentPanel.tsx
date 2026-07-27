@@ -3526,8 +3526,17 @@ export default function LatestAssessmentPanel({
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
           <div className="relative -translate-y-[0.5cm] overflow-hidden">
-            <div className="overflow-x-auto snap-x snap-proximity [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="flex gap-4 sm:gap-5">
+            <div
+              className="overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              style={{
+                scrollPaddingInline: "max(1rem, calc((100% - 25rem) / 2))",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              <div
+                className="flex gap-4 sm:gap-5"
+                style={{ paddingInline: "max(1rem, calc((100% - 25rem) / 2))" }}
+              >
                 {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                   const palette = getPillarPalette(pillarKey);
@@ -3565,7 +3574,7 @@ export default function LatestAssessmentPanel({
                           delete pillarCueCardRefs.current[pillarKey];
                         }
                       }}
-                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
                       <div className="absolute right-5 top-5">
