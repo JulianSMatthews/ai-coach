@@ -3527,7 +3527,7 @@ export default function LatestAssessmentPanel({
         >
           <div className="relative -translate-y-[0.5cm] overflow-hidden">
             <div
-              className="overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="overflow-x-auto overflow-y-hidden overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               style={{
                 scrollPaddingInline: "max(1rem, calc((100% - 25rem) / 2))",
                 WebkitOverflowScrolling: "touch",
@@ -3591,7 +3591,10 @@ export default function LatestAssessmentPanel({
                         ) : null}
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
-                        <div className="max-h-[9.5rem] max-w-[18rem] overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-h-[10.75rem]">
+                        <div
+                          className="max-h-[9.5rem] max-w-[18rem] touch-pan-y overflow-y-auto overscroll-y-contain pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-h-[10.75rem]"
+                          style={{ WebkitOverflowScrolling: "touch" }}
+                        >
                           <div className="space-y-3 text-[1.18rem] leading-8 text-current opacity-80">
                             {(quoteBodyLines.length ? quoteBodyLines : [quote]).map((line, index) => (
                               <p key={`${pillarKey}-quote-${index}`}>
