@@ -1481,6 +1481,7 @@ export default function AssessmentChatBox({
   const educationPlanLoaderRef = useRef<((options?: { background?: boolean; includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => Promise<void>) | null>(null);
   const educationPlanWarmupPromiseRef = useRef<Promise<void> | null>(null);
   const educationInsightAutoOpenedRef = useRef(false);
+  const educationExplorerLoadAttemptedRef = useRef(false);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
@@ -2819,22 +2820,20 @@ export default function AssessmentChatBox({
   }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
 
   useEffect(() => {
-    if (!educationExplorerOpen || educationPlan?.explore_catalog || educationPlanLoading) return;
-    let attempts = 0;
-    let cancelled = false;
-    const pollExploreCatalog = () => {
-      if (cancelled || attempts >= 8) return;
-      attempts += 1;
-      void loadEducationPlan({ includeExplore: true, exploreCacheOnly: true }).finally(() => {
-        if (cancelled || attempts >= 8) return;
-        window.setTimeout(pollExploreCatalog, 1500);
-      });
-    };
-    const timeout = window.setTimeout(pollExploreCatalog, 900);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
+    if (!educationExplorerOpen) {
+      educationExplorerLoadAttemptedRef.current = false;
+      return;
+    }
+    if (
+      educationPlan?.explore_catalog ||
+      educationPlanLoading ||
+      educationExplorerLoadAttemptedRef.current
+    ) return;
+    educationExplorerLoadAttemptedRef.current = true;
+    // The backend returns the cached catalogue when available and generates it
+    // on demand when not. Do not make an explicit user action depend solely on
+    // the background worker having warmed the cache.
+    void loadEducationPlan({ includeExplore: true });
   }, [educationExplorerOpen, educationPlan?.explore_catalog, educationPlanLoading, loadEducationPlan]);
 
   useEffect(() => {
