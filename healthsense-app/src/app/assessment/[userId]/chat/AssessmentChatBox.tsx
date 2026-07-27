@@ -4009,20 +4009,6 @@ export default function AssessmentChatBox({
                           </p>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveEducationLesson(null);
-                          setEducationProgrammeOpen(false);
-                          setEducationExplorerMode("pillars");
-                          setEducationExplorerPillarKey(null);
-                          setEducationExplorerConceptKey(null);
-                          setEducationExplorerOpen(true);
-                        }}
-                        className="mt-4 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm font-semibold text-[var(--text-primary)] transition"
-                      >
-                        Explore topics
-                      </button>
                     </article>
                   </div>
                 </div>
@@ -4239,6 +4225,19 @@ export default function AssessmentChatBox({
                         )}
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEducationProgrammeOpen(false);
+                        setEducationExplorerMode("pillars");
+                        setEducationExplorerPillarKey(null);
+                        setEducationExplorerConceptKey(null);
+                        setEducationExplorerOpen(true);
+                      }}
+                      className="mt-4 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm font-semibold text-[var(--text-primary)] transition"
+                    >
+                      Explore topics
+                    </button>
                   </div>
                 </div>
               ) : (
