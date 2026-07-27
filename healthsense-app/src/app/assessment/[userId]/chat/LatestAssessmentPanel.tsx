@@ -3527,10 +3527,11 @@ export default function LatestAssessmentPanel({
         >
           <div className="relative -translate-y-[0.5cm] overflow-hidden">
             <div
-              className="overflow-x-auto overflow-y-hidden overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               style={{
                 scrollPaddingInline: "max(1rem, calc((100% - 25rem) / 2))",
                 WebkitOverflowScrolling: "touch",
+                touchAction: "pan-x pan-y",
               }}
             >
               <div
@@ -3592,11 +3593,8 @@ export default function LatestAssessmentPanel({
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div
-                          className="h-[9.5rem] max-w-[18rem] touch-pan-y overflow-x-hidden overflow-y-scroll overscroll-y-contain pr-2 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
-                          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onTouchStart={(event) => event.stopPropagation()}
-                          onTouchMove={(event) => event.stopPropagation()}
+                          className="h-[9.5rem] max-w-[18rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-2 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
+                          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}
                           tabIndex={0}
                           aria-label={`${pillar.label} quote. Scroll to read more.`}
                         >
