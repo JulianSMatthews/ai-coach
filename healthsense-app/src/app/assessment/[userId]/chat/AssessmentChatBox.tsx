@@ -1460,6 +1460,7 @@ export default function AssessmentChatBox({
   const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
   const [activeEducationLesson, setActiveEducationLesson] = useState<any | null>(null);
+  const [educationLessonMediaMode, setEducationLessonMediaMode] = useState<"watch" | "listen">("watch");
   const [educationQuizAnswers, setEducationQuizAnswers] = useState<Record<string, unknown>>({});
   const [educationQuizSubmitting, setEducationQuizSubmitting] = useState(false);
   const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
@@ -1762,6 +1763,7 @@ export default function AssessmentChatBox({
     );
     setSelectedEducationLessonDayIndex(lessonDayIndex || null);
     setActiveEducationLesson(lesson || null);
+    setEducationLessonMediaMode("watch");
     setEducationQuizAnswers({});
     setEducationQuizMessage(null);
     setEducationQuizError(null);
@@ -3826,13 +3828,54 @@ export default function AssessmentChatBox({
                         </p>
                       ) : null}
                       {activeEducationLessonMediaUrl ? (
-                        <video
-                          className="mt-5 w-full rounded-[24px] bg-black"
-                          src={activeEducationLessonMediaUrl}
-                          controls
-                          playsInline
-                          poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
-                        />
+                        <div className="mt-5">
+                          <div
+                            className="grid grid-cols-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-1"
+                            role="group"
+                            aria-label="Lesson media format"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setEducationLessonMediaMode("watch")}
+                              aria-pressed={educationLessonMediaMode === "watch"}
+                              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                                educationLessonMediaMode === "watch"
+                                  ? "bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                  : "text-[var(--text-secondary)]"
+                              }`}
+                            >
+                              Watch
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEducationLessonMediaMode("listen")}
+                              aria-pressed={educationLessonMediaMode === "listen"}
+                              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                                educationLessonMediaMode === "listen"
+                                  ? "bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
+                                  : "text-[var(--text-secondary)]"
+                              }`}
+                            >
+                              Listen
+                            </button>
+                          </div>
+                          {educationLessonMediaMode === "watch" ? (
+                            <video
+                              className="mt-3 w-full rounded-[24px] bg-black"
+                              src={activeEducationLessonMediaUrl}
+                              controls
+                              playsInline
+                              poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
+                            />
+                          ) : (
+                            <div className="mt-3 rounded-[24px] bg-[var(--surface-muted)] px-4 py-5">
+                              <p className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
+                                Listen to this lesson
+                              </p>
+                              <audio className="w-full" src={activeEducationLessonMediaUrl} controls preload="metadata" />
+                            </div>
+                          )}
+                        </div>
                       ) : null}
                       <div className="mt-5 rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
