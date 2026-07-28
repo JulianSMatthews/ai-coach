@@ -2829,6 +2829,44 @@
       </footer>
     </div>
     <script>
+      function recordLandingPageView() {
+        try {
+          const query = new URLSearchParams(window.location.search);
+          const utm = {};
+          ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach((key) => {
+            const value = String(query.get(key) || "").trim();
+            if (value) utm[key] = value;
+          });
+          const meta = {};
+          ["fbclid", "gclid", "msclkid", "ttclid", "campaign_id", "adset_id", "ad_id", "creative_id", "placement"].forEach((key) => {
+            const value = String(query.get(key) || "").trim();
+            if (value) meta[key] = value;
+          });
+          meta.landing_host = window.location.hostname;
+          query.delete("k");
+          const landingQuery = query.toString();
+          const landingPath = `${window.location.origin}${window.location.pathname}${landingQuery ? `?${landingQuery}` : ""}`;
+          void fetch("/api/marketing/landing-view", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source: String(query.get("source") || query.get("utm_source") || "website").trim(),
+              campaign: String(query.get("campaign") || query.get("utm_campaign") || "").trim() || undefined,
+              utm,
+              meta,
+              landing_path: landingPath,
+              referrer_url: document.referrer || undefined,
+              is_test: query.get("test") === "1" || query.get("is_test") === "1",
+            }),
+            keepalive: true,
+          }).catch(() => undefined);
+        } catch {
+          // Analytics must never interrupt the landing-page experience.
+        }
+      }
+
+      recordLandingPageView();
+
       function firstText() {
         for (const value of arguments) {
           const token = String(value || "").trim();

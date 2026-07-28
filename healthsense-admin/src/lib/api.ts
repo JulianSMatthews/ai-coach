@@ -253,6 +253,7 @@ export type MarketingFunnelStep = {
 export type MarketingFunnelGroup = {
   key?: string;
   landing_views?: number;
+  coachsense_ai_homepage_views?: number;
   leads?: number;
   assessment_started?: number;
   assessment_completed?: number;
@@ -277,6 +278,7 @@ export type MarketingFunnelSummary = {
   user?: { id?: number; display_name?: string; phone?: string } | null;
   totals?: {
     landing_views?: number;
+    coachsense_ai_homepage_views?: number;
     leads?: number;
     assessment_started?: number;
     assessment_completed?: number;

@@ -773,6 +773,13 @@ export default async function ReportingPage({
             Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
           </p>
           <div className="mt-4 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-2xl border border-[#1d6a4f] bg-[#eef8f3] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#35634f]">coachsense.ai homepage views</p>
+              <p className="mt-2 text-2xl font-semibold text-[#153f30]">
+                {marketing?.totals?.coachsense_ai_homepage_views ?? 0}
+              </p>
+              <p className="mt-1 text-xs text-[#527363]">Page loads in the selected window</p>
+            </div>
             {(marketing?.funnel?.steps || []).map((step) => (
               <div key={step.key || step.label} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{step.label || step.key}</p>

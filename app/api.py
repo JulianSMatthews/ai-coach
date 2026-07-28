@@ -6315,6 +6315,31 @@ def evaluate_and_enable_coaching(user_id: int) -> bool:
 api_v1 = APIRouter(prefix="/api/v1", tags=["api"])
 
 
+@api_v1.post("/public/marketing/landing-view")
+def api_public_marketing_landing_view(
+    payload: dict | None,
+    request: Request,
+    admin_user: User = Depends(_require_admin),
+):
+    """Record a genuine public website page view for the marketing funnel."""
+    body = payload if isinstance(payload, dict) else {}
+    try:
+        ensure_marketing_schema()
+    except Exception as e:
+        print(f"[marketing] ensure schema failed during landing-view: {e}")
+    tracking = _collect_public_lead_tracking(
+        body,
+        request,
+        lead_key=None,
+    )
+    row_id = _create_public_landing_lead_tracking(
+        tracking=tracking,
+        club_id=getattr(admin_user, "club_id", None),
+        now=datetime.utcnow(),
+    )
+    return {"ok": True, "recorded": row_id is not None}
+
+
 @api_v1.post("/public/assessment/lead-start")
 def api_public_assessment_lead_start(payload: dict | None, request: Request):
     if not _lead_start_enabled():
@@ -15787,8 +15812,21 @@ def admin_marketing_funnel(
             return True
         return finished >= created
 
+    def _is_coachsense_homepage_view(row: MarketingLead) -> bool:
+        landing_path = str(getattr(row, "landing_path", None) or "").strip()
+        if not landing_path:
+            return False
+        try:
+            parsed = urlparse(landing_path)
+        except Exception:
+            return False
+        host = str(parsed.hostname or "").strip().lower()
+        path = str(parsed.path or "/").rstrip("/") or "/"
+        return host in {"coachsense.ai", "www.coachsense.ai"} and path in {"/", "/coachsense.html"}
+
     def _row_counts(rows: list[MarketingLead]) -> dict[str, int]:
         landing_views = len(rows)
+        coachsense_ai_homepage_views = sum(1 for row in rows if _is_coachsense_homepage_view(row))
         leads = sum(1 for row in rows if getattr(row, "user_id", None) is not None)
         started = sum(1 for row in rows if getattr(row, "assessment_started_at", None) is not None)
         completed = sum(1 for row in rows if _is_completed(row))
@@ -15796,6 +15834,7 @@ def admin_marketing_funnel(
         viewed = sum(1 for row in rows if getattr(row, "results_viewed_at", None) is not None)
         return {
             "landing_views": landing_views,
+            "coachsense_ai_homepage_views": coachsense_ai_homepage_views,
             "leads": leads,
             "assessment_started": started,
             "assessment_completed": completed,
