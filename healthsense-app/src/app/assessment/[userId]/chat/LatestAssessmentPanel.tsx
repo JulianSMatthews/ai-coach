@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type {
   AppleHealthRestingHeartRateResponse,
   BiometricMetricKey,
@@ -1586,16 +1586,6 @@ export default function LatestAssessmentPanel({
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [pillarQuoteDirections, setPillarQuoteDirections] = useState<Record<string, { up: boolean; down: boolean }>>({});
-  const pillarQuoteGestureRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    startQuoteScrollTop: number;
-    startCarouselScrollLeft: number;
-    axis: "x" | "y" | null;
-    quote: HTMLDivElement;
-    carousel: HTMLDivElement | null;
-  } | null>(null);
   const [returnToPillarKey, setReturnToPillarKey] = useState<string | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
@@ -3400,51 +3390,6 @@ export default function LatestAssessmentPanel({
     }
   };
 
-  const startPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const quote = event.currentTarget;
-    const carousel = pillarCueCarouselRef.current;
-    pillarQuoteGestureRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startQuoteScrollTop: quote.scrollTop,
-      startCarouselScrollLeft: carousel?.scrollLeft || 0,
-      axis: null,
-      quote,
-      carousel,
-    };
-    quote.setPointerCapture?.(event.pointerId);
-  }, []);
-
-  const movePillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = pillarQuoteGestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    if (!gesture.axis) {
-      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 5) return;
-      gesture.axis = Math.abs(deltaY) >= Math.abs(deltaX) ? "y" : "x";
-    }
-    event.preventDefault();
-    if (gesture.axis === "y") {
-      gesture.quote.scrollTop = gesture.startQuoteScrollTop - deltaY;
-    } else if (gesture.carousel) {
-      gesture.carousel.scrollLeft = gesture.startCarouselScrollLeft - deltaX;
-    }
-  }, []);
-
-  const endPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = pillarQuoteGestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    try {
-      gesture.quote.releasePointerCapture?.(event.pointerId);
-    } catch {
-      // The browser may already have released capture after cancellation.
-    }
-    pillarQuoteGestureRef.current = null;
-  }, []);
-
   const updatePillarQuoteDirections = useCallback((pillarKey: string, node: HTMLDivElement | null) => {
     if (!node) return;
     const next = {
@@ -3610,7 +3555,7 @@ export default function LatestAssessmentPanel({
                 className="flex gap-4 sm:gap-5"
                 style={{ paddingInline: "max(1rem, calc((100% - 25rem) / 2))" }}
               >
-                {visiblePillars.map((pillar, pillarIndex) => {
+                {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                   const palette = getPillarPalette(pillarKey);
                   const score = resolvePillarDisplayScore(pillar);
@@ -3638,8 +3583,6 @@ export default function LatestAssessmentPanel({
                   const quoteAuthor = quoteLines.length >= 3 ? quoteLines[quoteLines.length - 1] : "";
                   const quoteBodyLines = quoteAuthor ? quoteLines.slice(0, -1) : quoteLines;
                   const quoteDirections = pillarQuoteDirections[pillarKey] || { up: false, down: false };
-                  const previousPillarKey = String(visiblePillars[pillarIndex - 1]?.pillar_key || "").trim().toLowerCase();
-                  const nextPillarKey = String(visiblePillars[pillarIndex + 1]?.pillar_key || "").trim().toLowerCase();
                   return (
                     <article
                       key={pillarKey}
@@ -3653,28 +3596,6 @@ export default function LatestAssessmentPanel({
                       className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
-                      {previousPillarKey ? (
-                        <button
-                          type="button"
-                          onClick={() => scrollToPillarCueCard(previousPillarKey)}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          className="absolute left-2 top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-2xl leading-none text-[var(--text-primary)] shadow-sm opacity-85 transition hover:opacity-100 active:scale-95"
-                          aria-label={`Previous pillar: ${visiblePillars[pillarIndex - 1]?.label || previousPillarKey}`}
-                        >
-                          ‹
-                        </button>
-                      ) : null}
-                      {nextPillarKey ? (
-                        <button
-                          type="button"
-                          onClick={() => scrollToPillarCueCard(nextPillarKey)}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          className="absolute right-2 top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-2xl leading-none text-[var(--text-primary)] shadow-sm opacity-85 transition hover:opacity-100 active:scale-95"
-                          aria-label={`Next pillar: ${visiblePillars[pillarIndex + 1]?.label || nextPillarKey}`}
-                        >
-                          ›
-                        </button>
-                      ) : null}
                       <div className="absolute right-5 top-5">
                         <WeeklyScoreRing value={score} tone={palette.accent} />
                       </div>
@@ -3698,11 +3619,7 @@ export default function LatestAssessmentPanel({
                               }
                             }}
                             className="h-[9.5rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
-                            style={{ WebkitOverflowScrolling: "touch", touchAction: "none" }}
-                            onPointerDown={startPillarQuoteGesture}
-                            onPointerMove={movePillarQuoteGesture}
-                            onPointerUp={endPillarQuoteGesture}
-                            onPointerCancel={endPillarQuoteGesture}
+                            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}
                             onScroll={(event) => updatePillarQuoteDirections(pillarKey, event.currentTarget)}
                             tabIndex={0}
                             aria-label={`${pillar.label} quote. Scroll to read more.`}
