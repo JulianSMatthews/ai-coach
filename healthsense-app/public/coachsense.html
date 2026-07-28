@@ -2867,6 +2867,28 @@
 
       recordLandingPageView();
 
+      document.querySelectorAll(".download-button").forEach((button, index) => {
+        button.addEventListener("click", () => {
+          try {
+            const query = new URLSearchParams(window.location.search);
+            void fetch("/api/marketing/download-click", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source: String(query.get("source") || query.get("utm_source") || "website").trim(),
+                campaign: String(query.get("campaign") || query.get("utm_campaign") || "").trim() || undefined,
+                landing_url: window.location.href,
+                destination_url: button.href || undefined,
+                button_location: button.closest("nav") ? "navigation" : `content_${index + 1}`,
+              }),
+              keepalive: true,
+            }).catch(() => undefined);
+          } catch {
+            // Tracking must never interfere with the download action.
+          }
+        });
+      });
+
       function firstText() {
         for (const value of arguments) {
           const token = String(value || "").trim();

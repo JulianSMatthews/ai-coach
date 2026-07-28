@@ -6340,6 +6340,39 @@ def api_public_marketing_landing_view(
     return {"ok": True, "recorded": row_id is not None}
 
 
+@api_v1.post("/public/marketing/download-click")
+def api_public_marketing_download_click(
+    payload: dict | None,
+    request: Request,
+    admin_user: User = Depends(_require_admin),
+):
+    """Record an anonymous Download App button click without claiming a store download."""
+    body = payload if isinstance(payload, dict) else {}
+    user_agent = _track_text(body.get("user_agent") or request.headers.get("user-agent"), max_len=1200)
+    if _is_meta_analyser_user_agent(user_agent):
+        return {"ok": True, "recorded": False}
+    meta = {
+        "source": _track_text(body.get("source"), max_len=64) or "website",
+        "campaign": _track_text(body.get("campaign"), max_len=120),
+        "landing_url": _track_text(body.get("landing_url"), max_len=2000),
+        "destination_url": _track_text(body.get("destination_url"), max_len=2000),
+        "button_location": _track_text(body.get("button_location"), max_len=120),
+        "public_host": _track_text(body.get("public_host"), max_len=255),
+        "club_id": getattr(admin_user, "club_id", None),
+    }
+    log_usage_event(
+        user_id=None,
+        provider="coachsense-website",
+        product="app_acquisition",
+        model=None,
+        units=1.0,
+        unit_type="download_button_click",
+        tag="app_acquisition",
+        meta={key: value for key, value in meta.items() if value is not None},
+    )
+    return {"ok": True, "recorded": True}
+
+
 @api_v1.post("/public/assessment/lead-start")
 def api_public_assessment_lead_start(payload: dict | None, request: Request):
     if not _lead_start_enabled():
@@ -15750,6 +15783,40 @@ def admin_marketing_funnel(
             if not _is_meta_analyser_user_agent(getattr(row, "user_agent", None))
         ]
 
+        download_click_rows = (
+            s.query(UsageEvent)
+            .filter(
+                UsageEvent.created_at >= start_utc,
+                UsageEvent.created_at < end_utc,
+                UsageEvent.provider == "coachsense-website",
+                UsageEvent.product == "app_acquisition",
+                UsageEvent.unit_type == "download_button_click",
+            )
+            .order_by(UsageEvent.created_at.desc(), UsageEvent.id.desc())
+            .all()
+        )
+        if club_scope_id is not None:
+            download_click_rows = [
+                event
+                for event in download_click_rows
+                if int((_meta_to_dict(getattr(event, "meta", None)) or {}).get("club_id") or 0)
+                == int(club_scope_id)
+            ]
+        first_native_access_q = (
+            s.query(AuthSession.user_id, func.min(AuthSession.created_at))
+            .join(User, AuthSession.user_id == User.id)
+            .filter(
+                or_(
+                    AuthSession.user_agent.ilike("%CoachSenseIOS/%"),
+                    AuthSession.user_agent.ilike("%CoachSenseAndroid/%"),
+                )
+            )
+            .group_by(AuthSession.user_id)
+        )
+        if club_scope_id is not None:
+            first_native_access_q = first_native_access_q.filter(User.club_id == club_scope_id)
+        first_native_access_rows = first_native_access_q.all()
+
         lead_user_ids = sorted({int(row.user_id) for row in lead_rows if row.user_id is not None})
         run_finished_by_user: dict[int, datetime] = {}
         user_map: dict[int, dict[str, object]] = {}
@@ -15828,10 +15895,25 @@ def admin_marketing_funnel(
         landing_views = len(rows)
         coachsense_ai_homepage_views = sum(1 for row in rows if _is_coachsense_homepage_view(row))
         leads = sum(1 for row in rows if getattr(row, "user_id", None) is not None)
-        started = sum(1 for row in rows if getattr(row, "assessment_started_at", None) is not None)
+        started = sum(
+            1
+            for row in rows
+            if getattr(row, "user_id", None) is not None
+            and getattr(row, "assessment_started_at", None) is not None
+        )
         completed = sum(1 for row in rows if _is_completed(row))
-        claimed = sum(1 for row in rows if getattr(row, "identity_claimed_at", None) is not None)
-        viewed = sum(1 for row in rows if getattr(row, "results_viewed_at", None) is not None)
+        claimed = sum(
+            1
+            for row in rows
+            if getattr(row, "user_id", None) is not None
+            and getattr(row, "identity_claimed_at", None) is not None
+        )
+        viewed = sum(
+            1
+            for row in rows
+            if getattr(row, "user_id", None) is not None
+            and getattr(row, "results_viewed_at", None) is not None
+        )
         return {
             "landing_views": landing_views,
             "coachsense_ai_homepage_views": coachsense_ai_homepage_views,
@@ -15861,7 +15943,7 @@ def admin_marketing_funnel(
         base = int(counts.get("landing_views") or 0)
         for key, label in ordered:
             count = int(counts.get(key) or 0)
-            conversion = _pct(count, previous or 0) if previous else None
+            conversion = _pct(count, previous) if previous is not None else None
             dropoff = (previous - count) if previous is not None else None
             steps.append(
                 {
@@ -15877,6 +15959,27 @@ def admin_marketing_funnel(
         return steps
 
     totals = _row_counts(lead_rows)
+    download_clicks_by_source: dict[str, int] = {}
+    for event in download_click_rows:
+        event_meta = _meta_to_dict(getattr(event, "meta", None)) or {}
+        event_source = (_track_text(event_meta.get("source"), max_len=64) or "website").lower()
+        download_clicks_by_source[event_source] = download_clicks_by_source.get(event_source, 0) + 1
+    first_app_activations = sum(
+        1
+        for _, first_access_at in first_native_access_rows
+        if first_access_at is not None and start_utc <= first_access_at < end_utc
+    )
+    acquisition = {
+        "coachsense_ai_homepage_views": int(totals.get("coachsense_ai_homepage_views") or 0),
+        "download_button_clicks": len(download_click_rows),
+        "first_app_activations": first_app_activations,
+        "confirmed_store_downloads": None,
+        "confirmed_store_downloads_status": "store_connections_required",
+        "download_clicks_by_source": [
+            {"source": key, "clicks": value}
+            for key, value in sorted(download_clicks_by_source.items(), key=lambda item: (-item[1], item[0]))
+        ],
+    }
 
     source_groups: dict[str, list[MarketingLead]] = {}
     campaign_groups: dict[str, list[MarketingLead]] = {}
@@ -15903,13 +16006,13 @@ def admin_marketing_funnel(
         day["landing_views"] = int(day["landing_views"]) + 1
         if getattr(row, "user_id", None) is not None:
             day["leads"] = int(day["leads"]) + 1
-        if getattr(row, "assessment_started_at", None) is not None:
+        if getattr(row, "user_id", None) is not None and getattr(row, "assessment_started_at", None) is not None:
             day["assessment_started"] = int(day["assessment_started"]) + 1
         if _is_completed(row):
             day["assessment_completed"] = int(day["assessment_completed"]) + 1
-        if getattr(row, "identity_claimed_at", None) is not None:
+        if getattr(row, "user_id", None) is not None and getattr(row, "identity_claimed_at", None) is not None:
             day["identity_claimed"] = int(day["identity_claimed"]) + 1
-        if getattr(row, "results_viewed_at", None) is not None:
+        if getattr(row, "user_id", None) is not None and getattr(row, "results_viewed_at", None) is not None:
             day["results_viewed"] = int(day["results_viewed"]) + 1
 
     def _group_payload(groups: dict[str, list[MarketingLead]]) -> list[dict[str, object]]:
@@ -15974,6 +16077,7 @@ def admin_marketing_funnel(
         if target_user
         else None,
         "totals": totals,
+        "acquisition": acquisition,
         "funnel": {
             "steps": _conversion_steps(totals),
             "landing_to_lead_pct": _pct(int(totals["leads"]), int(totals["landing_views"])),

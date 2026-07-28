@@ -285,6 +285,14 @@ export type MarketingFunnelSummary = {
     identity_claimed?: number;
     results_viewed?: number;
   };
+  acquisition?: {
+    coachsense_ai_homepage_views?: number;
+    download_button_clicks?: number;
+    first_app_activations?: number;
+    confirmed_store_downloads?: number | null;
+    confirmed_store_downloads_status?: string;
+    download_clicks_by_source?: Array<{ source?: string; clicks?: number }>;
+  };
   funnel?: {
     steps?: MarketingFunnelStep[];
     landing_to_lead_pct?: number | null;

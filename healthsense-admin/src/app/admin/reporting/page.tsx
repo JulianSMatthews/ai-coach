@@ -659,20 +659,9 @@ export default async function ReportingPage({
                 Window: {marketing?.window?.start_utc ?? "—"} → {marketing?.window?.end_utc ?? "—"}
               </p>
             </div>
-            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Key rates</p>
-              <p className="mt-1 text-sm text-[#3c332b]">
-                Landing → Lead: {marketing?.funnel?.landing_to_lead_pct ?? "—"}%
-              </p>
-              <p className="text-sm text-[#3c332b]">
-                Lead → Complete: {marketing?.funnel?.lead_to_complete_pct ?? marketing?.funnel?.start_to_complete_pct ?? "—"}%
-              </p>
-              <p className="text-sm text-[#3c332b]">
-                Complete → Claimed: {marketing?.funnel?.complete_to_claim_pct ?? "—"}%
-              </p>
-              <p className="text-sm text-[#3c332b]">
-                Claimed → Results viewed: {marketing?.funnel?.claim_to_results_view_pct ?? "—"}%
-              </p>
+            <div className="max-w-md rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3 text-sm text-[#6b6257]">
+              Acquisition reporting now follows website interest and app activation. Confirmed store downloads will be
+              added when App Store Connect and Google Play reporting are connected.
             </div>
           </div>
           <form method="get" className="mt-4 flex flex-wrap items-end gap-3">
@@ -720,48 +709,6 @@ export default async function ReportingPage({
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               />
             </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User</label>
-              <select
-                name="user_id"
-                defaultValue={userIdRaw}
-                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              >
-                <option value="">All users</option>
-                {(users || []).map((user) => {
-                  const label =
-                    user.display_name ||
-                    [user.first_name, user.surname].filter(Boolean).join(" ") ||
-                    user.phone ||
-                    `User ${user.id}`;
-                  return (
-                    <option key={user.id} value={String(user.id)}>
-                      {label} (#{user.id})
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
-              <input
-                type="text"
-                name="source"
-                defaultValue={sourceRaw}
-                placeholder="instagram"
-                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
-              <input
-                type="text"
-                name="campaign"
-                defaultValue={campaignRaw}
-                placeholder="assessment_launch"
-                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              />
-            </div>
             <button
               type="submit"
               className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
@@ -769,103 +716,49 @@ export default async function ReportingPage({
               Run marketing report
             </button>
           </form>
-          <p className="mt-2 text-sm text-[#6b6257]">
-            Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
-          </p>
-          <div className="mt-4 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-[#1d6a4f] bg-[#eef8f3] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#35634f]">coachsense.ai homepage views</p>
               <p className="mt-2 text-2xl font-semibold text-[#153f30]">
-                {marketing?.totals?.coachsense_ai_homepage_views ?? 0}
+                {marketing?.acquisition?.coachsense_ai_homepage_views ?? 0}
               </p>
               <p className="mt-1 text-xs text-[#527363]">Page loads in the selected window</p>
             </div>
-            {(marketing?.funnel?.steps || []).map((step) => (
-              <div key={step.key || step.label} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{step.label || step.key}</p>
-                <p className="mt-2 text-2xl font-semibold">{step.count ?? 0}</p>
-                <p className="mt-1 text-xs text-[#8a8176]">
-                  {step.percent_of_start != null ? `${step.percent_of_start}% of landing views` : "—"}
-                </p>
-                <p className="mt-1 text-xs text-[#8a8176]">
-                  {step.conversion_pct_from_prev != null
-                    ? `${step.conversion_pct_from_prev}% from previous`
-                    : "Start stage"}
-                </p>
-              </div>
-            ))}
+            <div className="rounded-2xl border border-[#d5cbbd] bg-[#fdfaf4] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Download button clicks</p>
+              <p className="mt-2 text-2xl font-semibold">{marketing?.acquisition?.download_button_clicks ?? 0}</p>
+              <p className="mt-1 text-xs text-[#8a8176]">Interest signal, not a confirmed download</p>
+            </div>
+            <div className="rounded-2xl border border-[#1d4ed8] bg-[#eef4ff] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#365e9d]">First app activations</p>
+              <p className="mt-2 text-2xl font-semibold text-[#193f78]">{marketing?.acquisition?.first_app_activations ?? 0}</p>
+              <p className="mt-1 text-xs text-[#5875a1]">Users reaching their first app login</p>
+            </div>
+            <div className="rounded-2xl border border-dashed border-[#c9c0b4] bg-[#f7f4ee] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Confirmed store downloads</p>
+              <p className="mt-2 text-2xl font-semibold">—</p>
+              <p className="mt-1 text-xs text-[#8a8176]">Awaiting Apple and Google store connections</p>
+            </div>
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4">
             <details className="rounded-2xl border border-[#efe7db] bg-white" open>
               <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
-                Breakdown by source ({marketing?.breakdown?.by_source?.length ?? 0})
+                Download clicks by source ({marketing?.acquisition?.download_clicks_by_source?.length ?? 0})
               </summary>
               <div className="overflow-x-auto border-t border-[#efe7db]">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                     <tr>
                       <th className="px-4 py-3">Source</th>
-                      <th className="px-4 py-3">Landing views</th>
-                      <th className="px-4 py-3">Leads</th>
-                      <th className="px-4 py-3">Completed</th>
-                      <th className="px-4 py-3">Claimed</th>
-                      <th className="px-4 py-3">Viewed</th>
+                      <th className="px-4 py-3">Download button clicks</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(marketing?.breakdown?.by_source || []).map((row) => (
-                      <tr key={row.key} className="border-t border-[#efe7db]">
-                        <td className="px-4 py-3">{row.key || "unknown"}</td>
-                        <td className="px-4 py-3">
-                          {row.landing_views ?? 0}
-                          <span className="ml-2 text-xs text-[#8a8176]">({row.landing_to_lead_pct ?? "—"}%)</span>
-                        </td>
-                        <td className="px-4 py-3">{row.leads ?? 0}</td>
-                        <td className="px-4 py-3">
-                          {row.assessment_completed ?? 0}
-                          <span className="ml-2 text-xs text-[#8a8176]">({row.lead_to_complete_pct ?? row.start_to_complete_pct ?? "—"}%)</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {row.identity_claimed ?? 0}
-                          <span className="ml-2 text-xs text-[#8a8176]">({row.claim_rate_pct ?? "—"}%)</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {row.results_viewed ?? 0}
-                          <span className="ml-2 text-xs text-[#8a8176]">({row.results_view_rate_pct ?? "—"}%)</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-
-            <details className="rounded-2xl border border-[#efe7db] bg-white" open>
-              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
-                Top campaigns ({marketing?.breakdown?.by_campaign?.length ?? 0})
-              </summary>
-              <div className="overflow-x-auto border-t border-[#efe7db]">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    <tr>
-                      <th className="px-4 py-3">Campaign</th>
-                      <th className="px-4 py-3">Landing views</th>
-                      <th className="px-4 py-3">Leads</th>
-                      <th className="px-4 py-3">Started</th>
-                      <th className="px-4 py-3">Completed</th>
-                      <th className="px-4 py-3">Viewed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(marketing?.breakdown?.by_campaign || []).map((row) => (
-                      <tr key={row.key} className="border-t border-[#efe7db]">
-                        <td className="px-4 py-3">{row.key || "(none)"}</td>
-                        <td className="px-4 py-3">{row.landing_views ?? 0}</td>
-                        <td className="px-4 py-3">{row.leads ?? 0}</td>
-                        <td className="px-4 py-3">{row.assessment_started ?? 0}</td>
-                        <td className="px-4 py-3">{row.assessment_completed ?? 0}</td>
-                        <td className="px-4 py-3">{row.results_viewed ?? 0}</td>
+                    {(marketing?.acquisition?.download_clicks_by_source || []).map((row) => (
+                      <tr key={row.source} className="border-t border-[#efe7db]">
+                        <td className="px-4 py-3">{row.source || "unknown"}</td>
+                        <td className="px-4 py-3">{row.clicks ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
