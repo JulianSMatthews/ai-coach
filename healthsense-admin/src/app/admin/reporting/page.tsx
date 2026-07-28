@@ -45,19 +45,16 @@ function normalizeHsAppBase(raw: string | null | undefined): string | null {
   }
 }
 
-function resolveHsAppBase(): string {
+function resolveLandingPageBase(): string {
   const rawCandidates = [
-    process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
-    process.env.HSAPP_PUBLIC_URL,
-    process.env.NEXT_PUBLIC_APP_BASE_URL,
-    process.env.HSAPP_PUBLIC_DEFAULT_URL,
-    process.env.HSAPP_NGROK_DOMAIN,
+    process.env.NEXT_PUBLIC_LANDING_PAGE_BASE_URL,
+    process.env.LANDING_PAGE_PUBLIC_URL,
   ];
   for (const raw of rawCandidates) {
     const normalized = normalizeHsAppBase(raw);
     if (normalized) return normalized;
   }
-  return "https://app.coachsense.ai";
+  return "https://coachsense.ai";
 }
 
 async function saveUsageSettingsAction(formData: FormData) {
@@ -191,7 +188,7 @@ function tabLinkClass(active: boolean): string {
 }
 
 function buildLaunchUrl(
-  appBase: string,
+  landingPageBase: string,
   leadStartKey: string,
   params: {
     source: string;
@@ -224,7 +221,7 @@ function buildLaunchUrl(
   if (params.introAvatar === "1" || params.introAvatar === "0") {
     query.set("intro_avatar", params.introAvatar);
   }
-  return `${appBase}/ig/start?${query.toString()}`;
+  return `${landingPageBase}/ig/start?${query.toString()}`;
 }
 
 export default async function ReportingPage({
@@ -363,7 +360,7 @@ export default async function ReportingPage({
   const llmMiniOutput = modelRates["gpt-5-mini"]?.output ?? "";
   const llm51Input = modelRates["gpt-5.1"]?.input ?? "";
   const llm51Output = modelRates["gpt-5.1"]?.output ?? "";
-  const appBase = resolveHsAppBase();
+  const landingPageBase = resolveLandingPageBase();
   const leadStartKey = (process.env.PUBLIC_LEAD_START_KEY || "").trim();
   const sourceToken = getTrimmedParam(launchSourceRaw || sourceRaw, "instagram");
   const campaignToken = getTrimmedParam(launchCampaignRaw || campaignRaw, "assessment_launch");
@@ -376,7 +373,7 @@ export default async function ReportingPage({
   const placementToken = getTrimmedParam(launchPlacementRaw);
   const siteSourceNameToken = getTrimmedParam(launchSiteSourceNameRaw);
   const introAvatarToken = getTrimmedParam(launchIntroAvatarRaw, "1") === "0" ? "0" : "1";
-  const metaLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+  const metaLaunchUrl = buildLaunchUrl(landingPageBase, leadStartKey, {
     source: sourceToken,
     campaign: campaignToken,
     utmSource: utmSourceToken,
@@ -390,7 +387,7 @@ export default async function ReportingPage({
     introAvatar: introAvatarToken,
   });
   const previewLaunchUrl = metaLaunchUrl;
-  const testLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+  const testLaunchUrl = buildLaunchUrl(landingPageBase, leadStartKey, {
     source: sourceToken,
     campaign: campaignToken,
     utmSource: utmSourceToken,
@@ -404,7 +401,7 @@ export default async function ReportingPage({
     introAvatar: introAvatarToken,
     isTest: true,
   });
-  const avatarTestLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+  const avatarTestLaunchUrl = buildLaunchUrl(landingPageBase, leadStartKey, {
     source: sourceToken,
     campaign: campaignToken,
     utmSource: utmSourceToken,
@@ -418,7 +415,7 @@ export default async function ReportingPage({
     introAvatar: "1",
     isTest: true,
   });
-  const noAvatarTestLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+  const noAvatarTestLaunchUrl = buildLaunchUrl(landingPageBase, leadStartKey, {
     source: sourceToken,
     campaign: campaignToken,
     utmSource: utmSourceToken,

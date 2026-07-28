@@ -143,6 +143,7 @@ type GiaMessageRealtimeSessionResponse = {
 };
 
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+const SEE_YOUR_SCORE_ENABLED = false;
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 const DAY_PLAN_MOMENT_ORDER = ["morning", "midday", "afternoon", "evening"] as const;
 
@@ -1497,7 +1498,7 @@ export default function AssessmentChatBox({
     return token ? `&lt=${encodeURIComponent(token)}` : "";
   }, [leadToken]);
   const initialMorningSequenceDay = String(initialTrackerSummary?.today || "").trim();
-  const allowResultSummaryInChat = leadFlow || isLeadGuest;
+  const allowResultSummaryInChat = SEE_YOUR_SCORE_ENABLED && (leadFlow || isLeadGuest);
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
