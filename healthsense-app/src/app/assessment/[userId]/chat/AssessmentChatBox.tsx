@@ -1733,6 +1733,34 @@ export default function AssessmentChatBox({
     educationPlan?.programme_id,
     selectedEducationProgrammeId,
   ]);
+  const programmeReviewCards = useMemo(() => {
+    const orderedProgrammes = [...educationJourneyProgrammes].sort(
+      (left, right) => Number(left?.sequence_index || 0) - Number(right?.sequence_index || 0),
+    );
+    const completedProgrammes = orderedProgrammes.filter(
+      (programme) => Boolean(programme?.is_completed) || String(programme?.status || "").toLowerCase() === "completed",
+    );
+    const lastCompletedProgramme = completedProgrammes.at(-1) || null;
+    const nextProgramme =
+      orderedProgrammes.find(
+        (programme) =>
+          Boolean(programme?.is_current) || String(programme?.status || "").toLowerCase() === "current",
+      ) ||
+      orderedProgrammes.find((programme) => String(programme?.status || "").toLowerCase() === "up_next") ||
+      orderedProgrammes.find(
+        (programme) =>
+          !programme?.is_completed &&
+          !["completed", "in_progress"].includes(String(programme?.status || "").toLowerCase()),
+      ) ||
+      null;
+
+    return [
+      ...(lastCompletedProgramme ? [{ label: "Last completed programme", programme: lastCompletedProgramme }] : []),
+      ...(nextProgramme && Number(nextProgramme?.programme_id || 0) !== Number(lastCompletedProgramme?.programme_id || 0)
+        ? [{ label: "Next programme", programme: nextProgramme }]
+        : []),
+    ];
+  }, [educationJourneyProgrammes]);
   const selectedEducationProgrammeLessons = useMemo(() => {
     const selectedId = Number(selectedEducationProgramme?.programme_id || 0);
     const cardLessons = Array.isArray(selectedEducationProgramme?.lessons)
@@ -4230,9 +4258,18 @@ export default function AssessmentChatBox({
               ) : (
                 <div className="flex min-h-full flex-col">
                   <div className="-mt-[0.5cm] flex-none py-4">
-                    <div className="space-y-3">
-                      {selectedEducationProgramme ? (
-                        renderEducationProgrammeCard(selectedEducationProgramme, 0)
+                    <div className="space-y-5">
+                      {programmeReviewCards.length ? (
+                        programmeReviewCards.map(({ label, programme }) => (
+                          <div key={`${label}-${String(programme?.programme_id || "")}`} className="space-y-2">
+                            <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+                              {label}
+                            </p>
+                            {renderEducationProgrammeCard(programme, Number(programme?.sequence_index || 1) - 1)}
+                          </div>
+                        ))
+                      ) : selectedEducationProgramme ? (
+                        renderEducationProgrammeCard(selectedEducationProgramme, Number(selectedEducationProgramme?.sequence_index || 1) - 1)
                       ) : educationLessonRail.length ? (
                         renderEducationLessonCard(educationLessonRail[0], {
                           featured: true,
