@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import math
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -1758,27 +1759,40 @@ def _load_week_entries(user_id: int, pillar_key: str, anchor: date) -> dict[date
     return grouped
 
 
-def _resolve_tracker_detail_anchor(user_id: int, pillar_key: str, requested_anchor: date | None, current_day: date) -> date:
-    viewable_dates = _viewable_tracker_dates_for_pillar(user_id, pillar_key, current_day=current_day)
+def _resolve_tracker_detail_context(
+    user_id: int,
+    pillar_key: str,
+    requested_anchor: date | None,
+    current_day: date,
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    entries_cache: dict[date, dict[date, dict[str, DailyPillarTrackerEntry]]],
+) -> tuple[date, list[date]]:
+    def cached_week_entries(anchor: date) -> dict[date, dict[str, DailyPillarTrackerEntry]]:
+        week_start = start_of_week(anchor)
+        if week_start not in entries_cache:
+            entries_cache[week_start] = _load_week_entries(user_id, pillar_key, anchor)
+        return entries_cache[week_start]
+
     editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
-    if requested_anchor == _last_week_anchor(current_day):
-        required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
-        entries_by_day = _load_week_entries(user_id, pillar_key, requested_anchor)
-        completed_days = _completed_days(entries_by_day, required_concepts)
+    last_week_anchor = _last_week_anchor(current_day)
+    last_week_entries = cached_week_entries(last_week_anchor)
+    last_week_completed_days = _completed_days(last_week_entries, required_concepts)
+    viewable_dates = ([last_week_anchor] if last_week_completed_days else []) + editable_dates
+    if requested_anchor == last_week_anchor:
+        completed_days = last_week_completed_days
         if completed_days:
-            return max(completed_days)
+            return max(completed_days), viewable_dates
     if requested_anchor in viewable_dates:
-        return requested_anchor
+        return requested_anchor, viewable_dates
     if not viewable_dates:
-        return current_day
+        return current_day, viewable_dates
     default_anchor = current_day
     if len(editable_dates) > 1:
         yesterday = editable_dates[0]
-        required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
-        yesterday_rows = _load_week_entries(user_id, pillar_key, yesterday).get(yesterday, {})
+        yesterday_rows = cached_week_entries(yesterday).get(yesterday, {})
         if not _day_complete(yesterday_rows, required_concepts):
             default_anchor = yesterday
-    return default_anchor
+    return default_anchor, viewable_dates
 
 
 def _day_complete(day_rows: dict[str, DailyPillarTrackerEntry], required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> bool:
@@ -2433,20 +2447,45 @@ def get_pillar_tracker_detail(
     *,
     skip_quote_generation: bool = True,
 ) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    stage_started_at = started_at
+    timings_ms: dict[str, int] = {}
+
+    def mark_stage(name: str) -> None:
+        nonlocal stage_started_at
+        now = time.perf_counter()
+        timings_ms[name] = int(round((now - stage_started_at) * 1000))
+        stage_started_at = now
+
     ensure_pillar_tracker_schema()
+    mark_stage("schema")
     key = str(pillar_key or "").strip().lower()
     current_day = tracker_today()
-    resolved_anchor = _resolve_tracker_detail_anchor(user_id, key, anchor, current_day)
     required_concepts = tracker_concepts_for_pillar(key, user_id=int(user_id))
-    entries_by_day = _load_week_entries(user_id, key, resolved_anchor)
+    mark_stage("concepts")
+    entries_cache: dict[date, dict[date, dict[str, DailyPillarTrackerEntry]]] = {}
+    resolved_anchor, viewable_dates = _resolve_tracker_detail_context(
+        user_id,
+        key,
+        anchor,
+        current_day,
+        required_concepts,
+        entries_cache,
+    )
+    entries_by_day = entries_cache.get(start_of_week(resolved_anchor))
+    if entries_by_day is None:
+        entries_by_day = _load_week_entries(user_id, key, resolved_anchor)
+        entries_cache[start_of_week(resolved_anchor)] = entries_by_day
+    mark_stage("entries")
     baseline_scores = _latest_assessment_scores_for_user(user_id)
+    mark_stage("assessment")
     week_days = _week_days(resolved_anchor)
     resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
+    mark_stage("targets")
     evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
     editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
-    viewable_dates = _viewable_tracker_dates_for_pillar(user_id, key, current_day=current_day)
     is_editable = resolved_anchor in editable_dates
     is_current_week = start_of_week(resolved_anchor) == start_of_week(current_day)
     current_summary = _summary_pillar_payload(
@@ -2461,6 +2500,7 @@ def get_pillar_tracker_detail(
         baseline_score=baseline_scores.get(key),
         skip_quote_generation=skip_quote_generation,
     )
+    mark_stage("summary")
     concepts_payload = []
     today_rows = entries_by_day.get(resolved_anchor, {})
     for concept_def in required_concepts:
@@ -2551,7 +2591,7 @@ def get_pillar_tracker_detail(
                 ],
             }
         )
-    return {
+    result = {
         "pillar": {
             "pillar_key": key,
             "label": _pillar_label(key),
@@ -2595,6 +2635,14 @@ def get_pillar_tracker_detail(
             for item in viewable_dates
         ],
     }
+    mark_stage("payload")
+    total_ms = int(round((time.perf_counter() - started_at) * 1000))
+    if total_ms >= 500:
+        print(
+            f"[pillar_tracker] slow detail user_id={int(user_id)} pillar={key} "
+            f"total_ms={total_ms} stages_ms={json.dumps(timings_ms, sort_keys=True)}"
+        )
+    return result
 
 
 def save_pillar_tracker_day(

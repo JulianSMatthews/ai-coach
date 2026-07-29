@@ -1585,6 +1585,7 @@ export default function LatestAssessmentPanel({
   const pillarCueCarouselRef = useRef<HTMLDivElement | null>(null);
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const trackerDetailCacheRef = useRef<Map<string, PillarTrackerDetailResponse>>(new Map());
   const pillarQuoteGestureRef = useRef<{
     pointerId: number;
     axis: "horizontal" | "vertical" | null;
@@ -3209,23 +3210,12 @@ export default function LatestAssessmentPanel({
   }, [assessmentReviewed, assessmentReviewSyncStarted, summaryPanelVisible, userId]);
 
   const loadTrackerDetail = useCallback(async (pillarKey: string, anchorDate?: string) => {
-    setLoadingDetail(true);
+    const cacheKey = `${pillarKey}:${anchorDate || "default"}`;
+    const cachedDetail = trackerDetailCacheRef.current.get(cacheKey);
+    setLoadingDetail(!cachedDetail);
     setDetailError(null);
     setSaveError(null);
-    try {
-      const params = new URLSearchParams({ userId });
-      if (anchorDate) {
-        params.set("anchorDate", anchorDate);
-      }
-      const res = await fetch(`/api/pillar-tracker/${encodeURIComponent(pillarKey)}?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-      const text = await res.text().catch(() => "");
-      if (!res.ok) {
-        throw new Error(normalizeError(text, "Failed to load the pillar tracker."));
-      }
-      const payload = (text ? (JSON.parse(text) as PillarTrackerDetailResponse) : {}) as PillarTrackerDetailResponse;
+    const applyDetail = (payload: PillarTrackerDetailResponse) => {
       setDetail(payload);
       const nextDraft: Record<string, number> = {};
       (payload.concepts || []).forEach((concept) => {
@@ -3241,6 +3231,26 @@ export default function LatestAssessmentPanel({
         }
       });
       setDraft(nextDraft);
+    };
+    if (cachedDetail) {
+      applyDetail(cachedDetail);
+    }
+    try {
+      const params = new URLSearchParams({ userId });
+      if (anchorDate) {
+        params.set("anchorDate", anchorDate);
+      }
+      const res = await fetch(`/api/pillar-tracker/${encodeURIComponent(pillarKey)}?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(normalizeError(text, "Failed to load the pillar tracker."));
+      }
+      const payload = (text ? (JSON.parse(text) as PillarTrackerDetailResponse) : {}) as PillarTrackerDetailResponse;
+      trackerDetailCacheRef.current.set(cacheKey, payload);
+      applyDetail(payload);
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -3262,8 +3272,11 @@ export default function LatestAssessmentPanel({
     setGuidedTrackingActive(guided);
     setTrackerReturnSurface(options?.returnSurface ?? null);
     setSelectedPillarKey(normalizedPillarKey);
-    setDetail(null);
-    setDraft({});
+    const cacheKey = `${normalizedPillarKey}:${anchorDate || "default"}`;
+    if (!trackerDetailCacheRef.current.has(cacheKey)) {
+      setDetail(null);
+      setDraft({});
+    }
     setDetailError(null);
     setSaveError(null);
     if (typeof window !== "undefined") {
@@ -3342,6 +3355,11 @@ export default function LatestAssessmentPanel({
       const text = await res.text().catch(() => "");
       if (!res.ok) {
         throw new Error(normalizeError(text, "Failed to save the pillar tracker."));
+      }
+      for (const cacheKey of trackerDetailCacheRef.current.keys()) {
+        if (cacheKey.startsWith(`${completedPillarKey}:`)) {
+          trackerDetailCacheRef.current.delete(cacheKey);
+        }
       }
       if (typeof window !== "undefined") {
         window.dispatchEvent(
@@ -4953,10 +4971,10 @@ export default function LatestAssessmentPanel({
               </button>
             </div>
             <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
-              {loadingDetail ? <p className="text-sm text-[var(--text-secondary)]">Loading tracker...</p> : null}
+              {loadingDetail && !detail ? <p className="text-sm text-[var(--text-secondary)]">Loading tracker...</p> : null}
               {detailError ? <p className="text-sm text-[#8a3e1a]">{detailError}</p> : null}
 
-              {detail && !loadingDetail ? (
+              {detail ? (
                 <div className="space-y-4">
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
