@@ -2,10 +2,20 @@ import AdminNav from "@/components/AdminNav";
 import { listAdminUsers, listBackgroundJobHistory } from "@/lib/api";
 
 type HistoryPageProps = {
-  searchParams: Promise<{ start?: string; end?: string; user?: string; user_id?: string; touchpoint?: string }>;
+  searchParams: Promise<{ start?: string; end?: string; user?: string; user_id?: string; touchpoint?: string; window?: string }>;
 };
 
 export const dynamic = "force-dynamic";
+
+const HISTORY_WINDOW_OPTIONS = [
+  { value: "3h", label: "Last 3 hours", hours: 3 },
+  { value: "6h", label: "Last 6 hours", hours: 6 },
+  { value: "12h", label: "Last 12 hours", hours: 12 },
+  { value: "24h", label: "Last 24 hours", hours: 24 },
+  { value: "7d", label: "Last 7 days", hours: 7 * 24 },
+  { value: "14d", label: "Last 14 days", hours: 14 * 24 },
+  { value: "30d", label: "Last 30 days", hours: 30 * 24 },
+] as const;
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
@@ -61,9 +71,12 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
   const touchpoint = (resolved?.touchpoint || "").trim();
   const user = (resolved?.user_id || resolved?.user || "").trim();
   const userId = user ? Number(user) : undefined;
+  const requestedWindow = (resolved?.window || "7d").trim().toLowerCase();
+  const windowSelection = HISTORY_WINDOW_OPTIONS.find((option) => option.value === requestedWindow) || HISTORY_WINDOW_OPTIONS[4];
+  const windowHours = start || end ? undefined : windowSelection.hours;
 
   const [history, users] = await Promise.all([
-    listBackgroundJobHistory(100, userId || undefined, touchpoint || undefined, start || undefined, end || undefined),
+    listBackgroundJobHistory(100, userId || undefined, touchpoint || undefined, start || undefined, end || undefined, windowHours),
     listAdminUsers(),
   ]);
   const rows = history.items || [];
@@ -76,7 +89,17 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <h2 className="text-lg font-semibold">Filters</h2>
-          <form className="mt-4 grid gap-3 md:grid-cols-5" method="get">
+          <form className="mt-4 grid gap-3 md:grid-cols-6" method="get">
+            <select
+              name="window"
+              defaultValue={windowSelection.value}
+              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              aria-label="History window"
+            >
+              {HISTORY_WINDOW_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
             <input
               type="date"
               name="start"
@@ -129,7 +152,8 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <h2 className="text-lg font-semibold">Background Jobs</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
-            Jobs from the background_jobs table. Showing {rows.length} of the latest 100 records.
+            Jobs from the background_jobs table for {start || end ? "the custom date range" : windowSelection.label.toLowerCase()}.
+            {" "}Showing {rows.length} of the latest 100 records.
           </p>
           <HistoryTable rows={rows} emptyMessage="No background jobs found for this filter." />
         </section>

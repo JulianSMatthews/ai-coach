@@ -16977,6 +16977,7 @@ def admin_background_job_history(
     limit: int = 100,
     user_id: int | None = None,
     kind: str | None = None,
+    hours: int | None = None,
     start: str | None = None,
     end: str | None = None,
     admin_user: User = Depends(_require_admin),
@@ -16994,6 +16995,8 @@ def admin_background_job_history(
 
     start_dt = _parse_dt(start)
     end_dt = _parse_dt(end, is_end=True)
+    if start_dt is None and end_dt is None and hours is not None:
+        start_dt = datetime.utcnow() - timedelta(hours=max(1, min(int(hours), 24 * 30)))
     club_scope_id = getattr(admin_user, "club_id", None)
 
     with SessionLocal() as s:

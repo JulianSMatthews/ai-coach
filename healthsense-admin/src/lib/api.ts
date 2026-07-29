@@ -1504,13 +1504,15 @@ export async function listBackgroundJobHistory(
   userId?: number,
   kind?: string,
   start?: string,
-  end?: string
+  end?: string,
+  hours?: number
 ) {
   return apiAdmin<{ items: BackgroundJobHistoryItem[]; kinds: string[] }>("/admin/background-jobs/history", {
     query: {
       limit: limit || undefined,
       user_id: userId || undefined,
       kind: kind || undefined,
+      hours: hours || undefined,
       start: start || undefined,
       end: end || undefined,
     },
