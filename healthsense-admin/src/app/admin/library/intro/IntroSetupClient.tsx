@@ -435,7 +435,7 @@ export default function IntroSetupClient({
   const [assessmentIntroAvatarSummaryUrl, setAssessmentIntroAvatarSummaryUrl] = useState(
     assessmentIntro.assessment_intro_avatar?.summary_url || "",
   );
-  const [activeTab, setActiveTab] = useState<IntroSetupTab>("assessment");
+  const [activeTab, setActiveTab] = useState<IntroSetupTab>("app");
   const [activeAppIntroTab, setActiveAppIntroTab] = useState<AppIntroSettingsTab>("general");
 
   const generatedPayload = useMemo(
@@ -817,9 +817,8 @@ export default function IntroSetupClient({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
-        <TabButton active={activeTab === "assessment"} label="Assessment Intro" onClick={() => setActiveTab("assessment")} />
-        <TabButton active={activeTab === "coaching"} label="Coaching" onClick={() => setActiveTab("coaching")} />
         <TabButton active={activeTab === "app"} label="App Intro" onClick={() => setActiveTab("app")} />
+        <TabButton active={activeTab === "coaching"} label="Coaching" onClick={() => setActiveTab("coaching")} />
       </div>
 
       {activeTab === "app" ? (

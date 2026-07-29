@@ -114,13 +114,6 @@ function formatMetricWithUnit(value: number | null | undefined, unit?: string | 
   return u ? `${num.toFixed(digits)} ${u}` : `${num.toFixed(digits)}`;
 }
 
-function barWidth(percentOfStart: number | null | undefined): string {
-  if (percentOfStart == null || Number.isNaN(percentOfStart)) return "0%";
-  const bounded = Math.max(0, Math.min(100, percentOfStart));
-  if (bounded === 0) return "0%";
-  return `${Math.max(6, bounded)}%`;
-}
-
 async function saveLatencyThresholdsAction(formData: FormData) {
   "use server";
 
@@ -155,13 +148,13 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     resolvedSearchParams?.hours,
   );
   const staleMinutes = clampInt(resolvedSearchParams?.stale_minutes, 30, 5, 240);
-  const tabRaw = (firstParam(resolvedSearchParams?.tab) || "assessment").toLowerCase();
-  const activeTab: "assessment" | "coaching" | "app" | "infra" =
-    tabRaw === "coaching" ? "coaching" : tabRaw === "app" ? "app" : tabRaw === "infra" ? "infra" : "assessment";
+  const tabRaw = (firstParam(resolvedSearchParams?.tab) || "app").toLowerCase();
+  const activeTab: "service" | "coaching" | "app" | "infra" =
+    tabRaw === "coaching" ? "coaching" : tabRaw === "infra" ? "infra" : tabRaw === "service" ? "service" : "app";
   const infraFetchRaw = (firstParam(resolvedSearchParams?.infra_fetch) || "").toLowerCase();
   const infraFetch = infraFetchRaw === "1" || infraFetchRaw === "true" || infraFetchRaw === "yes";
   const windowValue = encodeURIComponent(windowSelection.value);
-  const assessmentTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=assessment`;
+  const serviceTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=service`;
   const coachingTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=coaching`;
   const appTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=app`;
   const infraTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=infra`;
@@ -213,7 +206,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           : health?.as_of_utc;
 
   const alerts = health?.alerts || [];
-  const funnelSteps = health?.funnel?.steps || [];
   const llmP50WarnMs = Number(health?.thresholds?.llm_p50_ms?.warn ?? DEFAULT_LLM_P50_WARN_MS);
   const llmP50CriticalMs = Number(health?.thresholds?.llm_p50_ms?.critical ?? DEFAULT_LLM_P50_CRITICAL_MS);
   const llmP95WarnMs = Number(health?.thresholds?.llm_p95_ms?.warn ?? DEFAULT_LLM_P95_WARN_MS);
@@ -245,30 +237,13 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const llmInteractive = health?.llm?.interactive || llmAssessment;
   const llmWorker = health?.llm?.worker || llmCoaching;
   const llmPanels = [
-    { title: "Interactive", data: llmInteractive, desc: "Request/response latency for user-driven app and assessment prompts." },
+    { title: "Interactive", data: llmInteractive, desc: "Request/response latency for user-driven app prompts." },
     { title: "Worker", data: llmWorker, desc: "Background/scheduled worker prompt latency profile." },
   ];
   const twilioFailureCodes = health?.messaging?.twilio_failure_codes || [];
   const twilioFailedMessages = health?.messaging?.twilio_failed_messages || [];
   const twilioFailedMessageGroups = health?.messaging?.twilio_failed_message_groups || [];
   const metrics = [
-    {
-      title: "Completion rate",
-      value: health?.funnel?.completion_rate_pct != null ? `${formatNum(health?.funnel?.completion_rate_pct)}%` : "—",
-      state: health?.funnel?.completion_rate_state,
-      subtitle: `${health?.funnel?.completed ?? "—"} completed / ${health?.funnel?.started ?? "—"} started`,
-      description: "Share of started assessments that reached completion in the selected window.",
-    },
-    {
-      title: "Median completion",
-      value:
-        health?.funnel?.median_completion_minutes != null
-          ? `${formatNum(health?.funnel?.median_completion_minutes)} min`
-          : "—",
-      state: health?.funnel?.median_completion_state,
-      subtitle: `P95 ${health?.funnel?.p95_completion_minutes != null ? `${formatNum(health?.funnel?.p95_completion_minutes)} min` : "—"}`,
-      description: "Typical end-to-end completion time for finished assessments.",
-    },
     {
       title: "Interactive LLM p95 latency",
       value: llmInteractive.duration_ms_p95 != null ? `${Math.round(llmInteractive.duration_ms_p95)} ms` : "—",
@@ -354,10 +329,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     },
   ];
   const appSurfaceRows = [
-    {
-      label: "Assessment summary",
-      value: `${appDetail.assessment_results?.views ?? 0} views · ${appDetail.assessment_results?.users ?? 0} users`,
-    },
     {
       label: "Daily check-ins",
       value: `${currentApp.daily_check_in?.updates ?? 0} updates · ${currentApp.daily_check_in?.users ?? 0} users`,
@@ -468,14 +439,14 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Persistent disk utilization percentage from Render disk usage/capacity metrics.",
     },
   ];
-  const showOpsSections = activeTab === "assessment";
+  const showOpsSections = activeTab === "service";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <AdminNav
           title="Operations monitoring"
-          subtitle="Assessment, Gia readiness, user app usage, infrastructure, and delivery health."
+          subtitle="User app activity, Gia readiness, service health, and infrastructure."
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
@@ -533,14 +504,14 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
         <section className="rounded-2xl border border-[#e7e1d6] bg-white p-4">
           <div className="flex flex-wrap gap-2">
             <a
-              href={assessmentTabHref}
+              href={serviceTabHref}
               className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] ${
-                activeTab === "assessment"
+                activeTab === "service"
                   ? "border-[var(--accent)] bg-[var(--accent)] text-white"
                   : "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]"
               }`}
             >
-              Assessment
+              Service health
             </a>
             <a
               href={coachingTabHref}
@@ -575,7 +546,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </div>
         </section>
 
-        {activeTab === "assessment" ? (
+        {activeTab === "service" ? (
           <>
             <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {metrics.map((item) => (
@@ -593,56 +564,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               ))}
             </section>
 
-            <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Step-by-step funnel</p>
-              <p className="mt-2 text-sm text-[#6b6257]">
-                Visual conversion through each assessment stage. Width is % of started assessments.
-              </p>
-              {!funnelSteps.length ? (
-                <p className="mt-4 text-sm text-[#8a8176]">No funnel step data in this window.</p>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {funnelSteps.map((step, idx) => (
-                    <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                            {idx + 1}. {step.label || step.key || "step"}
-                          </div>
-                          <div className="mt-1 text-xs text-[#8a8176]">{step.description || "—"}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold">{step.count ?? 0}</div>
-                          <div className="text-xs text-[#6b6257]">
-                            {step.percent_of_start != null ? `${formatNum(step.percent_of_start)}% of started` : "—"}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3 h-3 w-full rounded-full bg-[#ece4d8]">
-                        <div
-                          className="h-3 rounded-full bg-[var(--accent)]"
-                          style={{ width: barWidth(step.percent_of_start) }}
-                        />
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#6b6257]">
-                        <span>
-                          Conversion from previous:{" "}
-                          {idx === 0
-                            ? "—"
-                            : step.conversion_pct_from_prev != null
-                              ? `${formatNum(step.conversion_pct_from_prev)}%`
-                              : "—"}
-                        </span>
-                        <span>
-                          Drop-off from previous:{" "}
-                          {idx === 0 ? "—" : step.dropoff_from_prev ?? 0}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
           </>
         ) : null}
 
@@ -714,7 +635,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Current user app surfaces</p>
               <p className="mt-2 text-sm text-[#6b6257]">
-                Surfaces visible in the current post-assessment user app.
+                Engagement across the current CoachSense app experience.
               </p>
               <div className="mt-3 space-y-2 text-sm">
                 {appSurfaceRows.map((row) => (
@@ -737,7 +658,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                         <tr>
                           <th className="px-3 py-2">Day</th>
                           <th className="px-3 py-2">Active users</th>
-                          <th className="px-3 py-2">Assessment</th>
                           <th className="px-3 py-2">Check-ins</th>
                           <th className="px-3 py-2">Plan</th>
                           <th className="px-3 py-2">Education</th>
@@ -752,7 +672,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                         <tr key={row.day} className="border-t border-[#efe7db]">
                             <td className="px-3 py-2">{row.day || "—"}</td>
                             <td className="px-3 py-2">{row.active_users ?? 0}</td>
-                            <td className="px-3 py-2">{row.assessment_views ?? 0}</td>
                             <td className="px-3 py-2">{row.tracker_updates ?? 0}</td>
                             <td className="px-3 py-2">{row.daily_plan_views ?? 0}</td>
                             <td className="px-3 py-2">{row.education_views ?? 0}</td>
@@ -927,52 +846,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               ))}
             </div>
           </div>
-          </section>
-        ) : null}
-
-        {activeTab === "assessment" ? (
-          <section className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Drop-off by question</p>
-              <p className="mt-2 text-sm text-[#6b6257]">
-                Incomplete runs: {health?.dropoff?.incomplete_runs ?? 0} | Avg last question idx:{" "}
-                {health?.dropoff?.avg_last_question_idx ?? "—"}
-              </p>
-              <p className="mt-1 text-xs text-[#8a8176]">
-                Shows where incomplete assessments most commonly stop by question number.
-              </p>
-              <div className="mt-3 space-y-2">
-                {(health?.dropoff?.question_idx_top || []).length ? (
-                  (health?.dropoff?.question_idx_top || []).map((row, idx) => (
-                    <div key={`${row.question_idx}-${idx}`} className="flex items-center justify-between rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Q{row.question_idx ?? "—"}</span>
-                      <span className="text-sm font-semibold">{row.count ?? 0}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-[#8a8176]">No drop-off data in this window.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Drop-off by pillar/concept</p>
-              <p className="mt-1 text-xs text-[#8a8176]">
-                Last recorded pillar/concept for incomplete runs, highlighting friction points.
-              </p>
-              <div className="mt-3 space-y-2">
-                {(health?.dropoff?.points_top || []).length ? (
-                  (health?.dropoff?.points_top || []).map((row, idx) => (
-                    <div key={`${row.label}-${idx}`} className="flex items-center justify-between rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                      <span className="text-xs uppercase tracking-[0.12em] text-[#6b6257]">{row.label || "unknown"}</span>
-                      <span className="text-sm font-semibold">{row.count ?? 0}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-[#8a8176]">No drop-off point data in this window.</p>
-                )}
-              </div>
-            </div>
           </section>
         ) : null}
 

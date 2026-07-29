@@ -18,7 +18,7 @@ export default async function LibraryIntroPage() {
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <AdminNav title="Intro setup" subtitle="Configure separate intros for the app onboarding flow and the assessment landing flow." />
+        <AdminNav title="Intro setup" subtitle="Configure the CoachSense app onboarding and coaching introductions." />
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <IntroSetupClient appIntro={appIntro} assessmentIntro={assessmentIntro} templates={templates} />
         </section>

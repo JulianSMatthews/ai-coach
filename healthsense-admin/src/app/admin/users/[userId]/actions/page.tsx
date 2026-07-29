@@ -8,12 +8,10 @@ import {
   deleteAdminUser,
   listAdminUsers,
   listTouchpointHistory,
-  resetAdminUser,
   sendAdminUser24hTemplate,
   sendAdminUserSms,
   setAdminUserCoaching,
   setAdminUserPromptState,
-  startAdminUser,
 } from "@/lib/api";
 
 type UserActionsPageProps = {
@@ -124,25 +122,6 @@ async function stopCoachingAction(formData: FormData) {
   const userId = Number(formData.get("user_id") || 0);
   if (!userId) return;
   await setAdminUserCoaching(userId, false);
-  revalidatePath(`/admin/users/${userId}/actions`);
-  revalidatePath("/admin/users");
-}
-
-async function startUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  if (!userId) return;
-  await startAdminUser(userId);
-  revalidatePath(`/admin/users/${userId}/actions`);
-  revalidatePath("/admin/users");
-}
-
-async function resetUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  const confirm = String(formData.get("confirm") || "").trim().toLowerCase();
-  if (!userId || confirm !== "reset") return;
-  await resetAdminUser(userId);
   revalidatePath(`/admin/users/${userId}/actions`);
   revalidatePath("/admin/users");
 }
@@ -350,33 +329,6 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
                   className="rounded-full border border-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
                 >
                   fast on
-                </button>
-              </form>
-            </div>
-          </ActionCard>
-
-          <ActionCard
-            title="Assessment controls"
-            description="Start or reset the assessment path for this user."
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <form action={startUserAction}>
-                <input type="hidden" name="user_id" value={userId} />
-                <button
-                  type="submit"
-                  className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
-                >
-                  assess
-                </button>
-              </form>
-              <form action={resetUserAction}>
-                <input type="hidden" name="user_id" value={userId} />
-                <input type="hidden" name="confirm" value="reset" />
-                <button
-                  type="submit"
-                  className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
-                >
-                  reset
                 </button>
               </form>
             </div>

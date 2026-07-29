@@ -48,25 +48,17 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   }
   const user = detail.user as Record<string, unknown> | undefined;
   const status = detail.status as string | undefined;
-  const latest = detail.latest_run as { id?: number; finished_at?: string } | undefined;
   const onboarding = (detail.onboarding || {}) as Record<string, unknown>;
   const introContent = (onboarding.intro_content || {}) as Record<string, unknown>;
   const weeklyPlan = (detail.current_weekly_plan || null) as Record<string, unknown> | null;
   const weeklyPlanKrs = Array.isArray(weeklyPlan?.krs) ? (weeklyPlan?.krs as Record<string, unknown>[]) : [];
   const fields = user ? Object.entries(user) : [];
-  const firstAssessmentCompletedAt = onboarding.first_assessment_completed_at || onboarding.assessment_completed_at;
-  const assessmentCompletedMet = Boolean(firstAssessmentCompletedAt);
   const firstLoginMet = Boolean(onboarding.first_app_login_at);
-  const assessmentReviewMet = Boolean(onboarding.assessment_reviewed_at);
-  const activationReady = Boolean(onboarding.coaching_activation_ready ?? (assessmentCompletedMet && firstLoginMet && assessmentReviewMet));
+  const introCompletedMet = Boolean(onboarding.intro_content_completed_at);
+  const activationReady = firstLoginMet && introCompletedMet;
   const coachingEnabledNow = Boolean(onboarding.coaching_enabled_now);
   const onboardingFields = [
-    [
-      "first_assessment_completed_at",
-      onboarding.first_assessment_completed_at || onboarding.assessment_completed_at,
-    ],
     ["first_app_login_at", onboarding.first_app_login_at],
-    ["assessment_reviewed_at", onboarding.assessment_reviewed_at],
     ["intro_content_presented_at", onboarding.intro_content_presented_at],
     ["intro_content_listened_at", onboarding.intro_content_listened_at],
     ["intro_content_read_at", onboarding.intro_content_read_at],
@@ -76,19 +68,14 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   ] as const;
   const essentialActivationRows = [
     {
-      label: "First Assessment Completed",
-      met: assessmentCompletedMet,
-      value: firstAssessmentCompletedAt,
-    },
-    {
       label: "First app login",
       met: firstLoginMet,
       value: onboarding.first_app_login_at,
     },
     {
-      label: "Assessment reviewed",
-      met: assessmentReviewMet,
-      value: onboarding.assessment_reviewed_at,
+      label: "App introduction completed",
+      met: introCompletedMet,
+      value: onboarding.intro_content_completed_at,
     },
   ] as const;
 
@@ -183,7 +170,7 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
               ? `Details · ${user.display_name}`
               : `Details · #${userId}`
           }
-          subtitle="User profile fields and latest assessment metadata."
+          subtitle="User profile, app access, onboarding, activity, and coaching state."
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
@@ -191,13 +178,11 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Status</p>
               <p className="mt-2 text-lg font-semibold capitalize">{status || "unknown"}</p>
-              <p className="mt-1 text-sm text-[#6b6257]">
-                Latest run: {latest?.id ? `#${latest.id}` : "—"}
-              </p>
+              <p className="mt-1 text-sm text-[#6b6257]">App account and coaching status</p>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Latest run finished</p>
-              <p className="mt-2 text-sm text-[#6b6257]">{latest?.finished_at || "—"}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">First app access</p>
+              <p className="mt-2 text-sm text-[#6b6257]">{formatDateTime(onboarding.first_app_login_at)}</p>
             </div>
           </div>
 
