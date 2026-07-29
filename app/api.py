@@ -7308,31 +7308,8 @@ def api_user_assessment_chat_tracker_summary(
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
-    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
-    if not _general_support_ready_for_user(user):
-        raise HTTPException(status_code=409, detail="Gia's coaching message is not available yet.")
-    try:
-        text_out = general_support.get_or_generate_cached_tracker_summary_message(
-            user,
-            source="app_tracker_summary",
-            include_prefix=False,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    if not text_out:
-        raise HTTPException(status_code=502, detail="Gia's coaching message is not available right now.")
-    _log_app_engagement_event(
-        user_id=int(user.id),
-        unit_type="coach_home_gia_message_view",
-        meta={"page": "coach_home", "source": "app_tracker_summary"},
-    )
-    return {
-        "ok": True,
-        "user_id": int(user.id),
-        "text": text_out,
-    }
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    raise HTTPException(status_code=410, detail="This coaching-summary feature has been retired.")
 
 
 @api_v1.post("/users/{user_id}/assessment/chat/claim-identity")

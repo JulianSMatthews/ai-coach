@@ -6,13 +6,11 @@ import threading
 from datetime import datetime
 from typing import Any
 
-from .coach_insight import get_or_generate_cached_coach_insight
 from .daily_habits import (
     build_daily_tracker_generation_context_snapshot,
     get_or_generate_cached_daily_habit_plan,
 )
 from .db import SessionLocal
-from .general_support import get_or_generate_cached_tracker_summary_message
 from .job_queue import enqueue_job, enqueue_job_once, should_use_worker
 from .models import User, UserPreference
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
@@ -157,14 +155,6 @@ def run_coach_home_tracker_refresh(
             force=False,
             tracker_snapshot=snapshot,
         )
-        gia_text = get_or_generate_cached_tracker_summary_message(
-            user,
-            source="app_tracker_summary",
-            include_prefix=False,
-            force=False,
-            tracker_snapshot=snapshot,
-        )
-        insight_result = get_or_generate_cached_coach_insight(int(user_id), force=False)
         pillar_quote_result = get_pillar_tracker_summary(
             int(user_id),
             anchor=tracker_today(),
@@ -184,10 +174,6 @@ def run_coach_home_tracker_refresh(
                 or (habit_result.get("options") if isinstance(habit_result, dict) else None)
             ),
             "habits_source": str((habit_result or {}).get("source") or "").strip() or None,
-            "gia_ready": bool(str(gia_text or "").strip()),
-            "insight_ready": isinstance(insight_result, dict) and bool(
-                (insight_result.get("content") if isinstance(insight_result, dict) else None)
-            ),
             "pillar_quotes_ready": bool((pillar_quote_result or {}).get("pillars")),
             "completed_at": completed_at,
         }

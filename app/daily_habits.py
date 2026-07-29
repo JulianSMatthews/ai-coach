@@ -2656,7 +2656,7 @@ def get_or_generate_cached_daily_habit_plan(
         int(user_id),
         force=bool(force),
         concept_key=concept_key,
-        allow_llm=True,
+        allow_llm=False,
         tracker_snapshot=tracker_snapshot,
     )
 
