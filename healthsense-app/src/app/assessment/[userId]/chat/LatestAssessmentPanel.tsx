@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   AppleHealthRestingHeartRateResponse,
   BiometricMetricKey,
@@ -1585,6 +1585,15 @@ export default function LatestAssessmentPanel({
   const pillarCueCarouselRef = useRef<HTMLDivElement | null>(null);
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pillarQuoteGestureRef = useRef<{
+    pointerId: number;
+    axis: "horizontal" | "vertical" | null;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    startCardIndex: number;
+  } | null>(null);
   const [pillarQuoteDirections, setPillarQuoteDirections] = useState<Record<string, { up: boolean; down: boolean }>>({});
   const [returnToPillarKey, setReturnToPillarKey] = useState<string | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
@@ -3403,6 +3412,84 @@ export default function LatestAssessmentPanel({
     });
   }, []);
 
+  const pillarCueCards = useCallback((): HTMLElement[] => {
+    const carousel = pillarCueCarouselRef.current;
+    if (!carousel) return [];
+    return Array.from(carousel.querySelectorAll<HTMLElement>("[data-pillar-cue-card]"));
+  }, []);
+
+  const closestPillarCueCardIndex = useCallback((cards: HTMLElement[]): number => {
+    const carousel = pillarCueCarouselRef.current;
+    if (!carousel || !cards.length) return 0;
+    const carouselCenter = carousel.getBoundingClientRect().left + carousel.clientWidth / 2;
+    let closestIndex = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    cards.forEach((card, index) => {
+      const rect = card.getBoundingClientRect();
+      const distance = Math.abs(rect.left + rect.width / 2 - carouselCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = index;
+      }
+    });
+    return closestIndex;
+  }, []);
+
+  const beginPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse") return;
+    const cards = pillarCueCards();
+    pillarQuoteGestureRef.current = {
+      pointerId: event.pointerId,
+      axis: null,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      startCardIndex: closestPillarCueCardIndex(cards),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [closestPillarCueCardIndex, pillarCueCards]);
+
+  const movePillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = pillarQuoteGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const totalX = event.clientX - gesture.startX;
+    const totalY = event.clientY - gesture.startY;
+    if (!gesture.axis && Math.max(Math.abs(totalX), Math.abs(totalY)) >= 6) {
+      gesture.axis = Math.abs(totalX) > Math.abs(totalY) ? "horizontal" : "vertical";
+    }
+    if (!gesture.axis) return;
+
+    event.preventDefault();
+    const deltaX = event.clientX - gesture.lastX;
+    const deltaY = event.clientY - gesture.lastY;
+    if (gesture.axis === "horizontal") {
+      pillarCueCarouselRef.current?.scrollBy({ left: -deltaX });
+    } else {
+      event.currentTarget.scrollTop -= deltaY;
+    }
+    gesture.lastX = event.clientX;
+    gesture.lastY = event.clientY;
+  }, []);
+
+  const endPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = pillarQuoteGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    pillarQuoteGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (gesture.axis !== "horizontal") return;
+
+    const cards = pillarCueCards();
+    if (!cards.length) return;
+    const totalX = event.clientX - gesture.startX;
+    const targetIndex = Math.abs(totalX) >= 40
+      ? Math.max(0, Math.min(cards.length - 1, gesture.startCardIndex + (totalX < 0 ? 1 : -1)))
+      : closestPillarCueCardIndex(cards);
+    cards[targetIndex]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [closestPillarCueCardIndex, pillarCueCards]);
+
   const openDailyMenuSurface = (surface: "tracking" | "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
       const bridge = window as Window & {
@@ -3586,6 +3673,7 @@ export default function LatestAssessmentPanel({
                   return (
                     <article
                       key={pillarKey}
+                      data-pillar-cue-card
                       ref={(node) => {
                         if (node) {
                           pillarCueCardRefs.current[pillarKey] = node;
@@ -3619,7 +3707,11 @@ export default function LatestAssessmentPanel({
                               }
                             }}
                             className="h-[9.5rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
-                            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+                            style={{ WebkitOverflowScrolling: "touch", touchAction: "none" }}
+                            onPointerDown={beginPillarQuoteGesture}
+                            onPointerMove={movePillarQuoteGesture}
+                            onPointerUp={endPillarQuoteGesture}
+                            onPointerCancel={endPillarQuoteGesture}
                             onScroll={(event) => updatePillarQuoteDirections(pillarKey, event.currentTarget)}
                             tabIndex={0}
                             aria-label={`${pillar.label} quote. Scroll to read more.`}
