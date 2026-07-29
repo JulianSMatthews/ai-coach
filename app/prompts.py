@@ -2723,6 +2723,8 @@ def _log_llm_prompt_sync(
         if context_meta is None:
             context_meta = {}
         if isinstance(context_meta, dict):
+            if user_id is not None and context_meta.get("user_id") in {None, ""}:
+                context_meta["user_id"] = int(user_id)
             in_worker = _in_worker_process()
             src_raw = context_meta.get("execution_source")
             src = str(src_raw).strip().lower() if src_raw is not None else ""

@@ -16949,6 +16949,16 @@ def admin_prompt_history(
             except Exception:
                 ctx = None
         if isinstance(ctx, dict):
+            if item.get("user_id") in {None, ""}:
+                for key in ("user_id", "target_user_id", "member_id"):
+                    raw_user_id = ctx.get(key)
+                    if raw_user_id in {None, ""}:
+                        continue
+                    try:
+                        item["user_id"] = int(raw_user_id)
+                        break
+                    except (TypeError, ValueError):
+                        continue
             item["execution_source"] = ctx.get("execution_source")
             item["worker_process"] = bool(ctx.get("worker_process")) if ctx.get("worker_process") is not None else None
             item["worker_id"] = ctx.get("worker_id")

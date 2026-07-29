@@ -53,6 +53,11 @@ export default async function AdminHome() {
   const usage = usageResult.status === "fulfilled" ? usageResult.value : null;
   const appEngagement = engagementResult.status === "fulfilled" ? engagementResult.value : null;
   const acquisition = acquisitionResult.status === "fulfilled" ? acquisitionResult.value : null;
+  const estimatedSevenDayCost = usage
+    ? Number(usage.llm_total?.cost_est_gbp || 0) +
+      Number(usage.total_tts?.cost_est_gbp || 0) +
+      Number(usage.avatar_total?.cost_est_gbp || 0)
+    : null;
 
   const appKpis = appEngagement?.top_kpis || {};
   const todayKey = String(appEngagement?.as_of_uk || "").slice(0, 10);
@@ -129,20 +134,14 @@ export default async function AdminHome() {
         <section className="rounded-2xl border border-[#efe7db] bg-white p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Platform usage costs</p>
-              <p className="mt-2 text-sm text-[#6b6257]">Estimated recorded provider costs over the last 7 days.</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Estimated platform usage</p>
+              <p className="mt-2 text-sm text-[#6b6257]">
+                Read-only 7-day estimate for recorded LLM, TTS, and avatar usage. Provider invoices remain authoritative.
+              </p>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="text-3xl font-semibold">
-                {usage?.combined_cost_gbp != null ? `£${usage.combined_cost_gbp}` : "—"}
-              </span>
-              <Link
-                href="/admin/reporting?tab=cost"
-                className="rounded-full border border-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
-              >
-                Details
-              </Link>
-            </div>
+            <span className="text-3xl font-semibold">
+              {estimatedSevenDayCost != null ? `£${estimatedSevenDayCost.toFixed(4)}` : "—"}
+            </span>
           </div>
         </section>
       </div>

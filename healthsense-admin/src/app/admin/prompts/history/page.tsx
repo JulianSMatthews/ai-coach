@@ -43,7 +43,7 @@ function HistoryTable({ rows, emptyMessage }: { rows: HistoryRow[]; emptyMessage
             <tr key={row.id}>
               <td className="py-3 text-[#6b6257]">{formatDate(row.created_at)}</td>
               <td className="py-3 font-medium">{row.touchpoint || "—"}</td>
-              <td className="py-3 text-[#6b6257]">{row.user_id ? `#${row.user_id}` : "—"}</td>
+              <td className="py-3 text-[#6b6257]">{row.user_id != null ? `#${row.user_id}` : "Not recorded"}</td>
               <td className="py-3 text-[#6b6257]">{row.user_name || "—"}</td>
               <td className="py-3 text-[#6b6257]">{row.duration_ms ? `${row.duration_ms} ms` : "—"}</td>
               <td className="py-3 text-[#6b6257]">{formatSource(row.execution_source, row.worker_id)}</td>
