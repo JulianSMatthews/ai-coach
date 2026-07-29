@@ -4,6 +4,7 @@ import {
   getAdminAppEngagement,
   getAdminAssessmentHealth,
   getAdminCoachingTodayDrilldown,
+  getAdminMarketingFunnel,
   getAdminProfile,
   getAdminStats,
   getAdminUsageSummary,
@@ -54,6 +55,12 @@ export default async function AdminHome() {
   } catch {
     appEngagement = null;
   }
+  let acquisition: Awaited<ReturnType<typeof getAdminMarketingFunnel>> | null = null;
+  try {
+    acquisition = await getAdminMarketingFunnel({ days: 7 });
+  } catch {
+    acquisition = null;
+  }
   let giaToday: Awaited<ReturnType<typeof getAdminCoachingTodayDrilldown>> | null = null;
   try {
     giaToday = await getAdminCoachingTodayDrilldown();
@@ -70,7 +77,7 @@ export default async function AdminHome() {
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <AdminNav title={`Welcome, ${name}`} subtitle="Use the shortcuts below to manage user ops, prompts, and app content." />
+        <AdminNav title={`Welcome, ${name}`} subtitle="Monitor CoachSense app acquisition, activation, usage, operations, and content." />
 
         <section className="grid gap-4 lg:grid-cols-3">
           {[
@@ -84,12 +91,24 @@ export default async function AdminHome() {
               ],
             },
               {
-                title: "Assessments",
-                desc: "Completed assessments across the programme.",
+                title: "App acquisition",
+                desc: "Website-to-app activity during the last 7 days.",
                 rows: [
-                  { label: "Total", value: stats?.assessments?.total ?? "—" },
-                  { label: "Today", value: stats?.assessments?.today ?? "—" },
-                  { label: "This week", value: stats?.assessments?.week ?? "—" },
+                  {
+                    label: "Website views",
+                    value: acquisition?.acquisition?.coachsense_ai_homepage_views ?? "—",
+                    href: "/admin/reporting?tab=marketing",
+                  },
+                  {
+                    label: "Download clicks",
+                    value: acquisition?.acquisition?.download_button_clicks ?? "—",
+                    href: "/admin/reporting?tab=marketing",
+                  },
+                  {
+                    label: "App activations",
+                    value: acquisition?.acquisition?.first_app_activations ?? "—",
+                    href: "/admin/reporting?tab=marketing",
+                  },
                 ],
               },
               {
@@ -137,13 +156,13 @@ export default async function AdminHome() {
           <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-2">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Assessment monitoring</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">App acquisition</p>
                 <p className="mt-2 text-sm text-[#6b6257]">
-                  Live quality signals from funnel, LLM, queue, and delivery.
+                  Website interest, store intent, and first app use in the last 7 days.
                 </p>
               </div>
               <Link
-                href="/admin/monitoring"
+                href="/admin/reporting?tab=marketing"
                 className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
               >
                 Open
@@ -151,28 +170,33 @@ export default async function AdminHome() {
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Completion rate</span>
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Website views</span>
                 <div className="mt-1 text-xl font-semibold">
-                  {health?.funnel?.completion_rate_pct != null ? `${health.funnel.completion_rate_pct}%` : "—"}
+                  {acquisition?.acquisition?.coachsense_ai_homepage_views ?? "—"}
                 </div>
               </div>
               <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM p95</span>
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Download clicks</span>
                 <div className="mt-1 text-xl font-semibold">
-                  {health?.llm?.duration_ms_p95 != null ? `${Math.round(health.llm.duration_ms_p95)} ms` : "—"}
+                  {acquisition?.acquisition?.download_button_clicks ?? "—"}
                 </div>
               </div>
               <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">OKR fallback</span>
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">First activations</span>
                 <div className="mt-1 text-xl font-semibold">
-                  {health?.llm?.okr_generation?.fallback_rate_pct != null
-                    ? `${health.llm.okr_generation.fallback_rate_pct}%`
-                    : "—"}
+                  {acquisition?.acquisition?.first_app_activations ?? "—"}
                 </div>
               </div>
               <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active alerts</span>
-                <div className="mt-1 text-xl font-semibold">{health?.alerts?.length ?? "—"}</div>
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Store downloads</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {acquisition?.acquisition?.confirmed_store_downloads ?? "—"}
+                </div>
+                <div className="mt-1 text-xs text-[#8a8176]">
+                  {acquisition?.acquisition?.confirmed_store_downloads_status === "connected"
+                    ? "Apple and Google reporting"
+                    : "Awaiting store connections"}
+                </div>
               </div>
             </div>
           </div>
