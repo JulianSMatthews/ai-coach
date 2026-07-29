@@ -19,8 +19,8 @@ export const metadata: Metadata = {
   title: adminTitle,
   description: "HealthSense administration console",
   icons: {
-    icon: "/healthsense-mark.svg",
-    shortcut: "/healthsense-mark.svg",
+    icon: "/coachsense-mark.svg",
+    shortcut: "/coachsense-mark.svg",
   },
 };
 

@@ -38,7 +38,6 @@ export default async function CoachingTodayDrilldownPage({ searchParams }: Coach
   const categories = data?.categories || [];
   const ratio = data?.ratio?.display || "—";
   const dayLabel = String(data?.day_key || "today");
-  const dateFilter = String(data?.day_start_uk || "").slice(0, 10);
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -155,12 +154,6 @@ export default async function CoachingTodayDrilldownPage({ searchParams }: Coach
                                     className="rounded-full border border-[#1d6a4f] px-3 py-1 text-center text-xs uppercase tracking-[0.16em] text-[#1d6a4f]"
                                   >
                                     User
-                                  </Link>
-                                  <Link
-                                    href={`/admin/history/touchpoints?user_id=${uid}${dateFilter ? `&start=${dateFilter}&end=${dateFilter}` : ""}`}
-                                    className="rounded-full border border-[#efe7db] px-3 py-1 text-center text-xs uppercase tracking-[0.16em]"
-                                  >
-                                    Touchpoints
                                   </Link>
                               </div>
                             </td>

@@ -983,47 +983,6 @@ export type CoachingTodayDrilldownPayload = {
   categories?: CoachingTodayDrilldownCategory[];
 };
 
-export type CoachingScheduledItem = {
-  user_id?: number | null;
-  user_name?: string | null;
-  phone?: string | null;
-  day_key?: string | null;
-  coaching_enabled?: boolean | null;
-  schedule_mode?: string | null;
-  fast_minutes?: number | null;
-  schedule_source?: string | null;
-  time_local?: string | null;
-  global_day_enabled?: boolean | null;
-  job_id?: string | null;
-  job_trigger?: string | null;
-  next_run_utc?: string | null;
-  next_run_local?: string | null;
-  timezone?: string | null;
-  status?: string | null;
-  has_job?: boolean | null;
-  planned_touchpoint?: string | null;
-  planned_delivery?: string | null;
-  planned_message?: string | null;
-  first_day_pending?: boolean | null;
-  first_day_sent_at?: string | null;
-  first_day_override?: boolean | null;
-  first_day_catchup?: boolean | null;
-  last_message_at?: string | null;
-  last_delivery_state?: string | null;
-  last_delivery_status?: string | null;
-  last_delivery_error_code?: string | null;
-  last_delivery_error_description?: string | null;
-  last_delivery_last_callback_at?: string | null;
-};
-
-export type CoachingScheduledSummary = {
-  users?: number | null;
-  enabled_users?: number | null;
-  rows?: number | null;
-  scheduled_rows?: number | null;
-  missing_rows?: number | null;
-};
-
 export type RecentReportItem = {
   run_id?: number;
   user_id?: number;
@@ -1735,40 +1694,8 @@ export async function listTouchpointHistory(
   return data.items || [];
 }
 
-export async function listTouchpointHistoryTouchpoints(
-  userId?: number,
-  start?: string,
-  end?: string
-) {
-  const data = await apiAdmin<{ items: string[] }>("/admin/touchpoints/history/filter-touchpoints", {
-    query: {
-      user_id: userId || undefined,
-      start: start || undefined,
-      end: end || undefined,
-    },
-  });
-  return data.items || [];
-}
-
 export async function getAdminCoachingTodayDrilldown() {
   return apiAdmin<CoachingTodayDrilldownPayload>("/admin/coaching/today-drilldown");
-}
-
-export async function listCoachingScheduled(
-  limit?: number,
-  userId?: number,
-  onlyEnabled?: boolean
-) {
-  return apiAdmin<{ items: CoachingScheduledItem[]; summary?: CoachingScheduledSummary }>(
-    "/admin/coaching/scheduled",
-    {
-      query: {
-        limit: limit || undefined,
-        user_id: userId || undefined,
-        only_enabled: onlyEnabled == null ? undefined : onlyEnabled,
-      },
-    }
-  );
 }
 
 export async function listRecentReports(limit?: number) {

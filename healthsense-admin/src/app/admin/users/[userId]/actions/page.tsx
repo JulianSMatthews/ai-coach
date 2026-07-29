@@ -389,14 +389,6 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
             ) : (
               <p className="text-sm text-[#6b6257]">No outbound messages logged yet for this user.</p>
             )}
-            <div className="mt-3">
-              <Link
-                href={`/admin/history/touchpoints?user_id=${userId}`}
-                className="inline-flex rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
-              >
-                history drill down (latest first)
-              </Link>
-            </div>
           </ActionCard>
 
           <ActionCard
