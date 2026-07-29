@@ -13,7 +13,6 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
     { href: "/admin/monitoring", label: "Monitoring" },
     { href: "/admin/users", label: "User Ops" },
     { href: "/admin/education", label: "Education" },
-    { href: "/admin/messaging", label: "Messaging" },
     { href: "/admin/reporting", label: "Reporting" },
     { href: "/admin/billing", label: "Billing" },
     { href: "/admin/prompts/templates", label: "Prompt QA" },

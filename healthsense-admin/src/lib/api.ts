@@ -1041,48 +1041,6 @@ export type CoachingTodayDrilldownPayload = {
   categories?: CoachingTodayDrilldownCategory[];
 };
 
-export type TwilioTemplateItem = {
-  id: number;
-  provider?: string | null;
-  template_type?: string | null;
-  button_count?: number | null;
-  friendly_name?: string | null;
-  sid?: string | null;
-  language?: string | null;
-  status?: string | null;
-  payload?: Record<string, unknown> | null;
-  last_synced_at?: string | null;
-  content_types?: string[] | null;
-  approval_status?: string | null;
-  approval_detail?: string | null;
-  approval_source?: string | null;
-  approval_checked_at?: string | null;
-  preview_body?: string | null;
-  preview_button?: string | null;
-};
-
-export type TwilioTemplatesPayload = {
-  templates: TwilioTemplateItem[];
-  general_reopen_max_sends?: number | null;
-  general_reopen_max_sends_source?: string | null;
-  day_reopen_max_sends?: number | null;
-  day_reopen_max_sends_source?: string | null;
-};
-
-export type MessagingSettings = {
-  out_of_session_enabled?: boolean | null;
-  out_of_session_message?: string | null;
-  updated_at?: string | null;
-};
-
-export type GlobalScheduleItem = {
-  id?: number | null;
-  day_key?: string | null;
-  time_local?: string | null;
-  enabled?: boolean | null;
-  updated_at?: string | null;
-};
-
 export type CoachingScheduledItem = {
   user_id?: number | null;
   user_name?: string | null;
@@ -2618,53 +2576,5 @@ export async function generateOkrSummary(start?: string, end?: string, includePr
       end: end || undefined,
       include_llm_prompt: includePrompt ? "true" : undefined,
     },
-  });
-}
-
-export async function getTwilioTemplates(): Promise<TwilioTemplatesPayload> {
-  return apiAdmin<TwilioTemplatesPayload>("/admin/messaging/templates");
-}
-
-export async function updateTwilioTemplates(templates: Partial<TwilioTemplateItem>[]) {
-  return apiAdmin<Record<string, unknown>>("/admin/messaging/templates", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ templates }),
-  });
-}
-
-export async function syncTwilioTemplates(): Promise<TwilioTemplatesPayload> {
-  return apiAdmin<TwilioTemplatesPayload>("/admin/messaging/templates/sync", { method: "POST" });
-}
-
-export async function deleteTwilioTemplate(id: number, deleteRemote: boolean = true) {
-  return apiAdmin<Record<string, unknown>>("/admin/messaging/templates/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, delete_remote: deleteRemote }),
-  });
-}
-
-export async function getMessagingSettings(): Promise<MessagingSettings> {
-  return apiAdmin<MessagingSettings>("/admin/messaging/settings");
-}
-
-export async function updateMessagingSettings(payload: MessagingSettings) {
-  return apiAdmin<Record<string, unknown>>("/admin/messaging/settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getGlobalPromptSchedule(): Promise<{ items: GlobalScheduleItem[] }> {
-  return apiAdmin<{ items: GlobalScheduleItem[] }>("/admin/messaging/schedule");
-}
-
-export async function updateGlobalPromptSchedule(items: GlobalScheduleItem[]) {
-  return apiAdmin<Record<string, unknown>>("/admin/messaging/schedule", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items }),
   });
 }
