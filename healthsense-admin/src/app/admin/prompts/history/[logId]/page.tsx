@@ -45,7 +45,7 @@ export default async function PromptHistoryDetailPage({ params }: HistoryDetailP
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <AdminNav title="Prompt history detail" subtitle="Inspect blocks, assembled prompt, and response." />
+        <AdminNav title="Service history detail" subtitle="Inspect blocks, assembled prompt, and response." />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <h2 className="text-lg font-semibold">Metadata</h2>
@@ -115,7 +115,7 @@ export default async function PromptHistoryDetailPage({ params }: HistoryDetailP
             href="/admin/prompts/history"
             className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
           >
-            Back to history
+            Back to service history
           </Link>
         </div>
       </div>

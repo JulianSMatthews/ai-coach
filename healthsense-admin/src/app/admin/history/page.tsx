@@ -14,10 +14,10 @@ export default function HistoryLandingPage() {
             href="/admin/prompts/history"
             className="rounded-3xl border border-[#e7e1d6] bg-white p-6 hover:border-[var(--accent)]"
           >
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prompts</p>
-            <h2 className="mt-2 text-lg font-semibold">Prompt history</h2>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Services</p>
+            <h2 className="mt-2 text-lg font-semibold">Service history</h2>
             <p className="mt-2 text-sm text-[#6b6257]">
-              Inspect assembled prompts and LLM responses by touchpoint, user, and date.
+              Inspect User App interactions separately from worker and scheduled service generations.
             </p>
           </Link>
           <Link

@@ -21,6 +21,53 @@ function formatSource(source?: string | null, workerId?: string | null) {
   return src;
 }
 
+type HistoryRow = Awaited<ReturnType<typeof listPromptHistory>>[number];
+
+function HistoryTable({ rows, emptyMessage }: { rows: HistoryRow[]; emptyMessage: string }) {
+  return (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[960px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+          <tr>
+            <th className="py-2">Date</th>
+            <th className="py-2">Touchpoint</th>
+            <th className="py-2">User ID</th>
+            <th className="py-2">Name</th>
+            <th className="py-2">Duration</th>
+            <th className="py-2">Source</th>
+            <th className="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#efe7db]">
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td className="py-3 text-[#6b6257]">{formatDate(row.created_at)}</td>
+              <td className="py-3 font-medium">{row.touchpoint || "—"}</td>
+              <td className="py-3 text-[#6b6257]">{row.user_id ? `#${row.user_id}` : "—"}</td>
+              <td className="py-3 text-[#6b6257]">{row.user_name || "—"}</td>
+              <td className="py-3 text-[#6b6257]">{row.duration_ms ? `${row.duration_ms} ms` : "—"}</td>
+              <td className="py-3 text-[#6b6257]">{formatSource(row.execution_source, row.worker_id)}</td>
+              <td className="py-3">
+                <Link
+                  href={`/admin/prompts/history/${row.id}`}
+                  className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                >
+                  View
+                </Link>
+              </td>
+            </tr>
+          ))}
+          {!rows.length ? (
+            <tr>
+              <td className="py-6 text-sm text-[#6b6257]" colSpan={7}>{emptyMessage}</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default async function PromptHistoryPage({ searchParams }: HistoryPageProps) {
   const resolved = await searchParams;
   const start = (resolved?.start || "").trim();
@@ -32,11 +79,14 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
   const rows = await listPromptHistory(100, userId || undefined, touchpoint || undefined, start || undefined, end || undefined);
   const users = await listAdminUsers();
   const touchpointOptions = await listPromptHistoryTouchpoints(userId || undefined, start || undefined, end || undefined);
+  const userAppRows = rows.filter((row) => String(row.execution_source || "").toLowerCase() === "api");
+  const serviceRows = rows.filter((row) => String(row.execution_source || "").toLowerCase() === "worker");
+  const legacyRows = rows.filter((row) => !["api", "worker"].includes(String(row.execution_source || "").toLowerCase()));
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
-        <AdminNav title="Prompt history" subtitle="Filter by date, touchpoint, or user to inspect generated prompts." />
+        <AdminNav title="Service history" subtitle="Review User App interactions separately from service-generated prompts." />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <h2 className="text-lg font-semibold">Filters</h2>
@@ -91,57 +141,28 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <h2 className="text-lg font-semibold">History</h2>
+          <h2 className="text-lg font-semibold">User App — Interactive</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
-            Showing the most recent 100 prompts in the selected filter window.
+            Prompts generated immediately in response to a User App request. Showing {userAppRows.length} of the latest 100 records.
           </p>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[960px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                <tr>
-                  <th className="py-2">Date</th>
-                  <th className="py-2">Touchpoint</th>
-                  <th className="py-2">User ID</th>
-                  <th className="py-2">Name</th>
-                  <th className="py-2">Duration</th>
-                  <th className="py-2">Source</th>
-                  <th className="py-2">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#efe7db]">
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="py-3 text-[#6b6257]">{formatDate(row.created_at)}</td>
-                    <td className="py-3 font-medium">{row.touchpoint || "—"}</td>
-                    <td className="py-3 text-[#6b6257]">{row.user_id ? `#${row.user_id}` : "—"}</td>
-                    <td className="py-3 text-[#6b6257]">{row.user_name || "—"}</td>
-                    <td className="py-3 text-[#6b6257]">
-                      {row.duration_ms ? `${row.duration_ms} ms` : "—"}
-                    </td>
-                    <td className="py-3 text-[#6b6257]">
-                      {formatSource(row.execution_source, row.worker_id)}
-                    </td>
-                    <td className="py-3">
-                      <Link
-                        href={`/admin/prompts/history/${row.id}`}
-                        className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-                {!rows.length ? (
-                  <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={7}>
-                      No prompt history found for this filter.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+          <HistoryTable rows={userAppRows} emptyMessage="No interactive User App history found for this filter." />
         </section>
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <h2 className="text-lg font-semibold">Service — Worker/Scheduled</h2>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Prompts generated by background workers and scheduled services. Showing {serviceRows.length} of the latest 100 records.
+          </p>
+          <HistoryTable rows={serviceRows} emptyMessage="No worker or scheduled service history found for this filter." />
+        </section>
+
+        {legacyRows.length ? (
+          <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+            <h2 className="text-lg font-semibold">Unknown / Legacy</h2>
+            <p className="mt-2 text-sm text-[#6b6257]">Older records without a reliable execution source.</p>
+            <HistoryTable rows={legacyRows} emptyMessage="No legacy history found for this filter." />
+          </section>
+        ) : null}
       </div>
     </main>
   );

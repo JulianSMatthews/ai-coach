@@ -412,40 +412,6 @@ export type UsageSettings = {
   meta?: Record<string, unknown> | string | null;
 };
 
-export type PromptTemplateSummary = {
-  id: number;
-  touchpoint: string;
-  state?: string | null;
-  version?: number | null;
-  is_active?: boolean;
-  okr_scope?: string | null;
-  programme_scope?: string | null;
-  response_format?: string | null;
-  model_override?: string | null;
-  note?: string | null;
-  updated_at?: string | null;
-};
-
-export type PromptTemplateDetail = PromptTemplateSummary & {
-  block_order?: string[] | null;
-  include_blocks?: string[] | null;
-  task_block?: string | null;
-};
-
-export type PromptSettingsPayload = {
-  system_block?: string | null;
-  locale_block?: string | null;
-  default_block_order?: string[] | null;
-  worker_mode_override?: boolean | null;
-  podcast_worker_mode_override?: boolean | null;
-  worker_mode_env?: boolean | null;
-  podcast_worker_mode_env?: boolean | null;
-  worker_mode_effective?: boolean | null;
-  podcast_worker_mode_effective?: boolean | null;
-  worker_mode_source?: string | null;
-  podcast_worker_mode_source?: string | null;
-};
-
 export type WorkerStatusPayload = {
   worker_mode_override?: boolean | null;
   podcast_worker_mode_override?: boolean | null;
@@ -867,30 +833,6 @@ export type ConceptOption = {
   pillar_key?: string | null;
   code?: string | null;
   name?: string | null;
-};
-
-export type PromptTestResult = {
-  text?: string;
-  blocks?: Record<string, string>;
-  block_order?: string[];
-  llm?: {
-    model?: string | null;
-    duration_ms?: number | null;
-    content?: string | null;
-    error?: string | null;
-  };
-  meta?: Record<string, unknown>;
-  audio_url?: string | null;
-  podcast_error?: string | null;
-};
-
-export type PromptVersionLog = {
-  id: number;
-  created_at?: string | null;
-  version?: number | null;
-  from_state?: string | null;
-  to_state?: string | null;
-  note?: string | null;
 };
 
 export type PromptHistoryItem = {
@@ -1614,71 +1556,6 @@ export async function fetchUsageSettings(): Promise<UsageSettings> {
   });
 }
 
-export async function listPromptTemplates(state?: string, query?: string) {
-  const data = await apiAdmin<{ templates: PromptTemplateSummary[] }>("/admin/prompts/templates", {
-    query: { state: state || undefined, q: query || undefined },
-  });
-  return data.templates || [];
-}
-
-export async function getPromptTemplate(id: number) {
-  return apiAdmin<PromptTemplateDetail>(`/admin/prompts/templates/${id}`);
-}
-
-export async function createPromptTemplate(payload: Record<string, unknown>) {
-  return apiAdmin<Record<string, unknown>>("/admin/prompts/templates", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updatePromptTemplate(id: number, payload: Record<string, unknown>) {
-  return apiAdmin<Record<string, unknown>>(`/admin/prompts/templates/${id}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function promotePromptTemplate(
-  id: number,
-  to_state: string,
-  note?: string,
-  touchpoint?: string,
-  from_state?: string,
-) {
-  return apiAdmin<Record<string, unknown>>(`/admin/prompts/templates/${id}/promote`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to_state, note, touchpoint, from_state }),
-  });
-}
-
-export async function promoteAllPromptTemplates(from_state: string, to_state: string, note?: string) {
-  return apiAdmin<Record<string, unknown>>("/admin/prompts/templates/promote-all", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ from_state, to_state, note }),
-  });
-}
-
-export async function getPromptSettings() {
-  return apiAdmin<PromptSettingsPayload>("/admin/prompts/settings");
-}
-
-export async function updatePromptSettings(payload: PromptSettingsPayload) {
-  return apiAdmin<Record<string, unknown>>("/admin/prompts/settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getWorkerStatus() {
-  return apiAdmin<WorkerStatusPayload>("/admin/worker/status");
-}
-
 export async function getAdminAssessmentHealth(params: {
   days?: number;
   hours?: number;
@@ -1797,21 +1674,6 @@ export async function updateContentPromptSettings(payload: ContentPromptSettings
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-}
-
-export async function testPromptTemplate(payload: Record<string, unknown>) {
-  return apiAdmin<PromptTestResult>("/admin/prompts/test", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function listPromptVersions(limit?: number) {
-  const data = await apiAdmin<{ items: PromptVersionLog[] }>("/admin/prompts/versions", {
-    query: { limit: limit || undefined },
-  });
-  return data.items || [];
 }
 
 export async function listPromptHistory(

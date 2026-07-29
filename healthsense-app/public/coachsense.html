@@ -629,7 +629,11 @@
         flex-direction: column;
         border: 1px solid var(--line);
         border-radius: 30px;
-        background: var(--white);
+        background:
+          linear-gradient(rgba(231, 225, 214, 0.34) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(231, 225, 214, 0.34) 1px, transparent 1px),
+          #ffffff;
+        background-size: 130px 86px, 130px 86px, auto;
         padding: 28px;
         color: var(--body-copy);
         box-shadow: 0 20px 44px -36px rgba(30, 27, 22, 0.55);
@@ -2735,7 +2739,6 @@
             <a class="button download-button" href="#">Download the App</a>
           </div>
           <div>
-            <h2>Not someone else's path. Your own.</h2>
           </div>
         </section>
 
