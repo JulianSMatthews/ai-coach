@@ -11,7 +11,7 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
   const navItems = [
     { href: "/admin", label: "Dashboard" },
     { href: "/admin/monitoring", label: "Monitoring" },
-    { href: "/admin/users", label: "User Ops" },
+    { href: "/admin/users", label: "Users" },
     { href: "/admin/education", label: "Education" },
     { href: "/admin/reporting", label: "Marketing" },
     { href: "/admin/history", label: "History" },

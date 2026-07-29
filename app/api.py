@@ -16972,6 +16972,90 @@ def admin_prompt_history(
     return {"items": items}
 
 
+@admin.get("/background-jobs/history")
+def admin_background_job_history(
+    limit: int = 100,
+    user_id: int | None = None,
+    kind: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    max_limit = max(1, min(int(limit), 100))
+
+    def _parse_dt(raw: str | None, *, is_end: bool = False) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            value = datetime.fromisoformat(raw)
+            return value + timedelta(days=1) if is_end else value
+        except (TypeError, ValueError):
+            return None
+
+    start_dt = _parse_dt(start)
+    end_dt = _parse_dt(end, is_end=True)
+    club_scope_id = getattr(admin_user, "club_id", None)
+
+    with SessionLocal() as s:
+        query = s.query(BackgroundJob, User).outerjoin(User, BackgroundJob.user_id == User.id)
+        if club_scope_id is not None:
+            query = query.filter(User.club_id == club_scope_id)
+        if user_id:
+            query = query.filter(BackgroundJob.user_id == int(user_id))
+        if kind:
+            query = query.filter(BackgroundJob.kind == str(kind).strip())
+        if start_dt:
+            query = query.filter(BackgroundJob.created_at >= start_dt)
+        if end_dt:
+            query = query.filter(BackgroundJob.created_at < end_dt)
+        rows = (
+            query.order_by(BackgroundJob.created_at.desc(), BackgroundJob.id.desc())
+            .limit(max_limit)
+            .all()
+        )
+
+        kinds_query = s.query(BackgroundJob.kind).filter(BackgroundJob.kind.isnot(None))
+        if club_scope_id is not None:
+            kinds_query = kinds_query.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+        if user_id:
+            kinds_query = kinds_query.filter(BackgroundJob.user_id == int(user_id))
+        if start_dt:
+            kinds_query = kinds_query.filter(BackgroundJob.created_at >= start_dt)
+        if end_dt:
+            kinds_query = kinds_query.filter(BackgroundJob.created_at < end_dt)
+        kinds = sorted(
+            {str(row[0]).strip() for row in kinds_query.distinct().all() if row and str(row[0] or "").strip()},
+            key=str.lower,
+        )
+
+    items = []
+    for job, user in rows:
+        duration_ms = None
+        if job.created_at and job.updated_at:
+            duration_ms = max(0, int((job.updated_at - job.created_at).total_seconds() * 1000))
+        user_name = None
+        if user is not None:
+            user_name = " ".join(
+                [str(getattr(user, "first_name", "") or "").strip(), str(getattr(user, "surname", "") or "").strip()]
+            ).strip() or None
+        items.append(
+            {
+                "id": int(job.id),
+                "kind": job.kind,
+                "user_id": job.user_id,
+                "user_name": user_name,
+                "status": job.status,
+                "duration_ms": duration_ms,
+                "attempts": int(job.attempts or 0),
+                "locked_by": job.locked_by,
+                "error": job.error,
+                "created_at": job.created_at.isoformat() if job.created_at else None,
+                "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+            }
+        )
+    return {"items": items, "kinds": kinds}
+
+
 @admin.get("/prompts/history/filter-touchpoints")
 def admin_prompt_history_filter_touchpoints(
     user_id: int | None = None,

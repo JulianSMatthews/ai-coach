@@ -48,7 +48,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
-        <AdminNav title="User Ops" subtitle="Search users and review account activity and app state." />
+        <AdminNav title="Users" subtitle="Search users and review account activity and app state." />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <h2 className="text-lg font-semibold">Create a new user</h2>

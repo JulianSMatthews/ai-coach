@@ -769,6 +769,20 @@ export type PromptHistoryItem = {
   response_preview?: string | null;
 };
 
+export type BackgroundJobHistoryItem = {
+  id: number;
+  kind?: string | null;
+  user_id?: number | null;
+  user_name?: string | null;
+  status?: string | null;
+  duration_ms?: number | null;
+  attempts?: number | null;
+  locked_by?: string | null;
+  error?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type PromptHistoryDetail = PromptHistoryItem & {
   prompt_variant?: string | null;
   task_label?: string | null;
@@ -1483,6 +1497,24 @@ export async function listPromptHistory(
     },
   });
   return data.items || [];
+}
+
+export async function listBackgroundJobHistory(
+  limit?: number,
+  userId?: number,
+  kind?: string,
+  start?: string,
+  end?: string
+) {
+  return apiAdmin<{ items: BackgroundJobHistoryItem[]; kinds: string[] }>("/admin/background-jobs/history", {
+    query: {
+      limit: limit || undefined,
+      user_id: userId || undefined,
+      kind: kind || undefined,
+      start: start || undefined,
+      end: end || undefined,
+    },
+  });
 }
 
 export async function listPromptHistoryTouchpoints(
