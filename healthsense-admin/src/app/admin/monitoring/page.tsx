@@ -2,7 +2,6 @@ import AdminNav from "@/components/AdminNav";
 import {
   getAdminAppEngagement,
   getAdminAssessmentHealth,
-  getAdminCoachingTodayDrilldown,
   updateAdminAssessmentHealthSettings,
 } from "@/lib/api";
 import { revalidatePath } from "next/cache";
@@ -149,22 +148,20 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   );
   const staleMinutes = clampInt(resolvedSearchParams?.stale_minutes, 30, 5, 240);
   const tabRaw = (firstParam(resolvedSearchParams?.tab) || "app").toLowerCase();
-  const activeTab: "service" | "coaching" | "app" | "infra" =
-    tabRaw === "coaching" ? "coaching" : tabRaw === "infra" ? "infra" : tabRaw === "service" ? "service" : "app";
+  const activeTab: "service" | "app" | "infra" =
+    tabRaw === "infra" ? "infra" : tabRaw === "service" ? "service" : "app";
   const infraFetchRaw = (firstParam(resolvedSearchParams?.infra_fetch) || "").toLowerCase();
   const infraFetch = infraFetchRaw === "1" || infraFetchRaw === "true" || infraFetchRaw === "yes";
   const windowValue = encodeURIComponent(windowSelection.value);
   const serviceTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=service`;
-  const coachingTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=coaching`;
   const appTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=app`;
   const infraTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=infra`;
   const infraFetchHref = `${infraTabHref}&infra_fetch=1`;
 
   let health: Awaited<ReturnType<typeof getAdminAssessmentHealth>> | null = null;
   let appEngagement: Awaited<ReturnType<typeof getAdminAppEngagement>> | null = null;
-  let giaToday: Awaited<ReturnType<typeof getAdminCoachingTodayDrilldown>> | null = null;
   let loadError: string | null = null;
-  const [healthRes, appRes, giaTodayRes] = await Promise.allSettled([
+  const [healthRes, appRes] = await Promise.allSettled([
     getAdminAssessmentHealth({
       days: windowSelection.days,
       hours: windowSelection.hours,
@@ -172,7 +169,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       infra_fetch: activeTab === "infra" && infraFetch,
     }),
     getAdminAppEngagement({ days: windowSelection.days, hours: windowSelection.hours }),
-    getAdminCoachingTodayDrilldown(),
   ]);
   if (healthRes.status === "fulfilled") {
     health = healthRes.value;
@@ -184,11 +180,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   } else if (activeTab === "app" && !loadError) {
     loadError = appRes.reason instanceof Error ? appRes.reason.message : "Failed to load monitoring data.";
   }
-  if (giaTodayRes.status === "fulfilled") {
-    giaToday = giaTodayRes.value;
-  } else if (activeTab === "coaching" && !loadError) {
-    loadError = giaTodayRes.reason instanceof Error ? giaTodayRes.reason.message : "Failed to load Gia readiness data.";
-  }
 
   const activeWindow =
     activeTab === "app"
@@ -196,14 +187,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       : activeTab === "infra"
         ? health?.infra?.window
       : health?.window;
-  const activeAsOf =
-    activeTab === "app"
-      ? appEngagement?.as_of_uk
-      : activeTab === "coaching"
-        ? giaToday?.as_of_utc || health?.as_of_utc
-        : activeTab === "infra"
-          ? health?.as_of_utc
-          : health?.as_of_utc;
+  const activeAsOf = activeTab === "app" ? appEngagement?.as_of_uk : health?.as_of_utc;
 
   const alerts = health?.alerts || [];
   const llmP50WarnMs = Number(health?.thresholds?.llm_p50_ms?.warn ?? DEFAULT_LLM_P50_WARN_MS);
@@ -298,10 +282,10 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Unique users with at least one app event in this window.",
     },
     {
-      title: "Daily check-ins",
-      value: appKpis.daily_check_in_updates ?? 0,
-      subtitle: `${appKpis.daily_check_in_users ?? 0} users updated tracker`,
-      description: "Pillar tracker updates from the current user app daily check-in.",
+      title: "Completed check-ins",
+      value: appKpis.daily_check_in_completions ?? 0,
+      subtitle: "Distinct user check-ins in this window",
+      description: "Counts each user once per day, even when multiple pillars are updated.",
     },
     {
       title: "Daily plan",
@@ -310,79 +294,38 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Views and updates for the daily habit/plan surface.",
     },
     {
-      title: "Education",
-      value: appKpis.education_views ?? 0,
-      subtitle: `${appKpis.education_video_progress_events ?? 0} video events · ${appKpis.education_quiz_submits ?? 0} quizzes`,
-      description: "Learning plan views, video progress, and quiz submissions.",
+      title: "Completed lessons",
+      value: appKpis.education_lesson_completions ?? 0,
+      subtitle: `${appKpis.education_views ?? 0} education views`,
+      description: "Distinct user lessons reaching completed status in this window.",
     },
     {
-      title: "Gia messages",
-      value: appKpis.gia_message_views ?? 0,
-      subtitle: `${appKpis.gia_message_users ?? 0} users opened Gia's message`,
-      description: "User app requests for the generated Gia daily coaching message.",
-    },
-    {
-      title: "Biometrics & urine",
-      value: `${appKpis.biometrics_opens ?? 0} / ${appKpis.urine_captures ?? 0}`,
-      subtitle: `${appKpis.biometrics_users ?? 0} biometrics users · ${appKpis.urine_capture_users ?? 0} urine users`,
-      description: "Biometrics review opens and urine photo captures.",
+      title: "Biometrics",
+      value: appKpis.biometrics_opens ?? 0,
+      subtitle: `${appKpis.biometrics_users ?? 0} users`,
+      description: "Biometrics review opens in the current app.",
     },
   ];
   const appSurfaceRows = [
     {
-      label: "Daily check-ins",
-      value: `${currentApp.daily_check_in?.updates ?? 0} updates · ${currentApp.daily_check_in?.users ?? 0} users`,
+      label: "Completed check-ins",
+      value: `${appKpis.daily_check_in_completions ?? 0} user-days`,
     },
     {
       label: "Daily plan",
       value: `${currentApp.daily_plan?.views ?? 0} views · ${currentApp.daily_plan?.updates ?? 0} updates`,
     },
     {
-      label: "Education",
-      value: `${currentApp.education?.views ?? 0} views · ${currentApp.education?.quiz_submits ?? 0} quizzes`,
-    },
-    {
-      label: "Gia message",
-      value: `${currentApp.gia_message?.views ?? 0} opens · ${currentApp.gia_message?.users ?? 0} users`,
+      label: "Completed lessons",
+      value: `${appKpis.education_lesson_completions ?? 0} lessons · ${currentApp.education?.views ?? 0} views`,
     },
     {
       label: "Biometrics",
       value: `${currentApp.biometrics?.opens ?? 0} opens · ${currentApp.biometrics?.source_updates ?? 0} source updates`,
     },
     {
-      label: "Urine test",
-      value: `${currentApp.urine?.opens ?? 0} opens · ${currentApp.urine?.captures ?? 0} captures`,
-    },
-    {
       label: "Weekly objectives",
       value: `${currentApp.weekly_objectives?.opens ?? 0} opens · ${currentApp.weekly_objectives?.saves ?? 0} saves`,
-    },
-  ];
-  const giaRatio = giaToday?.ratio || {};
-  const giaReadinessMetrics = [
-    {
-      title: "Daily records",
-      value: giaRatio.tracked_today ?? 0,
-      subtitle: "Users with tracker entries today",
-      description: "The current flow starts when the user app has today's check-in data.",
-    },
-    {
-      title: "Refresh queued/running",
-      value: giaRatio.refresh_queued_or_running ?? 0,
-      subtitle: "Users waiting on refresh jobs",
-      description: "Refresh work that should produce updated habits, insight, and Gia message data.",
-    },
-    {
-      title: "Gia ready",
-      value: giaRatio.gia_ready ?? 0,
-      subtitle: "Users with a generated Gia message",
-      description: "Current user-app readiness for the Gia message panel.",
-    },
-    {
-      title: "Refresh failed",
-      value: giaRatio.refresh_failed ?? 0,
-      subtitle: giaRatio.display || "—",
-      description: "Failed refreshes that need investigation before the user gets a current Gia message.",
     },
   ];
   const infra = health?.infra;
@@ -446,7 +389,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <AdminNav
           title="Operations monitoring"
-          subtitle="User app activity, Gia readiness, service health, and infrastructure."
+          subtitle="User app activity, completed check-ins and lessons, service health, and infrastructure."
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
@@ -514,16 +457,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               Service health
             </a>
             <a
-              href={coachingTabHref}
-              className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] ${
-                activeTab === "coaching"
-                  ? "border-[#1d6a4f] bg-[#1d6a4f] text-white"
-                  : "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]"
-              }`}
-            >
-              Gia readiness
-            </a>
-            <a
               href={appTabHref}
               className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] ${
                 activeTab === "app"
@@ -567,58 +500,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </>
         ) : null}
 
-          {activeTab === "coaching" ? (
-            <>
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {giaReadinessMetrics.map((item) => (
-                  <div key={item.title} className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
-                    <div className="mt-3 text-3xl font-semibold">{item.value}</div>
-                    <p className="mt-2 text-sm text-[#6b6257]">{item.subtitle}</p>
-                    <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
-                  </div>
-                ))}
-              </section>
-
-              <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Today readiness categories</p>
-                    <p className="mt-2 text-sm text-[#6b6257]">
-                      Daily records : refresh queued/running : Gia ready : refresh failed.
-                    </p>
-                  </div>
-                  <a
-                    href="/admin/monitoring/coaching-today"
-                    className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d6a4f]"
-                  >
-                    View users
-                  </a>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {(giaToday?.categories || []).length ? (
-                    (giaToday?.categories || []).map((category) => (
-                      <a
-                        key={category.key || category.label}
-                        href={`/admin/monitoring/coaching-today?category=${encodeURIComponent(String(category.key || ""))}`}
-                        className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3 hover:border-[#1d6a4f]"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{category.label || "Category"}</span>
-                          <span className="text-xl font-semibold">{category.total ?? 0}</span>
-                        </div>
-                        <p className="mt-2 text-xs text-[#8a8176]">{category.description || "—"}</p>
-                      </a>
-                    ))
-                  ) : (
-                    <p className="text-sm text-[#8a8176]">No Gia readiness categories returned.</p>
-                  )}
-                </div>
-              </section>
-
-          </>
-        ) : null}
-
         {activeTab === "app" ? (
           <>
             <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -658,12 +539,11 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                         <tr>
                           <th className="px-3 py-2">Day</th>
                           <th className="px-3 py-2">Active users</th>
-                          <th className="px-3 py-2">Check-ins</th>
+                          <th className="px-3 py-2">Check-ins completed</th>
                           <th className="px-3 py-2">Plan</th>
-                          <th className="px-3 py-2">Education</th>
-                          <th className="px-3 py-2">Gia</th>
+                          <th className="px-3 py-2">Lessons completed</th>
+                          <th className="px-3 py-2">Education views</th>
                           <th className="px-3 py-2">Biometrics</th>
-                          <th className="px-3 py-2">Urine</th>
                           <th className="px-3 py-2">Objectives</th>
                         </tr>
                     </thead>
@@ -672,12 +552,11 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                         <tr key={row.day} className="border-t border-[#efe7db]">
                             <td className="px-3 py-2">{row.day || "—"}</td>
                             <td className="px-3 py-2">{row.active_users ?? 0}</td>
-                            <td className="px-3 py-2">{row.tracker_updates ?? 0}</td>
+                            <td className="px-3 py-2">{row.check_in_completions ?? 0}</td>
                             <td className="px-3 py-2">{row.daily_plan_views ?? 0}</td>
+                            <td className="px-3 py-2">{row.lesson_completions ?? 0}</td>
                             <td className="px-3 py-2">{row.education_views ?? 0}</td>
-                            <td className="px-3 py-2">{row.gia_message_views ?? 0}</td>
                             <td className="px-3 py-2">{row.biometrics_opens ?? 0}</td>
-                            <td className="px-3 py-2">{row.urine_captures ?? 0}</td>
                             <td className="px-3 py-2">{row.weekly_objectives_saves ?? 0}</td>
                           </tr>
                       ))}

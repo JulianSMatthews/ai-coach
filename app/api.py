@@ -15162,6 +15162,7 @@ def admin_usage_app_engagement(
     education_view_users: set[int] = set()
     education_video_progress_users: set[int] = set()
     education_video_complete_users: set[int] = set()
+    lesson_completion_keys: set[tuple] = set()
     education_quiz_submit_users: set[int] = set()
     gia_message_users: set[int] = set()
     biometrics_open_users: set[int] = set()
@@ -15225,6 +15226,7 @@ def admin_usage_app_engagement(
                 "education_views": 0,
                 "education_video_progress_events": 0,
                 "education_video_completes": 0,
+                "lesson_completions": 0,
                 "education_quiz_submits": 0,
                 "gia_message_views": 0,
                 "biometrics_opens": 0,
@@ -15236,6 +15238,8 @@ def admin_usage_app_engagement(
                 "podcast_plays": 0,
                 "podcast_completes": 0,
                 "_users": set(),
+                "_check_in_users": set(),
+                "_lesson_completion_keys": set(),
             },
         )
         if user_id_int is not None:
@@ -15267,6 +15271,7 @@ def admin_usage_app_engagement(
             day_entry["tracker_updates"] += 1
             if user_id_int is not None:
                 tracker_update_users.add(user_id_int)
+                day_entry["_check_in_users"].add(user_id_int)
             continue
 
         if unit_type == "coach_home_habits_view":
@@ -15305,6 +15310,14 @@ def admin_usage_app_engagement(
                 day_entry["education_video_completes"] += 1
                 if user_id_int is not None:
                     education_video_complete_users.add(user_id_int)
+                lesson_key = (
+                    user_id_int,
+                    str(meta.get("lesson_date") or day_key),
+                    str(meta.get("concept_key") or ""),
+                    str(meta.get("day_index") or ""),
+                )
+                lesson_completion_keys.add(lesson_key)
+                day_entry["_lesson_completion_keys"].add(lesson_key)
             continue
 
         if unit_type == "education_quiz_submit":
@@ -15312,6 +15325,16 @@ def admin_usage_app_engagement(
             day_entry["education_quiz_submits"] += 1
             if user_id_int is not None:
                 education_quiz_submit_users.add(user_id_int)
+            completion_status = str(meta.get("completion_status") or "").strip().lower()
+            if completion_status in {"complete", "completed"}:
+                lesson_key = (
+                    user_id_int,
+                    str(meta.get("lesson_date") or day_key),
+                    str(meta.get("concept_key") or ""),
+                    str(meta.get("day_index") or ""),
+                )
+                lesson_completion_keys.add(lesson_key)
+                day_entry["_lesson_completion_keys"].add(lesson_key)
             continue
 
         if unit_type == "coach_home_gia_message_view":
@@ -15424,7 +15447,11 @@ def admin_usage_app_engagement(
     daily_rows = []
     for row in sorted(daily_map.values(), key=lambda val: val["day"]):
         users_in_day = row.pop("_users", set())
+        check_in_users_in_day = row.pop("_check_in_users", set())
+        lesson_completions_in_day = row.pop("_lesson_completion_keys", set())
         row["active_users"] = len(users_in_day)
+        row["check_in_completions"] = len(check_in_users_in_day)
+        row["lesson_completions"] = len(lesson_completions_in_day)
         daily_rows.append(row)
 
     onboarding_by_user: dict[int, dict[str, datetime]] = {}
@@ -15594,6 +15621,7 @@ def admin_usage_app_engagement(
             "post_assessment_users_viewed_results": post_assessment_results_view_users,
             "daily_check_in_users": len(tracker_update_users),
             "daily_check_in_updates": tracker_updates,
+            "daily_check_in_completions": sum(int(row.get("check_in_completions") or 0) for row in daily_rows),
             "daily_plan_users": len(daily_plan_users),
             "daily_plan_views": daily_plan_views,
             "daily_plan_updates": daily_plan_updates,
@@ -15603,6 +15631,7 @@ def admin_usage_app_engagement(
             "education_video_progress_events": education_video_progress_events,
             "education_video_complete_users": len(education_video_complete_users),
             "education_video_complete_events": education_video_complete_events,
+            "education_lesson_completions": len(lesson_completion_keys),
             "education_quiz_submit_users": len(education_quiz_submit_users),
             "education_quiz_submits": education_quiz_submits,
             "gia_message_users": len(gia_message_users),

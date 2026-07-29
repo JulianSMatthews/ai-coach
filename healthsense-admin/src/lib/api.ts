@@ -98,6 +98,7 @@ export type AppEngagementSummary = {
     post_assessment_users_viewed_results?: number;
     daily_check_in_users?: number;
     daily_check_in_updates?: number;
+    daily_check_in_completions?: number;
     daily_plan_users?: number;
     daily_plan_views?: number;
     daily_plan_updates?: number;
@@ -107,6 +108,7 @@ export type AppEngagementSummary = {
     education_video_progress_events?: number;
     education_video_complete_users?: number;
     education_video_complete_events?: number;
+    education_lesson_completions?: number;
     education_quiz_submit_users?: number;
     education_quiz_submits?: number;
     gia_message_users?: number;
@@ -221,11 +223,13 @@ export type AppEngagementSummary = {
       assessment_views?: number;
       library_views?: number;
       tracker_updates?: number;
+      check_in_completions?: number;
       daily_plan_views?: number;
       daily_plan_updates?: number;
       education_views?: number;
       education_video_progress_events?: number;
       education_video_completes?: number;
+      lesson_completions?: number;
       education_quiz_submits?: number;
       gia_message_views?: number;
       biometrics_opens?: number;
