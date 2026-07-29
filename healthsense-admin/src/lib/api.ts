@@ -717,21 +717,6 @@ export type AssessmentHealthPayload = {
   alerts?: AssessmentHealthAlert[];
 };
 
-export type MonitoringLatencySettingsPayload = {
-  llm_p50_warn_ms?: number | null;
-  llm_p50_critical_ms?: number | null;
-  llm_p95_warn_ms?: number | null;
-  llm_p95_critical_ms?: number | null;
-  llm_interactive_p50_warn_ms?: number | null;
-  llm_interactive_p50_critical_ms?: number | null;
-  llm_interactive_p95_warn_ms?: number | null;
-  llm_interactive_p95_critical_ms?: number | null;
-  llm_worker_p50_warn_ms?: number | null;
-  llm_worker_p50_critical_ms?: number | null;
-  llm_worker_p95_warn_ms?: number | null;
-  llm_worker_p95_critical_ms?: number | null;
-};
-
 export type ContentPromptTemplateSummary = {
   id: number;
   template_key: string;
@@ -1399,31 +1384,6 @@ export async function getAdminAssessmentHealth(params: {
       stale_minutes: params.stale_minutes,
       infra_fetch: params.infra_fetch ? 1 : undefined,
     },
-  });
-}
-
-export async function updateAdminAssessmentHealthSettings(payload: MonitoringLatencySettingsPayload) {
-  return apiAdmin<{
-    ok: boolean;
-    settings?: {
-      llm_p50_warn_ms?: number | null;
-      llm_p50_critical_ms?: number | null;
-      llm_p95_warn_ms?: number | null;
-      llm_p95_critical_ms?: number | null;
-      llm_interactive_p50_warn_ms?: number | null;
-      llm_interactive_p50_critical_ms?: number | null;
-      llm_interactive_p95_warn_ms?: number | null;
-      llm_interactive_p95_critical_ms?: number | null;
-      llm_worker_p50_warn_ms?: number | null;
-      llm_worker_p50_critical_ms?: number | null;
-      llm_worker_p95_warn_ms?: number | null;
-      llm_worker_p95_critical_ms?: number | null;
-      resolved?: MonitoringLatencySettingsPayload;
-    };
-  }>("/admin/assessment/health/settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
   });
 }
 

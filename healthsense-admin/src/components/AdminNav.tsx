@@ -13,7 +13,7 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
     { href: "/admin/monitoring", label: "Monitoring" },
     { href: "/admin/users", label: "User Ops" },
     { href: "/admin/education", label: "Education" },
-    { href: "/admin/reporting", label: "Reporting" },
+    { href: "/admin/reporting", label: "Marketing" },
     { href: "/admin/history", label: "History" },
     ...(showDevTools ? [{ href: "/admin/scripts", label: "Dev scripts" }] : []),
   ];
