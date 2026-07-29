@@ -3619,7 +3619,7 @@ export default function LatestAssessmentPanel({
                               }
                             }}
                             className="h-[9.5rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
-                            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}
+                            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
                             onScroll={(event) => updatePillarQuoteDirections(pillarKey, event.currentTarget)}
                             tabIndex={0}
                             aria-label={`${pillar.label} quote. Scroll to read more.`}
