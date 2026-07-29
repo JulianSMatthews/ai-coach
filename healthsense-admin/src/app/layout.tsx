@@ -13,10 +13,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const adminTitle = process.env.NODE_ENV === "development" ? "HealthSense Admin (Develop)" : "HealthSense Admin";
-
 export const metadata: Metadata = {
-  title: adminTitle,
+  title: "CS Admin",
   description: "HealthSense administration console",
   icons: {
     icon: "/coachsense-mark.svg",
