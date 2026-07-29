@@ -3383,6 +3383,25 @@ def _cached_education_explore_catalog(session, user_id: int, anchor: date) -> di
     return catalog if isinstance(catalog, dict) else None
 
 
+def has_education_explore_catalog_cache(user_id: int, *, anchor: date | None = None) -> bool:
+    """Cheap queue guard; full content-signature validation happens when Explore is requested."""
+    resolved_anchor = _resolve_plan_date(anchor)
+    with SessionLocal() as session:
+        row = _education_explore_catalog_cache_row(session, int(user_id))
+        if row is None:
+            return False
+        try:
+            cached = json.loads(str(getattr(row, "value", "") or "{}"))
+        except Exception:
+            return False
+    return bool(
+        isinstance(cached, dict)
+        and str(cached.get("lesson_date") or "") == resolved_anchor.isoformat()
+        and int(cached.get("version") or 0) == EDUCATION_EXPLORE_CATALOG_CACHE_VERSION
+        and isinstance(cached.get("catalog"), dict)
+    )
+
+
 def _store_education_explore_catalog_cache(
     session,
     *,

@@ -229,6 +229,7 @@ from .coach_insight import get_or_generate_cached_coach_insight
 from .education_plan import (
     ensure_education_plan_schema,
     get_today_education_plan,
+    has_education_explore_catalog_cache,
     queue_education_explore_catalog_warmup,
     queue_education_quiz_state_refresh,
     record_education_video_progress,
@@ -8354,11 +8355,12 @@ def api_user_education_plan_today(
             explore_cache_only=True,
             include_journey_lessons=bool(include_journey_lessons),
         )
-        result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
-            int(user_id),
-            anchor=anchor,
-            background_tasks=background_tasks,
-        )
+        if result.get("explore_catalog_pending"):
+            result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
+                int(user_id),
+                anchor=anchor,
+                background_tasks=background_tasks,
+            )
     else:
         result = get_today_education_plan(
             int(user_id),
@@ -8367,7 +8369,10 @@ def api_user_education_plan_today(
             explore_cache_only=bool(explore_cache_only),
             include_journey_lessons=bool(include_journey_lessons),
         )
-        if not include_explore or bool(explore_cache_only) or result.get("explore_catalog_pending"):
+        should_warm_explore_catalog = bool(result.get("explore_catalog_pending"))
+        if not include_explore and not should_warm_explore_catalog:
+            should_warm_explore_catalog = not has_education_explore_catalog_cache(int(user_id), anchor=anchor)
+        if should_warm_explore_catalog:
             result["explore_catalog_warmup"] = queue_education_explore_catalog_warmup(
                 int(user_id),
                 anchor=anchor,
