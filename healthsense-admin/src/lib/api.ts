@@ -113,10 +113,6 @@ export type AppEngagementSummary = {
     education_quiz_submits?: number;
     gia_message_users?: number;
     gia_message_views?: number;
-    biometrics_users?: number;
-    biometrics_opens?: number;
-    biometrics_source_update_users?: number;
-    biometrics_source_updates?: number;
     urine_test_users?: number;
     urine_test_opens?: number;
     urine_capture_users?: number;
@@ -156,12 +152,6 @@ export type AppEngagementSummary = {
         quiz_submit_users?: number;
       };
       gia_message?: { views?: number; users?: number };
-      biometrics?: {
-        opens?: number;
-        users?: number;
-        source_updates?: number;
-        source_update_users?: number;
-      };
       urine?: {
         opens?: number;
         open_users?: number;
@@ -232,7 +222,6 @@ export type AppEngagementSummary = {
       lesson_completions?: number;
       education_quiz_submits?: number;
       gia_message_views?: number;
-      biometrics_opens?: number;
       urine_test_opens?: number;
       urine_captures?: number;
       weekly_objectives_opens?: number;
@@ -1143,17 +1132,6 @@ export type AdminUserAppState = {
       viewed_today?: boolean | null;
       viewed_today_count?: number | null;
     };
-    biometrics?: {
-      resting_hr_today?: boolean | null;
-      resting_hr_date?: string | null;
-      hrv_today?: boolean | null;
-      hrv_date?: string | null;
-      steps_today?: boolean | null;
-      steps_date?: string | null;
-      urine_today?: boolean | null;
-      urine_date?: string | null;
-      urine_status?: string | null;
-    };
   };
   weekly_objectives?: {
     week?: { anchor_date?: string | null; start?: string | null; end?: string | null } | null;
@@ -1190,31 +1168,6 @@ export type AdminUserAppState = {
       completed_at?: string | null;
     } | null;
   } | null;
-  wearables?: {
-    connected_count?: number | null;
-    providers?: Array<{
-      provider?: string | null;
-      label?: string | null;
-      connected?: boolean | null;
-      status?: string | null;
-      last_sync_at?: string | null;
-      latest_metric_date?: string | null;
-    }>;
-  };
-  biometrics?: {
-    metric_date?: string | null;
-    training_readiness_label?: string | null;
-    training_readiness_status?: string | null;
-    resting_hr_bpm?: number | null;
-    hrv_metric_date?: string | null;
-    hrv_ms?: number | null;
-    steps_today?: number | null;
-    steps_metric_date?: string | null;
-    active_minutes_today?: number | null;
-    active_minutes_metric_date?: string | null;
-    synced_at?: string | null;
-    hrv_synced_at?: string | null;
-  };
   urine?: {
     available?: boolean;
     status?: string | null;

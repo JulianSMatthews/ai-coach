@@ -257,12 +257,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       subtitle: `${appKpis.education_views ?? 0} education views`,
       description: "Distinct user lessons reaching completed status in this window.",
     },
-    {
-      title: "Biometrics",
-      value: appKpis.biometrics_opens ?? 0,
-      subtitle: `${appKpis.biometrics_users ?? 0} users`,
-      description: "Biometrics review opens in the current app.",
-    },
   ];
   const appSurfaceRows = [
     {
@@ -276,10 +270,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     {
       label: "Completed lessons",
       value: `${appKpis.education_lesson_completions ?? 0} lessons · ${currentApp.education?.views ?? 0} views`,
-    },
-    {
-      label: "Biometrics",
-      value: `${currentApp.biometrics?.opens ?? 0} opens · ${currentApp.biometrics?.source_updates ?? 0} source updates`,
     },
     {
       label: "Weekly objectives",
@@ -501,7 +491,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                           <th className="px-3 py-2">Plan</th>
                           <th className="px-3 py-2">Lessons completed</th>
                           <th className="px-3 py-2">Education views</th>
-                          <th className="px-3 py-2">Biometrics</th>
                           <th className="px-3 py-2">Objectives</th>
                         </tr>
                     </thead>
@@ -514,7 +503,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                             <td className="px-3 py-2">{row.daily_plan_views ?? 0}</td>
                             <td className="px-3 py-2">{row.lesson_completions ?? 0}</td>
                             <td className="px-3 py-2">{row.education_views ?? 0}</td>
-                            <td className="px-3 py-2">{row.biometrics_opens ?? 0}</td>
                             <td className="px-3 py-2">{row.weekly_objectives_saves ?? 0}</td>
                           </tr>
                       ))}
