@@ -6578,7 +6578,7 @@ def edit_education_programme(id: int | None = None):
         )
         marketing_video_html = (
             "<div class='card' style='margin-bottom:12px;'>"
-            "<h3 class='section-title'>10-second concept marketing video</h3>"
+            "<h3 class='section-title'>20-second concept marketing video</h3>"
             "<p class='help'>Summarises the stored lesson summaries and scripts into a short, direct-to-user "
             "CoachSense narration, then generates a reusable avatar video for marketing.</p>"
             f"<p><strong>Status:</strong> {html.escape(marketing_status or 'Not generated')}"
@@ -6589,7 +6589,7 @@ def edit_education_programme(id: int | None = None):
         )
         marketing_video_html += (
             f"<form method='post' action='/admin/education-programmes/{programme_id}/marketing-video/generate' "
-            "onsubmit=\"return confirm('Generate a new 10-second marketing video from this concept programme? "
+            "onsubmit=\"return confirm('Generate a new 20-second marketing video from this concept programme? "
             "Any existing marketing video will be replaced when generation succeeds.');\">"
             f"<button type='submit'>{'Regenerate marketing video' if marketing_url else 'Generate marketing video'}</button>"
             "</form>"

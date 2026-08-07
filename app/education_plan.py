@@ -2364,8 +2364,8 @@ def _clean_marketing_video_script(value: str) -> str:
     text_value = re.sub(r"^(?:script|narration|voiceover)\s*:\s*", "", text_value, flags=re.IGNORECASE)
     text_value = text_value.strip().strip('"').strip()
     words = text_value.split()
-    if len(words) > 26:
-        text_value = " ".join(words[:26]).rstrip(".,;:") + "."
+    if len(words) > 48:
+        text_value = " ".join(words[:48]).rstrip(".,;:") + "."
     return text_value
 
 
@@ -2407,8 +2407,8 @@ def _generate_education_marketing_video_impl(
                 raise ValueError("Add lesson summaries or scripts before generating a marketing video.")
             concept = str(getattr(programme, "concept_label", "") or getattr(programme, "concept_key", "") or programme.name).strip()
             prompt = (
-                "Create one spoken marketing narration for a 10-second CoachSense video. "
-                "Use 18 to 24 words, speak directly to the viewer, summarise the practical benefit "
+                "Create one spoken marketing narration for a 20-second CoachSense video. "
+                "Use 38 to 46 words, speak directly to the viewer, summarise the practical benefit "
                 "of the concept, use plain British English, and finish with a gentle invitation to act. "
                 "Do not mention lessons, programmes, young people, medical outcomes, diagnoses, guarantees, "
                 "or unsupported claims. Return only the narration, with no label or quotation marks.\n\n"
@@ -2420,10 +2420,10 @@ def _generate_education_marketing_video_impl(
                 prompt,
                 touchpoint="education_marketing_video_script",
                 model="gpt-5-mini",
-                context_meta={"programme_id": int(programme.id), "concept": concept, "duration_seconds": 10},
-                prompt_variant="concept_marketing_video_10s",
-                task_label=f"Generate 10-second marketing video: {programme.name}",
-                prompt_blocks={"context": source, "task": "Create an 18–24 word marketing narration."},
+                context_meta={"programme_id": int(programme.id), "concept": concept, "duration_seconds": 20},
+                prompt_variant="concept_marketing_video_20s",
+                task_label=f"Generate 20-second marketing video: {programme.name}",
+                prompt_blocks={"context": source, "task": "Create a 38–46 word marketing narration."},
                 block_order=["context", "task"],
             )
             script = _clean_marketing_video_script(generated)
@@ -2471,7 +2471,7 @@ def _generate_education_marketing_video_impl(
                         "programme_code": str(programme.code or ""),
                         "programme_name": str(programme.name or ""),
                         "concept_key": str(programme.concept_key or ""),
-                        "duration_seconds": 10,
+                        "duration_seconds": 20,
                         "title": f"CoachSense – {str(programme.concept_label or programme.concept_key or programme.name)}",
                     },
                     commit=False,
