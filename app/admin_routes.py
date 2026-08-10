@@ -6578,9 +6578,9 @@ def edit_education_programme(id: int | None = None):
         )
         marketing_video_html = (
             "<div class='card' style='margin-bottom:12px;'>"
-            "<h3 class='section-title'>20-second concept marketing video</h3>"
-            "<p class='help'>Summarises the stored lesson summaries and scripts into a short, direct-to-user "
-            "CoachSense narration, then generates a reusable avatar video for marketing.</p>"
+            "<h3 class='section-title'>20-second programme marketing video</h3>"
+            "<p class='help'>Previews the education journey and the practical benefit of completing it in a "
+            "short, direct-to-user CoachSense narration, then generates a reusable avatar video for marketing.</p>"
             f"<p><strong>Status:</strong> {html.escape(marketing_status or 'Not generated')}"
             f"{' · ' + html.escape(marketing_generated_at) if marketing_generated_at else ''}</p>"
             f"{marketing_preview}"

@@ -2408,10 +2408,13 @@ def _generate_education_marketing_video_impl(
             concept = str(getattr(programme, "concept_label", "") or getattr(programme, "concept_key", "") or programme.name).strip()
             prompt = (
                 "Create one spoken marketing narration for a 20-second CoachSense video. "
-                "Use 38 to 46 words, speak directly to the viewer, summarise the practical benefit "
-                "of the concept, use plain British English, and finish with a gentle invitation to act. "
-                "Do not mention lessons, programmes, young people, medical outcomes, diagnoses, guarantees, "
-                "or unsupported claims. Return only the narration, with no label or quotation marks.\n\n"
+                "Use 38 to 46 words and speak directly to the viewer. Summarise the educational journey: "
+                "what the user will explore or practise as they progress, and the practical benefit they can "
+                "gain by completing it. This is a preview of the learning experience, not an explanation, tip, "
+                "or standalone insight about the concept. Use plain British English and finish with a gentle "
+                "invitation to complete the programme. Do not list individual lessons or mention young people, "
+                "medical outcomes, diagnoses, guarantees, or unsupported claims. Return only the narration, "
+                "with no label or quotation marks.\n\n"
                 f"Concept: {concept}\nProgramme: {programme.name}\n\nSource lesson content:\n{source}"
             )
             from .prompts import run_llm_prompt
@@ -2421,9 +2424,15 @@ def _generate_education_marketing_video_impl(
                 touchpoint="education_marketing_video_script",
                 model="gpt-5-mini",
                 context_meta={"programme_id": int(programme.id), "concept": concept, "duration_seconds": 20},
-                prompt_variant="concept_marketing_video_20s",
+                prompt_variant="programme_journey_marketing_video_20s",
                 task_label=f"Generate 20-second marketing video: {programme.name}",
-                prompt_blocks={"context": source, "task": "Create a 38–46 word marketing narration."},
+                prompt_blocks={
+                    "context": source,
+                    "task": (
+                        "Create a 38–46 word preview of the education journey and the benefit of completing it; "
+                        "do not teach the concept itself."
+                    ),
+                },
                 block_order=["context", "task"],
             )
             script = _clean_marketing_video_script(generated)
