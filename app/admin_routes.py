@@ -4665,6 +4665,15 @@ def list_education_programmes():
         "</form>"
         "</div>"
         "</div>"
+        "<div class='card'>"
+        "<h3 class='section-title'>Marketing video batch</h3>"
+        "<p class='help'>Regenerate the 20-second programme preview for every released education programme. "
+        "The worker waits for each video to finish before starting the next.</p>"
+        "<form method='post' action='/admin/education-programmes/marketing-video/regenerate-all' "
+        "onsubmit=\"return confirm('Regenerate every released programme marketing video? Existing videos will be replaced. This can take a long time and will incur avatar-generation costs.');\">"
+        "<button type='submit' class='danger'>Regenerate all marketing videos sequentially</button>"
+        "</form>"
+        "</div>"
         f"{summary_rationalise_html}"
         "<div class='card'>"
         "<table>"
@@ -5885,6 +5894,53 @@ def queue_education_programme_marketing_video(programme_id: int):
         url=f"/admin/education-programmes/edit?id={int(programme_id)}",
         status_code=303,
     )
+
+
+@admin.post("/education-programmes/marketing-video/regenerate-all", response_class=HTMLResponse)
+def queue_all_education_programme_marketing_videos():
+    ensure_education_plan_schema()
+    ensure_job_table()
+    with SessionLocal() as s:
+        rows = (
+            s.query(EducationProgramme)
+            .filter(
+                EducationProgramme.is_active.is_(True),
+                EducationProgramme.is_released.is_(True),
+            )
+            .order_by(EducationProgramme.journey_order.asc(), EducationProgramme.id.asc())
+            .all()
+        )
+        programme_ids = [int(row.id) for row in rows]
+        if not programme_ids:
+            raise HTTPException(400, "No active released education programmes were found.")
+        for row in rows:
+            row.marketing_video_status = "queued"
+            row.marketing_video_error = None
+            s.add(row)
+        s.commit()
+
+    job_id, created = enqueue_job_once(
+        "education_marketing_video_generate_all",
+        {
+            "programme_ids": programme_ids,
+            "programme_index": 0,
+            "refresh_only": False,
+            "completed": 0,
+            "errors": [],
+            "trigger": "admin_education_marketing_video_generate_all",
+        },
+        payload_match={"trigger": "admin_education_marketing_video_generate_all"},
+        running_stale_minutes=720,
+    )
+    action = "queued" if created else "already running"
+    body = (
+        "<h2>Marketing Video Batch</h2>"
+        f"<div class='card'><p><strong>{len(programme_ids)}</strong> released programme marketing videos {action} "
+        "for sequential regeneration.</p>"
+        f"<p>Background job: <strong>#{int(job_id)}</strong>. Progress is available in Service History.</p>"
+        "<p><a class='button-link' href='/admin/education-programmes'>Return to Education Programmes</a></p></div>"
+    )
+    return _wrap_page("Marketing Video Batch", body)
 
 
 @admin.post("/education-programmes/lesson-variants/{variant_id}/avatar/generate")

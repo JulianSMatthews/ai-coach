@@ -439,6 +439,83 @@ def _process_education_marketing_video(payload: dict) -> dict:
     return result
 
 
+def _process_education_marketing_video_generate_all(payload: dict) -> dict:
+    programme_ids = [int(value) for value in (payload.get("programme_ids") or []) if int(value) > 0]
+    programme_index = max(0, int(payload.get("programme_index") or 0))
+    completed = max(0, int(payload.get("completed") or 0))
+    errors = list(payload.get("errors") or [])
+    current_job_id = payload.get("job_id")
+    trigger = str(payload.get("trigger") or "admin_education_marketing_video_generate_all")
+
+    if programme_index >= len(programme_ids):
+        return {
+            "ok": not errors,
+            "total": len(programme_ids),
+            "completed": completed,
+            "errors": errors,
+        }
+
+    programme_id = int(programme_ids[programme_index])
+    refresh_only = bool(payload.get("refresh_only", False))
+    pending = False
+    try:
+        result = generate_education_marketing_video(programme_id, refresh_only=refresh_only)
+        pending = bool(result.get("pending"))
+        if not pending:
+            if bool(result.get("ok")):
+                completed += 1
+            else:
+                errors.append(
+                    {
+                        "programme_id": programme_id,
+                        "error": str(result.get("error") or "Marketing video generation failed")[:500],
+                    }
+                )
+            programme_index += 1
+            refresh_only = False
+    except Exception as exc:
+        errors.append({"programme_id": programme_id, "error": str(exc)[:500]})
+        programme_index += 1
+        refresh_only = False
+
+    if programme_index < len(programme_ids):
+        poll_attempt = max(0, int(payload.get("poll_attempt") or 0)) + 1 if pending else 0
+        delay_seconds = max(10, queue_requeue_delay_seconds(poll_attempt)) if pending else 1
+        next_job_id, created = enqueue_job_once(
+            "education_marketing_video_generate_all",
+            {
+                "programme_ids": programme_ids,
+                "programme_index": programme_index,
+                "refresh_only": True if pending else False,
+                "completed": completed,
+                "errors": errors,
+                "poll_attempt": poll_attempt,
+                "trigger": trigger,
+            },
+            available_at=datetime.utcnow() + timedelta(seconds=delay_seconds),
+            payload_match={"trigger": trigger},
+            exclude_job_id=int(current_job_id) if current_job_id is not None else None,
+            running_stale_minutes=720,
+        )
+        return {
+            "ok": True,
+            "pending": True,
+            "total": len(programme_ids),
+            "completed": completed,
+            "errors": errors,
+            "current_programme_id": programme_id,
+            "next_job_id": int(next_job_id),
+            "next_job_created": bool(created),
+        }
+
+    return {
+        "ok": not errors,
+        "total": len(programme_ids),
+        "completed": completed,
+        "errors": errors,
+    }
+
+
 def _process_education_explore_catalog_warmup(payload: dict) -> dict:
     user_id = payload.get("user_id")
     if not user_id:
@@ -494,6 +571,8 @@ def process_job(kind: str, payload: dict) -> dict:
         return _process_education_avatar_generate_programme(payload)
     if kind == "education_marketing_video":
         return _process_education_marketing_video(payload)
+    if kind == "education_marketing_video_generate_all":
+        return _process_education_marketing_video_generate_all(payload)
     raise ValueError(f"Unknown job kind: {kind}")
 
 
