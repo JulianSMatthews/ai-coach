@@ -11752,7 +11752,9 @@ def admin_assessment_health(
 
         jobs_q = s.query(BackgroundJob.status, func.count(BackgroundJob.id))
         if club_scope_id is not None:
-            jobs_q = jobs_q.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+            jobs_q = jobs_q.outerjoin(User, BackgroundJob.user_id == User.id).filter(
+                or_(BackgroundJob.user_id.is_(None), User.club_id == club_scope_id)
+            )
         jobs_rows = jobs_q.group_by(BackgroundJob.status).all()
         job_counts = {str(status or "unknown"): int(count or 0) for status, count in jobs_rows}
         pending_count = int(job_counts.get("pending", 0))
@@ -11766,7 +11768,9 @@ def admin_assessment_health(
             .filter(BackgroundJob.status.in_(["pending", "retry"]))
         )
         if club_scope_id is not None:
-            oldest_q = oldest_q.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+            oldest_q = oldest_q.outerjoin(User, BackgroundJob.user_id == User.id).filter(
+                or_(BackgroundJob.user_id.is_(None), User.club_id == club_scope_id)
+            )
         oldest_pending_at = oldest_q.scalar()
         oldest_pending_age_min = (
             (now_utc - oldest_pending_at).total_seconds() / 60.0 if oldest_pending_at else None
@@ -11779,7 +11783,9 @@ def admin_assessment_health(
             .filter(BackgroundJob.status.in_(["done", "error"]))
         )
         if club_scope_id is not None:
-            recent_q = recent_q.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+            recent_q = recent_q.outerjoin(User, BackgroundJob.user_id == User.id).filter(
+                or_(BackgroundJob.user_id.is_(None), User.club_id == club_scope_id)
+            )
         recent_rows = recent_q.group_by(BackgroundJob.status).all()
         recent_map = {str(status or "unknown"): int(count or 0) for status, count in recent_rows}
         recent_done = int(recent_map.get("done", 0))
@@ -17007,7 +17013,7 @@ def admin_background_job_history(
     with SessionLocal() as s:
         query = s.query(BackgroundJob, User).outerjoin(User, BackgroundJob.user_id == User.id)
         if club_scope_id is not None:
-            query = query.filter(User.club_id == club_scope_id)
+            query = query.filter(or_(BackgroundJob.user_id.is_(None), User.club_id == club_scope_id))
         if user_id:
             query = query.filter(BackgroundJob.user_id == int(user_id))
         if kind:
@@ -17024,7 +17030,9 @@ def admin_background_job_history(
 
         kinds_query = s.query(BackgroundJob.kind).filter(BackgroundJob.kind.isnot(None))
         if club_scope_id is not None:
-            kinds_query = kinds_query.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+            kinds_query = kinds_query.outerjoin(User, BackgroundJob.user_id == User.id).filter(
+                or_(BackgroundJob.user_id.is_(None), User.club_id == club_scope_id)
+            )
         if user_id:
             kinds_query = kinds_query.filter(BackgroundJob.user_id == int(user_id))
         if start_dt:
