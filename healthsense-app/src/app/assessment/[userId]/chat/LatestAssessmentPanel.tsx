@@ -3627,7 +3627,7 @@ export default function LatestAssessmentPanel({
                         </p>
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
-                        <div className="relative w-full">
+                        <div className="relative min-h-[11.75rem] w-full flex-1 sm:min-h-[13rem]">
                           <div
                             ref={(node) => {
                               pillarQuoteRefs.current[pillarKey] = node;
@@ -3635,7 +3635,7 @@ export default function LatestAssessmentPanel({
                                 window.requestAnimationFrame(() => updatePillarQuoteDirections(pillarKey, node));
                               }
                             }}
-                            className="h-[11.75rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[13rem]"
+                            className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
                             style={{
                               WebkitOverflowScrolling: "touch",
                               touchAction: "pan-x",
