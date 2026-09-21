@@ -3705,7 +3705,7 @@ export default function LatestAssessmentPanel({
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-auto grid w-full grid-cols-2 gap-2 pt-5">
+                        <div className="mt-auto grid w-full grid-flow-col auto-cols-fr gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
