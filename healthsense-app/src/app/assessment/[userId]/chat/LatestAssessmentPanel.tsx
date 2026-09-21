@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   AppEngagementSummary,
   AppleHealthRestingHeartRateResponse,
@@ -1176,7 +1176,6 @@ function normalizeError(text: string, fallback: string): string {
 }
 
 function resolveScore(value?: number | null): number | null {
-  if (value === null || value === undefined) return null;
   const resolved = Number(value);
   if (!Number.isFinite(resolved)) return null;
   return Math.max(0, Math.min(100, Math.round(resolved)));
@@ -1216,13 +1215,13 @@ function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | nu
   const resolved = resolveScore(value);
   if (resolved !== null) {
     return (
-      <div className={compact ? "relative h-16 w-16 [&>div]:origin-top-left [&>div]:scale-[0.76]" : ""}>
+      <div className={compact ? "origin-center scale-[0.78] sm:scale-100" : ""}>
         <ScoreRing value={resolved} tone={tone} />
       </div>
     );
   }
   return (
-    <div className={compact ? "relative h-16 w-16 [&>div]:origin-top-left [&>div]:scale-[0.76]" : ""}>
+    <div className={compact ? "origin-center scale-[0.78] sm:scale-100" : ""}>
       <div className="relative flex h-[84px] w-[84px] items-center justify-center">
         <div className="h-[84px] w-[84px] rounded-full border-[8px] border-[var(--border)]" />
         <span className="absolute text-lg font-semibold text-[var(--text-tertiary)]">—</span>
@@ -1566,6 +1565,13 @@ export default function LatestAssessmentPanel({
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const trackerDetailCacheRef = useRef<Map<string, PillarTrackerDetailResponse>>(new Map());
+  const pillarQuoteGestureRef = useRef<{
+    pointerId: number;
+    axis: "horizontal" | "vertical" | null;
+    startX: number;
+    startY: number;
+    lastY: number;
+  } | null>(null);
   const [pillarQuoteDirections, setPillarQuoteDirections] = useState<Record<string, { up: boolean; down: boolean }>>({});
   const [returnToPillarKey, setReturnToPillarKey] = useState<string | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
@@ -3393,19 +3399,44 @@ export default function LatestAssessmentPanel({
     });
   }, []);
 
-  useEffect(() => {
-    const observer = new ResizeObserver(() => {
-      for (const [key, node] of Object.entries(pillarQuoteRefs.current)) {
-        updatePillarQuoteDirections(key, node);
+  const beginPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse") return;
+    pillarQuoteGestureRef.current = {
+      pointerId: event.pointerId,
+      axis: null,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastY: event.clientY,
+    };
+  }, []);
+
+  const movePillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = pillarQuoteGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const totalX = event.clientX - gesture.startX;
+    const totalY = event.clientY - gesture.startY;
+    if (!gesture.axis && Math.max(Math.abs(totalX), Math.abs(totalY)) >= 6) {
+      gesture.axis = Math.abs(totalX) > Math.abs(totalY) ? "horizontal" : "vertical";
+      if (gesture.axis === "vertical") {
+        event.currentTarget.setPointerCapture(event.pointerId);
       }
-    });
-    for (const node of Object.values(pillarQuoteRefs.current)) {
-      if (!node) continue;
-      observer.observe(node);
-      if (node.firstElementChild) observer.observe(node.firstElementChild);
     }
-    return () => observer.disconnect();
-  }, [summary, summaryPanelVisible, appSetupRequired, selectedPillarKey, objectivesModalOpen, streakSectionOpen, updatePillarQuoteDirections]);
+    if (gesture.axis !== "vertical") return;
+
+    event.preventDefault();
+    const deltaY = event.clientY - gesture.lastY;
+    event.currentTarget.scrollTop -= deltaY;
+    gesture.lastY = event.clientY;
+  }, []);
+
+  const endPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = pillarQuoteGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    pillarQuoteGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
 
   const openDailyMenuSurface = (surface: "tracking" | "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
@@ -3597,32 +3628,24 @@ export default function LatestAssessmentPanel({
                           delete pillarCueCardRefs.current[pillarKey];
                         }
                       }}
-                      className="relative flex h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-6 py-6 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:h-[30rem] sm:w-[25rem] sm:px-7 sm:py-7"
+                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
-                      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-                        <div className="min-w-0">
-                          <h2
-                            className="text-[1.8rem] font-semibold leading-tight tracking-[-0.02em] sm:text-[2.1rem]"
-                            style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
-                          >
-                            {pillar.label}
-                          </h2>
-                          {journalDate ? (
-                            <p className="mt-2 text-[0.85rem] leading-snug text-current opacity-60">
-                              {journalDate.replace("Sept", "Sep")}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-col items-center gap-1.5">
-                          <div role="img" aria-label={`${pillar.label} weekly score: ${score === null ? "no check-ins yet" : `${score} out of 100`}`}>
-                            <WeeklyScoreRing value={score} tone={palette.accent} compact />
-                          </div>
-                          <p className="text-[0.7rem] font-medium leading-tight text-current opacity-60">Weekly score</p>
-                        </div>
+                      <div className="absolute right-5 top-5">
+                        <WeeklyScoreRing value={score} tone={palette.accent} />
                       </div>
-                      <div className="mt-5 flex min-h-0 flex-1 flex-col">
-                        <div className="relative min-h-0 flex-1">
+                      <div className="pr-24">
+                        <p className="text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
+                          {pillar.label}
+                        </p>
+                        {journalDate ? (
+                          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-current opacity-50">
+                            Journal {journalDate}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
+                        <div className="relative max-w-[18rem]">
                           <div
                             ref={(node) => {
                               pillarQuoteRefs.current[pillarKey] = node;
@@ -3630,37 +3653,53 @@ export default function LatestAssessmentPanel({
                                 window.requestAnimationFrame(() => updatePillarQuoteDirections(pillarKey, node));
                               }
                             }}
-                            className="h-full overflow-x-hidden overflow-y-auto overscroll-y-contain pr-2 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent)]"
-                            style={{
-                              WebkitOverflowScrolling: "touch",
-                              touchAction: "pan-x pan-y",
-                              maskImage: `linear-gradient(to bottom, ${quoteDirections.up ? "transparent, black 16px" : "black, black 0px"}, black calc(100% - ${quoteDirections.down ? "24px" : "0px"}), ${quoteDirections.down ? "transparent" : "black"})`,
-                            }}
-                            role="region"
+                            className="h-[9.5rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
+                            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x" }}
+                            onPointerDown={beginPillarQuoteGesture}
+                            onPointerMove={movePillarQuoteGesture}
+                            onPointerUp={endPillarQuoteGesture}
+                            onPointerCancel={endPillarQuoteGesture}
                             onScroll={(event) => updatePillarQuoteDirections(pillarKey, event.currentTarget)}
                             tabIndex={0}
                             aria-label={`${pillar.label} quote. Scroll to read more.`}
                           >
-                            <div className="space-y-3 py-1 text-[1.05rem] leading-[1.65] text-current opacity-80">
-                              {(quoteBodyLines.length ? quoteBodyLines : [quote]).map((line, index) => (
-                                <p key={`${pillarKey}-quote-${index}`}>
-                                  {line}
-                                </p>
-                              ))}
-                              {quoteAuthor ? (
-                                <p className="pt-1 text-right text-[0.9rem] font-semibold uppercase tracking-[0.12em] opacity-70">
-                                  {quoteAuthor}
-                                </p>
-                              ) : null}
-                            </div>
+                          <div className="space-y-3 text-[1.18rem] leading-8 text-current opacity-80">
+                            {(quoteBodyLines.length ? quoteBodyLines : [quote]).map((line, index) => (
+                              <p key={`${pillarKey}-quote-${index}`}>
+                                {line}
+                              </p>
+                            ))}
+                            {quoteAuthor ? (
+                              <p className="pt-1 text-right text-[0.9rem] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                {quoteAuthor}
+                              </p>
+                            ) : null}
                           </div>
+                          </div>
+                          {quoteDirections.up || quoteDirections.down ? (
+                            <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface)] shadow-sm">
+                              <button
+                                type="button"
+                                disabled={!quoteDirections.up}
+                                onClick={() => pillarQuoteRefs.current[pillarKey]?.scrollBy({ top: -80, behavior: "smooth" })}
+                                className="flex h-7 w-7 items-center justify-center text-sm leading-none text-[var(--text-primary)] disabled:opacity-25"
+                                aria-label={`Scroll ${pillar.label} quote up`}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!quoteDirections.down}
+                                onClick={() => pillarQuoteRefs.current[pillarKey]?.scrollBy({ top: 80, behavior: "smooth" })}
+                                className="flex h-7 w-7 items-center justify-center border-t border-[var(--border)] text-sm leading-none text-[var(--text-primary)] disabled:opacity-25"
+                                aria-label={`Scroll ${pillar.label} quote down`}
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
-                        <div
-                          className="mt-5 grid shrink-0 gap-1.5 rounded-[22px] border border-[var(--border)] bg-[var(--surface-muted)] p-1"
-                          style={{ gridTemplateColumns: `repeat(${orderedCheckinOptions.length}, minmax(0, 1fr))` }}
-                          role="group"
-                          aria-label={`${pillar.label} check-in dates`}
-                        >
+                        <div className="mt-auto grid max-w-[16rem] grid-cols-2 gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
@@ -3676,8 +3715,7 @@ export default function LatestAssessmentPanel({
                                     guided: false,
                                   })
                                 }
-                                aria-label={`${optionLabel}: ${complete ? "view completed check-in" : "add check-in"}`}
-                                className={`min-h-11 min-w-0 whitespace-nowrap rounded-full border px-1 py-2 text-center text-[0.8rem] font-semibold leading-tight transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                                className={`min-h-[2.7rem] rounded-full border px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition active:scale-[0.98] ${
                                   complete
                                     ? "border-[var(--border-strong)] bg-[var(--surface-muted)] text-[var(--text-primary)] shadow-[inset_0_0_0_1px_rgba(30,27,22,0.03)]"
                                     : "border-[var(--action-primary-border)] bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]"
