@@ -3545,19 +3545,19 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
-          <div className="relative -translate-y-[0.5cm] overflow-hidden">
+          <div className="relative w-full min-w-0 -translate-y-[0.5cm] overflow-hidden">
             <div
               ref={pillarCueCarouselRef}
               className="overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               style={{
-                scrollPaddingInline: "max(1rem, calc((100% - 25rem) / 2))",
+                scrollPaddingInline: "max(0px, calc((100% - 25rem) / 2))",
                 WebkitOverflowScrolling: "touch",
                 touchAction: "pan-x pan-y",
               }}
             >
               <div
                 className="flex gap-4 sm:gap-5"
-                style={{ paddingInline: "max(1rem, calc((100% - 25rem) / 2))" }}
+                style={{ paddingInline: "max(0px, calc((100% - 25rem) / 2))" }}
               >
                 {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
@@ -3597,7 +3597,7 @@ export default function LatestAssessmentPanel({
                           delete pillarCueCardRefs.current[pillarKey];
                         }
                       }}
-                      className="relative flex h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-6 py-6 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:h-[30rem] sm:w-[25rem] sm:px-7 sm:py-7"
+                      className="relative flex h-[28rem] w-full max-w-[25rem] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-6 py-6 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] sm:h-[30rem] sm:px-7 sm:py-7"
                       style={pillarCueCardStyle}
                     >
                       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
