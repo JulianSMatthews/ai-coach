@@ -20,7 +20,7 @@ def review_login(*, phone_raw: object, email_raw: object, normalize_phone: Calla
     except Exception:
         return None
     matches = []
-    for prefix, name in (("APP_REVIEW_DEMO", "Apple"), ("GOOGLE_PLAY_REVIEW_DEMO", "Google")):
+    for prefix in ("APP_REVIEW_DEMO", "GOOGLE_PLAY_REVIEW_DEMO"):
         if os.getenv(f"{prefix}_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
             continue
         configured_phone = os.getenv(f"{prefix}_PHONE", "").strip()
@@ -37,6 +37,6 @@ def review_login(*, phone_raw: object, email_raw: object, normalize_phone: Calla
             code = "123456"
         if not re.fullmatch(r"[0-9]{6}", code):
             return None
-        matches.append(ReviewLogin(name, code))
+        matches.append(ReviewLogin("Alex", code))
     # A duplicate phone configuration must not select the wrong store's credentials.
     return matches[0] if len(matches) == 1 else None

@@ -43,7 +43,9 @@ Keep the actual credentials in the API environment and Play Console App access f
 not this document. Google credentials have no default code. Existing Apple configuration
 remains independent. No changes to Apple submission details are needed for Google testing.
 
-The review account is created on the first login-code request with the name Google Reviewer.
+The review account is created on the first login-code request with the neutral name Alex Reviewer.
+Existing Apple Reviewer or Google Reviewer demo profiles are renamed on their next code request;
+customised profile names are preserved. Each store can still use independent credentials.
 The request creates a normal expiring login challenge using the configured reusable code
 without sending an SMS. If the challenge expires, request a new one and use the same code.
 The account gets Nutrition and Training access, not administrator access. Login enables

@@ -32,8 +32,8 @@ class ReviewAccessTests(unittest.TestCase):
         self.configure("GOOGLE_PLAY_REVIEW_DEMO", "+447700900002", "654321")
         apple = self.login("+447700900001")
         google = self.login("+44 7700 900002")
-        self.assertEqual((apple.first_name, apple.code), ("Apple", "123456"))
-        self.assertEqual((google.first_name, google.code), ("Google", "654321"))
+        self.assertEqual((apple.first_name, apple.code), ("Alex", "123456"))
+        self.assertEqual((google.first_name, google.code), ("Alex", "654321"))
 
     def test_google_requires_explicit_six_digit_code(self):
         for code in ("", "12345", "1234567", "abcdef", "１２３４５６"):

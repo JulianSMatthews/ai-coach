@@ -24,6 +24,7 @@ Provide Apple with a live test account before submission:
 - Login code: 123456
 - Login code instructions: Enter the mobile number above, tap Send login code, then enter 123456.
 - User ID: Created automatically when the reviewer requests the code.
+- Display name: Alex Reviewer. The original Apple Reviewer profile is renamed on its next login-code request.
 
 Before submission, configure the API service environment variables:
 

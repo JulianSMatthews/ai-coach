@@ -3820,7 +3820,7 @@ def _send_auth_code(
         except Exception as sms_err:
             raise RuntimeError(f"whatsapp send failed: {wa_err}; sms fallback failed: {sms_err}")
 
-def _get_or_create_app_review_demo_user(session, *, phone_norm: str, reviewer_name: str = "Apple") -> User:
+def _get_or_create_app_review_demo_user(session, *, phone_norm: str, reviewer_name: str = "Alex") -> User:
     user = session.execute(select(User).where(User.phone.in_([phone_norm, f"whatsapp:{phone_norm}"]))).scalar_one_or_none()
     now = datetime.utcnow()
     if user is None:
@@ -3839,6 +3839,9 @@ def _get_or_create_app_review_demo_user(session, *, phone_norm: str, reviewer_na
         session.flush()
     else:
         user.phone = phone_norm
+        # Upgrade the original store-labelled demo profiles without replacing custom names.
+        if (user.first_name, user.surname) in {("Apple", "Reviewer"), ("Google", "Reviewer")}:
+            user.first_name = reviewer_name
         if getattr(user, "phone_verified_at", None) is None:
             user.phone_verified_at = now
         try:
