@@ -3576,19 +3576,19 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="flex h-full min-h-0 items-center pb-28 pt-6 sm:pb-32 sm:pt-8"
         >
-          <div className="relative -translate-y-[0.5cm] overflow-hidden">
+          <div className="relative w-full min-w-0 -translate-y-[0.5cm] overflow-hidden">
             <div
               ref={pillarCueCarouselRef}
               className="overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               style={{
-                scrollPaddingInline: "max(1rem, calc((100% - 25rem) / 2))",
+                scrollPaddingInline: "max(0px, calc((100% - 25rem) / 2))",
                 WebkitOverflowScrolling: "touch",
                 touchAction: "pan-x pan-y",
               }}
             >
               <div
                 className="flex gap-4 sm:gap-5"
-                style={{ paddingInline: "max(1rem, calc((100% - 25rem) / 2))" }}
+                style={{ paddingInline: "max(0px, calc((100% - 25rem) / 2))" }}
               >
                 {visiblePillars.map((pillar) => {
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
@@ -3628,7 +3628,7 @@ export default function LatestAssessmentPanel({
                           delete pillarCueCardRefs.current[pillarKey];
                         }
                       }}
-                      className="relative flex min-h-[28rem] w-[min(92vw,24rem)] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:w-[25rem] sm:px-8 sm:py-8"
+                      className="relative flex min-h-[28rem] w-full max-w-[25rem] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
                       <div className="absolute right-5 top-5">
@@ -3654,7 +3654,13 @@ export default function LatestAssessmentPanel({
                               }
                             }}
                             className="h-[9.5rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
-                            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x" }}
+                            style={{
+                              WebkitOverflowScrolling: "touch",
+                              touchAction: "pan-x",
+                              maskImage: quoteDirections.down
+                                ? "linear-gradient(to bottom, black calc(100% - 20px), transparent)"
+                                : undefined,
+                            }}
                             onPointerDown={beginPillarQuoteGesture}
                             onPointerMove={movePillarQuoteGesture}
                             onPointerUp={endPillarQuoteGesture}
