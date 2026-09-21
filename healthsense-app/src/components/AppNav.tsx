@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import LogoutButton from "@/components/LogoutButton";
 import { Badge } from "@/components/ui";
@@ -10,7 +11,7 @@ type AppNavProps = {
   userId?: string;
   promptBadge?: string;
   overallScore?: number | null;
-  interactionDaysCount?: number | null;
+  currentStreakDays?: number | null;
   userFirstName?: string | null;
 };
 
@@ -76,15 +77,21 @@ export default function AppNav({
   userId = "",
   promptBadge = "",
   overallScore = null,
-  interactionDaysCount = null,
+  currentStreakDays = null,
   userFirstName = "",
 }: AppNavProps) {
+  const router = useRouter();
+  useEffect(() => {
+    const refresh = () => router.refresh();
+    window.addEventListener("healthsense-tracker-updated", refresh);
+    return () => window.removeEventListener("healthsense-tracker-updated", refresh);
+  }, [router]);
   const [open, setOpen] = useState(false);
   const [liveOverallScore, setLiveOverallScore] = useState<number | null>(overallScore);
   const resolvedUserId = String(userId || "").trim();
   const resolvedOverallScore = Number.isFinite(Number(liveOverallScore)) ? Math.max(0, Math.min(100, Math.round(Number(liveOverallScore)))) : null;
-  const resolvedInteractionDaysCount = Number.isFinite(Number(interactionDaysCount))
-    ? Math.max(0, Math.round(Number(interactionDaysCount)))
+  const resolvedCurrentStreakDays = Number.isFinite(Number(currentStreakDays))
+    ? Math.max(0, Math.round(Number(currentStreakDays)))
     : null;
   const resolvedFirstName = String(userFirstName || "").trim();
   const greetingLabel = resolvedFirstName ? `Hi ${resolvedFirstName}` : "";
@@ -154,10 +161,11 @@ export default function AppNav({
                 <ScoreBadge score={resolvedOverallScore} />
               </button>
             ) : null}
-            {resolvedInteractionDaysCount !== null ? (
+            {resolvedCurrentStreakDays !== null ? (
               <FlameBadge
-                days={resolvedInteractionDaysCount}
+                days={resolvedCurrentStreakDays}
                 onClick={() => {
+                  router.refresh();
                   if (typeof window !== "undefined") {
                     window.dispatchEvent(
                       new CustomEvent("healthsense-home-surface", {

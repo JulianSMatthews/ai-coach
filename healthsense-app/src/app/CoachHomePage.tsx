@@ -90,7 +90,7 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
           userId={userId}
           promptBadge={promptBadge}
           overallScore={resolvePillarTrackerOverallScore(pillarTrackerSummary)}
-          interactionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+          currentStreakDays={status.engagement_summary?.current_streak_days ?? null}
           userFirstName={status.user?.first_name || null}
         />
       </div>
@@ -101,14 +101,14 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
           assessmentCompleted
           modernHomeOnly
           initialTrackerSummary={pillarTrackerSummary}
-          initialInteractionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+          initialEngagementSummary={status.engagement_summary ?? null}
           isAdminUser={isAdminUser}
         />
         <CoachHomeTrackerPanel
           userId={userId}
           initialSummary={pillarTrackerSummary}
           initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
-          initialInteractionDaysCount={status.engagement_summary?.interaction_days_count ?? null}
+          initialEngagementSummary={status.engagement_summary ?? null}
           isAdminUser={isAdminUser}
           extendedPillarsEnabled={extendedPillarsEnabled}
         />

@@ -27,6 +27,7 @@ import shutil
 from email.message import EmailMessage
 from urllib.parse import parse_qs, urlencode, urlparse, quote
 from datetime import datetime, timedelta, date, timezone
+from app.engagement import build_engagement_summary
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body, BackgroundTasks
@@ -8698,25 +8699,7 @@ def api_user_status_v1(
             .scalars()
             .all()
         )
-        engagement_days: list[date] = []
-        for created_at in engagement_rows:
-            if created_at is None:
-                continue
-            ts = created_at
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=ZoneInfo("UTC"))
-            engagement_days.append(ts.astimezone(UK_TZ).date())
-        unique_engagement_days = sorted(set(engagement_days), reverse=True)
-        latest_interaction_at = None
-        if engagement_rows and engagement_rows[0] is not None:
-            latest_ts = engagement_rows[0]
-            if latest_ts.tzinfo is None:
-                latest_ts = latest_ts.replace(tzinfo=ZoneInfo("UTC"))
-            latest_interaction_at = latest_ts.astimezone(UK_TZ).isoformat()
-        engagement_summary = {
-            "interaction_days_count": len(unique_engagement_days),
-            "latest_interaction_at": latest_interaction_at,
-        }
+        engagement_summary = build_engagement_summary(engagement_rows)
         admin_role = _user_admin_role(u)
         is_admin_context = _is_admin_user(u) or _is_readonly_admin_preview_request(
             request=request,

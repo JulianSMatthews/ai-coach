@@ -51,7 +51,7 @@ export default async function PreferencesPage(props: PageProps) {
         <AppNav
           userId={userId}
           promptBadge={promptBadge}
-          interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null}
+          currentStreakDays={data.engagement_summary?.current_streak_days ?? null}
           userFirstName={user.first_name || null}
         />
       </div>

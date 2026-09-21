@@ -1,5 +1,15 @@
 type FetchOptions = RequestInit & { query?: Record<string, string | number | undefined> };
 
+export type AppEngagementSummary = {
+  interaction_days_count?: number | null;
+  current_streak_days?: number | null;
+  best_streak_days?: number | null;
+  active_dates?: string[];
+  active_today?: boolean;
+  today?: string;
+  latest_interaction_at?: string | null;
+};
+
 export type UserStatusResponse = {
   user?: {
     id?: number;
@@ -35,10 +45,7 @@ export type UserStatusResponse = {
     preferred_channel?: string;
     marketing_opt_in?: string;
   };
-  engagement_summary?: {
-    interaction_days_count?: number | null;
-    latest_interaction_at?: string | null;
-  };
+  engagement_summary?: AppEngagementSummary;
   onboarding?: {
     assessment_completed_at?: string | null;
     first_app_login_at?: string | null;

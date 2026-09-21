@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PillarTrackerSummaryResponse } from "@/lib/api";
+import type { AppEngagementSummary, PillarTrackerSummaryResponse } from "@/lib/api";
 import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
 import LatestAssessmentPanel from "./assessment/[userId]/chat/LatestAssessmentPanel";
 
@@ -9,7 +9,7 @@ type CoachHomeTrackerPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse | null;
   initialAssessmentReviewed?: boolean;
-  initialInteractionDaysCount?: number | null;
+  initialEngagementSummary?: AppEngagementSummary | null;
   isAdminUser?: boolean;
   extendedPillarsEnabled?: boolean;
 };
@@ -18,7 +18,7 @@ export default function CoachHomeTrackerPanel({
   userId,
   initialSummary,
   initialAssessmentReviewed = false,
-  initialInteractionDaysCount = null,
+  initialEngagementSummary = null,
   isAdminUser = false,
   extendedPillarsEnabled = false,
 }: CoachHomeTrackerPanelProps) {
@@ -69,7 +69,7 @@ export default function CoachHomeTrackerPanel({
         userId={userId}
         initialSummary={summary}
         initialAssessmentReviewed={initialAssessmentReviewed}
-        initialInteractionDaysCount={initialInteractionDaysCount}
+        initialEngagementSummary={initialEngagementSummary}
         isAdminUser={isAdminUser}
         extendedPillarsEnabled={extendedPillarsEnabled}
       />

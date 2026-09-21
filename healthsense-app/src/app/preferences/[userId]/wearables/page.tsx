@@ -37,7 +37,7 @@ export default async function WearablesPage(props: PageProps) {
         <AppNav
           userId={userId}
           promptBadge={promptBadge}
-          interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null}
+          currentStreakDays={data.engagement_summary?.current_streak_days ?? null}
           userFirstName={data.user?.first_name || null}
         />
       </div>

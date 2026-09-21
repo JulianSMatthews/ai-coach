@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AppEngagementSummary,
   DailyHabitPlanItem,
   DailyHabitPlanResponse,
   EducationPlanTodayResponse,
@@ -85,7 +86,7 @@ type AssessmentChatBoxProps = {
   coachProductAvatar?: AssessmentIntroAvatar | null;
   introAvatarEnabledOverride?: boolean | null;
   initialTrackerSummary?: PillarTrackerSummaryResponse | null;
-  initialInteractionDaysCount?: number | null;
+  initialEngagementSummary?: AppEngagementSummary | null;
   isAdminUser?: boolean;
 };
 
@@ -1287,28 +1288,6 @@ function formatStreakMonthLabel(date: Date): string {
   return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 }
 
-function collectTrackerCompletionDates(summary?: PillarTrackerSummaryResponse | null): string[] {
-  const dates = new Set<string>();
-  const today = String(summary?.today || "").trim();
-  if (summary?.today_complete && today) {
-    dates.add(today);
-  }
-  const pillars = Array.isArray(summary?.pillars) ? summary.pillars : [];
-  for (const pillar of pillars) {
-    if (pillar?.today_complete && today) {
-      dates.add(today);
-    }
-    const options = Array.isArray(pillar?.checkin_options) ? pillar.checkin_options : [];
-    for (const option of options) {
-      const optionDate = String(option?.date || "").trim();
-      if (option?.complete && optionDate) {
-        dates.add(optionDate);
-      }
-    }
-  }
-  return Array.from(dates);
-}
-
 type StreakCalendarDay = {
   key: string;
   iso: string;
@@ -1403,7 +1382,7 @@ export default function AssessmentChatBox({
   coachProductAvatar = null,
   introAvatarEnabledOverride = null,
   initialTrackerSummary = null,
-  initialInteractionDaysCount = null,
+  initialEngagementSummary = null,
   isAdminUser = false,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
@@ -1477,7 +1456,6 @@ export default function AssessmentChatBox({
     const baseDate = parseLocalIsoDate(resolveMorningSequenceDay(initialTrackerSummary));
     return monthStart(baseDate || new Date());
   });
-  const [extraStreakCompletionDates, setExtraStreakCompletionDates] = useState<string[]>([]);
   const educationPlanRequestIdRef = useRef(0);
   const educationPlanLoaderRef = useRef<((options?: { background?: boolean; includeExplore?: boolean; exploreCacheOnly?: boolean; includeJourneyLessons?: boolean; prefetch?: boolean }) => Promise<void>) | null>(null);
   const educationPlanWarmupPromiseRef = useRef<Promise<void> | null>(null);
@@ -2162,37 +2140,13 @@ export default function AssessmentChatBox({
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
     return mergeDailyPlanItems(selected, fallback);
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
-  const currentStreakDays = useMemo(() => {
-    const headerValue = Number(initialInteractionDaysCount);
-    const educationValue = Number(educationPlan?.streak_days);
-    const resolved = Number.isFinite(headerValue) ? headerValue : educationValue;
-    return Number.isFinite(resolved) ? Math.max(0, Math.round(resolved)) : 0;
-  }, [educationPlan?.streak_days, initialInteractionDaysCount]);
-  const bestStreakDays = useMemo(() => {
-    const bestValue = Number(educationPlan?.best_streak_days);
-    if (Number.isFinite(bestValue)) return Math.max(currentStreakDays, Math.round(bestValue));
-    return currentStreakDays;
-  }, [currentStreakDays, educationPlan?.best_streak_days]);
-  const streakTodayIso = firstNonEmptyString(
-    initialTrackerSummary?.today,
-    morningSequenceDay,
-    educationPlan?.lesson_date,
-    fallbackLocalIsoDate(),
+  const currentStreakDays = initialEngagementSummary?.current_streak_days ?? 0;
+  const bestStreakDays = initialEngagementSummary?.best_streak_days ?? 0;
+  const streakTodayIso = initialEngagementSummary?.today || fallbackLocalIsoDate();
+  const streakCompletedDateSet = useMemo(
+    () => new Set(initialEngagementSummary?.active_dates ?? []),
+    [initialEngagementSummary?.active_dates],
   );
-  const streakCompletedDateSet = useMemo(() => {
-    const dates = new Set<string>(collectTrackerCompletionDates(initialTrackerSummary));
-    for (const extraDate of extraStreakCompletionDates) {
-      const token = String(extraDate || "").trim();
-      if (token) dates.add(token);
-    }
-    const anchor = parseLocalIsoDate(streakTodayIso);
-    if (anchor && currentStreakDays > 0) {
-      for (let index = 0; index < currentStreakDays; index += 1) {
-        dates.add(formatLocalIsoDate(addLocalDays(anchor, -index)));
-      }
-    }
-    return dates;
-  }, [currentStreakDays, extraStreakCompletionDates, initialTrackerSummary, streakTodayIso]);
   const streakCalendarDays = useMemo(
     () => buildStreakCalendarDays(streakCalendarMonth, streakTodayIso),
     [streakCalendarMonth, streakTodayIso],
@@ -2934,10 +2888,6 @@ export default function AssessmentChatBox({
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
       setFinalGiaListenError(null);
-      const scoreDate = String(detail?.scoreDate || "").trim();
-      if (scoreDate) {
-        setExtraStreakCompletionDates((current) => (current.includes(scoreDate) ? current : [...current, scoreDate]));
-      }
       stopFinalGiaListening();
       if (detail?.guided !== true) {
         return;

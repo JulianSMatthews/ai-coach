@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type {
+  AppEngagementSummary,
   AppleHealthRestingHeartRateResponse,
   BiometricMetricKey,
   BiometricSourceSummary,
@@ -32,7 +33,7 @@ type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
   initialAssessmentReviewed?: boolean;
-  initialInteractionDaysCount?: number | null;
+  initialEngagementSummary?: AppEngagementSummary | null;
   isAdminUser?: boolean;
   extendedPillarsEnabled?: boolean;
 };
@@ -1058,28 +1059,6 @@ function buildStreakCalendarDays(monthDate: Date, todayIso: string): StreakCalen
   });
 }
 
-function collectTrackerCompletionDates(summary?: PillarTrackerSummaryResponse | null): string[] {
-  const dates = new Set<string>();
-  const today = String(summary?.today || "").trim();
-  if (summary?.today_complete && today) {
-    dates.add(today);
-  }
-  const pillars = Array.isArray(summary?.pillars) ? summary.pillars : [];
-  for (const pillar of pillars) {
-    if (pillar?.today_complete && today) {
-      dates.add(today);
-    }
-    const options = Array.isArray(pillar?.checkin_options) ? pillar.checkin_options : [];
-    for (const option of options) {
-      const optionDate = String(option?.date || "").trim();
-      if (option?.complete && optionDate) {
-        dates.add(optionDate);
-      }
-    }
-  }
-  return Array.from(dates);
-}
-
 function resolveBiometricEndDay(...values: Array<string | null | undefined>): string {
   const today = new Date();
   let latest: Date | null = new Date(`${formatIsoLocalDay(today)}T12:00:00`);
@@ -1528,7 +1507,7 @@ export default function LatestAssessmentPanel({
   userId,
   initialSummary,
   initialAssessmentReviewed = false,
-  initialInteractionDaysCount = null,
+  initialEngagementSummary = null,
   isAdminUser = false,
   extendedPillarsEnabled = false,
 }: LatestAssessmentPanelProps) {
@@ -1640,20 +1619,12 @@ export default function LatestAssessmentPanel({
     () => pillars,
     [pillars],
   );
-  const streakTodayIso = String(summary.today || "").trim() || formatIsoLocalDay(new Date());
-  const currentStreakDays = Number.isFinite(Number(initialInteractionDaysCount))
-    ? Math.max(0, Math.round(Number(initialInteractionDaysCount)))
-    : 0;
-  const streakCompletedDateSet = useMemo(() => {
-    const dates = new Set<string>(collectTrackerCompletionDates(summary));
-    const anchor = parseIsoLocalDay(streakTodayIso);
-    if (anchor && currentStreakDays > 0) {
-      for (let index = 0; index < currentStreakDays; index += 1) {
-        dates.add(formatIsoLocalDay(addLocalDays(anchor, -index)));
-      }
-    }
-    return dates;
-  }, [currentStreakDays, streakTodayIso, summary]);
+  const streakTodayIso = initialEngagementSummary?.today || formatIsoLocalDay(new Date());
+  const currentStreakDays = initialEngagementSummary?.current_streak_days ?? 0;
+  const streakCompletedDateSet = useMemo(
+    () => new Set(initialEngagementSummary?.active_dates ?? []),
+    [initialEngagementSummary?.active_dates],
+  );
   const streakCalendarDays = useMemo(
     () => buildStreakCalendarDays(streakCalendarMonth, streakTodayIso),
     [streakCalendarMonth, streakTodayIso],
