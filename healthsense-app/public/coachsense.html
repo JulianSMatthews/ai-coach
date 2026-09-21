@@ -329,69 +329,61 @@
         overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 32px;
-        background:
-          linear-gradient(rgba(231, 225, 214, 0.34) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(231, 225, 214, 0.34) 1px, transparent 1px),
-          #ffffff;
-        background-size: 130px 86px, 130px 86px, auto;
+        background: #fffaf3;
+        container-type: inline-size;
       }
 
-      .splash-preview::after {
-        content: "";
+      .splash-preview-road {
         position: absolute;
-        right: -5%;
-        bottom: 6%;
-        width: 76%;
-        height: 118%;
-        border-right: 2px dashed rgba(191, 123, 87, 0.36);
-        border-radius: 50%;
-        transform: rotate(14deg);
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
       }
 
       .splash-preview-icon {
         position: absolute;
-        left: 50%;
-        top: 50%;
-        z-index: 1;
-        width: min(43%, 238px);
-        transform: translate(-50%, -50%) scale(0.68);
-        opacity: 0;
-        animation: coach-icon-reveal 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
+        left: 7%;
+        top: 7%;
+        width: 9%;
+        height: auto;
       }
 
       .splash-preview-pillars {
         position: absolute;
         inset: 0;
-        z-index: 1;
         pointer-events: none;
       }
 
       .splash-pillar-item {
         position: absolute;
-        left: 50%;
-        top: 50%;
-        display: grid;
-        justify-items: center;
-        gap: 16px;
-        width: min(72%, 360px);
-        color: var(--pillar-color);
+        left: var(--pillar-x);
+        top: var(--pillar-y);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: max-content;
+        max-width: 88%;
+        padding: 8px 16px 8px 8px;
+        border: 1px solid rgba(231, 225, 214, 0.85);
+        border-radius: 999px;
+        background: rgba(255, 252, 246, 0.97);
+        box-shadow: 0 8px 24px rgba(91, 43, 15, 0.12);
+        opacity: 0;
         transform: translate(-50%, -50%);
+        animation: coach-pillar-stop 30s ease-in-out infinite;
+        animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-icon {
-        width: clamp(91px, 16.8vw, 158px);
+        width: clamp(32px, 8cqi, 46px);
         aspect-ratio: 1;
+        flex: 0 0 auto;
         display: grid;
         place-items: center;
-        border: 1px solid color-mix(in srgb, var(--pillar-color), white 62%);
         border-radius: 50%;
         background: color-mix(in srgb, var(--pillar-color), white 90%);
         color: var(--pillar-color);
-        opacity: 0;
-        transform: translateY(-150%) scale(0.92);
-        box-shadow: 0 20px 44px -34px rgba(30, 27, 22, 0.36);
-        animation: coach-pillar-icon-feature 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
-        animation-delay: var(--pillar-delay);
       }
 
       .splash-pillar-icon svg {
@@ -400,160 +392,99 @@
       }
 
       .splash-pillar-label {
-        display: block;
         color: var(--ink);
-        font-family: Outfit, sans-serif;
-        font-size: clamp(26px, 3.84vw, 43px);
-        font-weight: 400;
-        line-height: 1.08;
-        opacity: 0;
-        text-align: center;
-        transform: translateY(150%) scale(0.96);
-        animation: coach-pillar-label-feature 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
-        animation-delay: var(--pillar-delay);
+        font-family: var(--font-display);
+        font-size: clamp(16px, 4.5cqi, 25px);
+        font-weight: 500;
+        line-height: 1.2;
       }
 
       .splash-pillar-resilience {
-        --pillar-color: #44abc3;
+        --pillar-color: #26859b;
         --pillar-delay: 0s;
+        --pillar-x: 49%;
+        --pillar-y: 82%;
       }
 
       .splash-pillar-purpose {
         --pillar-color: #0f8b8d;
         --pillar-delay: 5s;
+        --pillar-x: 66%;
+        --pillar-y: 61%;
       }
 
       .splash-pillar-reflection {
         --pillar-color: #7c5cff;
         --pillar-delay: 10s;
+        --pillar-x: 56%;
+        --pillar-y: 40%;
       }
 
       .splash-pillar-recovery {
         --pillar-color: #c9764f;
         --pillar-delay: 15s;
+        --pillar-x: 68%;
+        --pillar-y: 26%;
       }
 
       .splash-preview-words {
         position: absolute;
-        inset: 0;
-        z-index: 1;
+        left: 7%;
+        top: 22%;
+        width: 60%;
         color: var(--ink);
-        font-family: Outfit, sans-serif;
-        font-size: clamp(43px, 6.26vw, 80px);
-        font-weight: 300;
-        line-height: 1.12;
-      }
-
-      .splash-preview-word {
-        position: absolute;
-        left: 50%;
-        top: 50%;
+        font-family: var(--font-display);
+        font-size: clamp(30px, 9cqi, 51px);
+        font-weight: 500;
+        line-height: 1.06;
+        letter-spacing: -0.03em;
         opacity: 0;
-        transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        animation: coach-word-arrive 30s cubic-bezier(0.18, 0.86, 0.22, 1) infinite;
-      }
-
-      .splash-word-find {
-        --from-x: -160%;
-        --from-y: -170%;
-        --to-x: calc(-100% - 0.18em);
-        --to-y: calc(-50% - 0.56em);
+        animation: coach-road-message 30s ease-in-out infinite;
       }
 
       .splash-word-your {
-        --from-x: 86%;
-        --from-y: -170%;
-        --to-x: 0.18em;
-        --to-y: calc(-50% - 0.56em);
-        color: var(--accent);
+        color: var(--accent-dark);
       }
 
-      .splash-word-own {
-        --from-x: -160%;
-        --from-y: 120%;
-        --to-x: calc(-100% - 0.18em);
-        --to-y: calc(-50% + 0.56em);
+      .splash-animation-toggle {
+        position: absolute;
+        right: 14px;
+        bottom: 14px;
+        min-height: 44px;
+        padding: 8px 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 252, 246, 0.97);
+        color: var(--ink);
+        font: 500 12px var(--font-body);
+        cursor: pointer;
       }
 
-      .splash-word-way {
-        --from-x: 88%;
-        --from-y: 120%;
-        --to-x: 0.18em;
-        --to-y: calc(-50% + 0.56em);
+      .splash-animation-toggle:focus-visible {
+        outline: 2px solid var(--accent-dark);
+        outline-offset: 3px;
       }
 
-      @keyframes coach-icon-reveal {
-        0%,
-        83.3% {
-          opacity: 0;
-          transform: translate(-50%, -50%) scale(0.68);
-        }
-        85.3%,
-        96.7% {
-          opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
-        }
-        100% {
-          opacity: 0;
-          transform: translate(-50%, -50%) scale(1);
-        }
+      .splash-preview.is-paused * {
+        animation-play-state: paused;
       }
 
-      @keyframes coach-pillar-icon-feature {
-        0%,
-        0.1% {
-          opacity: 0;
-          transform: translateY(-150%) scale(0.92);
-        }
-        3.3%,
-        13.3% {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-        16.7%,
-        100% {
-          opacity: 0;
-          transform: translateY(0) scale(0.96);
-        }
+      @keyframes coach-pillar-stop {
+        0% { opacity: 0; }
+        3%, 13% { opacity: 1; }
+        16.67%, 100% { opacity: 0; }
       }
 
-      @keyframes coach-pillar-label-feature {
-        0%,
-        0.1% {
-          opacity: 0;
-          transform: translateY(150%) scale(0.96);
-        }
-        3.3%,
-        13.3% {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-        16.7%,
-        100% {
-          opacity: 0;
-          transform: translateY(0) scale(0.96);
-        }
+      @keyframes coach-road-message {
+        0%, 67% { opacity: 0; }
+        72%, 95% { opacity: 1; }
+        100% { opacity: 0; }
       }
 
-      @keyframes coach-word-arrive {
-        0%,
-        66.7% {
-          opacity: 0;
-          transform: translate3d(var(--from-x), var(--from-y), 0) scale(0.94);
-        }
-        70% {
-          opacity: 1;
-        }
-        73.3%,
-        80% {
-          opacity: 1;
-          transform: translate3d(var(--to-x), var(--to-y), 0) scale(1);
-        }
-        81.7%,
-        100% {
-          opacity: 0;
-          transform: translate3d(var(--to-x), var(--to-y), 0) scale(0.98);
-        }
+      @media (prefers-reduced-motion: reduce) {
+        .splash-pillar-item { animation: none; opacity: 0; }
+        .splash-preview-words { animation: none; opacity: 1; }
+        .splash-animation-toggle { display: none; }
       }
 
       section {
@@ -2310,8 +2241,9 @@
             </div>
           </div>
 
-          <aside class="app-preview" aria-label="CoachSense app preview">
-            <div class="splash-preview" aria-label="CoachSense splash animation">
+          <aside class="app-preview" aria-label="Find your own way through resilience, purpose, reflection and recovery">
+            <div class="splash-preview">
+              <img class="splash-preview-road" src="assets/winding-road.webp" width="1120" height="1120" alt="" fetchpriority="high" />
               <img class="splash-preview-icon" src="coachsense-icon-transparent.svg" alt="" />
               <div class="splash-preview-pillars" aria-hidden="true">
                 <span class="splash-pillar-item splash-pillar-resilience">
@@ -2365,11 +2297,9 @@
                 </span>
               </div>
               <div class="splash-preview-words" aria-hidden="true">
-                <span class="splash-preview-word splash-word-find">Find</span>
-                <span class="splash-preview-word splash-word-your">your</span>
-                <span class="splash-preview-word splash-word-own">own</span>
-                <span class="splash-preview-word splash-word-way">way.</span>
+                Find <span class="splash-word-your">your</span><br />own way.
               </div>
+              <button class="splash-animation-toggle" type="button" aria-pressed="false" aria-label="Pause hero animation">Pause animation</button>
             </div>
           </aside>
         </section>
@@ -2832,6 +2762,15 @@
       </footer>
     </div>
     <script>
+      const heroAnimation = document.querySelector(".splash-preview");
+      const heroAnimationToggle = document.querySelector(".splash-animation-toggle");
+      heroAnimationToggle?.addEventListener("click", () => {
+        const paused = heroAnimation.classList.toggle("is-paused");
+        heroAnimationToggle.setAttribute("aria-pressed", String(paused));
+        heroAnimationToggle.setAttribute("aria-label", paused ? "Resume hero animation" : "Pause hero animation");
+        heroAnimationToggle.textContent = paused ? "Resume animation" : "Pause animation";
+      });
+
       function recordLandingPageView() {
         try {
           const query = new URLSearchParams(window.location.search);

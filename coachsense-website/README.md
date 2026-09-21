@@ -2,6 +2,8 @@
 
 Standalone static website files for `coachsense.ai`.
 
+Live hosting verified on 21 September 2026: `coachsense.ai` is still served by the Next.js app. Its middleware rewrites `/` to `healthsense-app/public/coachsense.html`. Until the static-site migration is complete, website updates must also be applied to that file, and images copied into `healthsense-app/public/assets/`. Preserve the app copy's local support and legal links when updating it. Changes in this standalone folder alone do not update the live website.
+
 Render static site settings:
 
 - Root Directory: `coachsense-website`
