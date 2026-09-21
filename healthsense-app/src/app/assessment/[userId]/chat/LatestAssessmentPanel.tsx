@@ -3621,7 +3621,7 @@ export default function LatestAssessmentPanel({
                       <div className="absolute right-5 top-5">
                         <WeeklyScoreRing value={score} tone={palette.accent} />
                       </div>
-                      <div className="min-h-[84px] pr-24">
+                      <div className="min-h-[48px] pr-24">
                         <p className="text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
                           {pillar.label}
                         </p>
@@ -3635,7 +3635,7 @@ export default function LatestAssessmentPanel({
                                 window.requestAnimationFrame(() => updatePillarQuoteDirections(pillarKey, node));
                               }
                             }}
-                            className="h-[9.5rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[10.75rem]"
+                            className="h-[11.75rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 sm:h-[13rem]"
                             style={{
                               WebkitOverflowScrolling: "touch",
                               touchAction: "pan-x",
