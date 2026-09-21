@@ -27,3 +27,6 @@ app/assessor_LATEST.py
 
 reports.tar.gz
 public/membersense-media/
+
+# Private Android upload key and signing credentials
+.android-release/

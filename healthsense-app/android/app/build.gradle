@@ -1,5 +1,17 @@
 apply plugin: 'com.android.application'
 
+// Explicit opt-in: signing credentials live outside the tracked Android project.
+def signingPropertiesPath = System.getenv('COACHSENSE_ANDROID_SIGNING_PROPERTIES')
+def uploadSigning = new Properties()
+if (signingPropertiesPath) {
+    file(signingPropertiesPath).withInputStream { uploadSigning.load(it) }
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { key ->
+        if (!uploadSigning.getProperty(key)) {
+            throw new GradleException("Missing Android signing property: ${key}")
+        }
+    }
+}
+
 android {
     namespace = "ai.coachsense.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +28,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (signingPropertiesPath) {
+            upload {
+                storeFile file(uploadSigning.getProperty('storeFile'))
+                storePassword uploadSigning.getProperty('storePassword')
+                keyAlias uploadSigning.getProperty('keyAlias')
+                keyPassword uploadSigning.getProperty('keyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingPropertiesPath) {
+                signingConfig signingConfigs.upload
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

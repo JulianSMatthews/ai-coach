@@ -28,6 +28,7 @@ from email.message import EmailMessage
 from urllib.parse import parse_qs, urlencode, urlparse, quote
 from datetime import datetime, timedelta, date, timezone
 from app.engagement import build_engagement_summary
+from app.review_access import review_login
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body, BackgroundTasks
@@ -3819,33 +3820,12 @@ def _send_auth_code(
         except Exception as sms_err:
             raise RuntimeError(f"whatsapp send failed: {wa_err}; sms fallback failed: {sms_err}")
 
-def _app_review_demo_enabled() -> bool:
-    return _is_truthy_token(os.getenv("APP_REVIEW_DEMO_ENABLED"))
-
-def _app_review_demo_phone() -> str:
-    raw = (os.getenv("APP_REVIEW_DEMO_PHONE") or "").strip()
-    return _norm_phone(raw) if raw else ""
-
-def _app_review_demo_code() -> str:
-    return (os.getenv("APP_REVIEW_DEMO_CODE") or "123456").strip() or "123456"
-
-def _is_app_review_demo_login(*, phone_raw: object, email_raw: object = None) -> bool:
-    if not _app_review_demo_enabled() or email_raw:
-        return False
-    demo_phone = _app_review_demo_phone()
-    if not demo_phone:
-        return False
-    try:
-        return _norm_phone(str(phone_raw or "")) == demo_phone
-    except Exception:
-        return False
-
-def _get_or_create_app_review_demo_user(session, *, phone_norm: str) -> User:
+def _get_or_create_app_review_demo_user(session, *, phone_norm: str, reviewer_name: str = "Apple") -> User:
     user = session.execute(select(User).where(User.phone.in_([phone_norm, f"whatsapp:{phone_norm}"]))).scalar_one_or_none()
     now = datetime.utcnow()
     if user is None:
         user = User(
-            first_name="Apple",
+            first_name=reviewer_name,
             surname="Reviewer",
             phone=phone_norm,
             club_id=_resolve_default_club_id(session),
@@ -6628,11 +6608,12 @@ def api_auth_login_request(payload: dict, request: Request):
     requested_channel = str((payload or {}).get("channel") or "auto").strip().lower() or "auto"
     if requested_channel not in {"auto", "email", "whatsapp", "sms"}:
         raise HTTPException(status_code=400, detail="channel must be auto|email|whatsapp|sms")
-    is_demo_login = _is_app_review_demo_login(phone_raw=phone_raw, email_raw=email_raw)
+    demo_login = review_login(phone_raw=phone_raw, email_raw=email_raw, normalize_phone=_norm_phone)
+    is_demo_login = demo_login is not None
     with SessionLocal() as s:
         if is_demo_login:
             phone_norm = _norm_phone(str(phone_raw or ""))
-            user = _get_or_create_app_review_demo_user(s, phone_norm=phone_norm)
+            user = _get_or_create_app_review_demo_user(s, phone_norm=phone_norm, reviewer_name=demo_login.first_name)
             email_val = None
         else:
             user, email_val, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
@@ -6647,7 +6628,7 @@ def api_auth_login_request(payload: dict, request: Request):
             raise HTTPException(status_code=400, detail="email address required")
         if is_demo_login:
             requested_channel = "sms"
-        code = _app_review_demo_code() if is_demo_login else f"{secrets.randbelow(1_000_000):06d}"
+        code = demo_login.code if demo_login is not None else f"{secrets.randbelow(1_000_000):06d}"
         otp = AuthOtp(
             user_id=user_id,
             channel=requested_channel,
