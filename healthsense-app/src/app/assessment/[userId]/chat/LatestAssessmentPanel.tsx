@@ -3848,7 +3848,7 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {!(BIOMETRICS_ENABLED && biometricsModalOpen) && !appSetupRequired ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60]">
+        <div className="fixed inset-x-0 bottom-0 z-[60] bg-[var(--background)] pt-3">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
               <div className="grid grid-cols-2 p-1">

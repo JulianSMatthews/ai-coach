@@ -1484,7 +1484,8 @@ export default function AssessmentChatBox({
   const showInlineCoachingPlan = showResultCard && showCoachingPlan;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (leadFlow || hasActiveSession);
   const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultCard && !promptActive;
-  const showGuidedHomeChatPanel = showHomeChatPanel && !journeyCompleted;
+  // Modern home navigation is independent of the legacy guided journey.
+  const showGuidedHomeChatPanel = showHomeChatPanel && (modernHomeOnly || !journeyCompleted);
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
   const completionSummaryVideoStorageKey = useMemo(
     () => (completionSummaryRunId ? `hs:assessment-summary-video:${userId}:${completionSummaryRunId}` : null),
@@ -2625,7 +2626,9 @@ export default function AssessmentChatBox({
     window.dispatchEvent(
       new CustomEvent("healthsense-score-panel-visibility", {
         detail: {
-          visible: modernHomeOnly || journeyCompleted || (showGuidedHomeChatPanel && homeSurface === "blank"),
+          visible: modernHomeOnly
+            ? homeSurface === "blank"
+            : journeyCompleted || (showGuidedHomeChatPanel && homeSurface === "blank"),
         },
       }),
     );
@@ -2717,7 +2720,6 @@ export default function AssessmentChatBox({
       if (modernHomeOnly && surface === "streak") {
         setHomeSurfaceEntryMode("summary");
         setHomeSurface("blank");
-        setJourneyCompleted(true);
         return;
       }
       const source = String(detail?.source || "").trim().toLowerCase();
