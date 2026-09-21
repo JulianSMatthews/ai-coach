@@ -3645,7 +3645,7 @@ export default function LatestAssessmentPanel({
                         ) : null}
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
-                        <div className="relative max-w-[18rem]">
+                        <div className="relative w-full">
                           <div
                             ref={(node) => {
                               pillarQuoteRefs.current[pillarKey] = node;
@@ -3705,7 +3705,7 @@ export default function LatestAssessmentPanel({
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-auto grid max-w-[16rem] grid-cols-2 gap-2 pt-5">
+                        <div className="mt-auto grid w-full grid-cols-2 gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
