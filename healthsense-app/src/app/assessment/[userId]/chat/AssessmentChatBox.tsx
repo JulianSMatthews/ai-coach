@@ -4061,8 +4061,8 @@ export default function AssessmentChatBox({
                                     total={pillar.lesson_count}
                                   />
                                 </span>
-                                <span className="min-w-0 pr-24">
-                                  <span className="block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.8rem]">
+                                <span className="min-w-0 w-full">
+                                  <span className="flex min-h-[84px] items-center pr-24 text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[var(--text-primary)] sm:text-[2.8rem]">
                                     {pillar.pillar_label}
                                   </span>
                                   <span className="mt-4 block text-sm text-[var(--text-secondary)]">
