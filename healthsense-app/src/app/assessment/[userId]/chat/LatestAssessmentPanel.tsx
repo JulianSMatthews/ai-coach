@@ -206,18 +206,6 @@ function formatBiometricDayNumber(value?: string | null): string {
   return parsed.toLocaleDateString("en-GB", { day: "numeric" });
 }
 
-function formatJournalDate(value?: string | null): string {
-  const token = String(value || "").trim();
-  if (!token) return "";
-  const parsed = new Date(`${token}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return token;
-  return parsed.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
-
 function initialSetupPillarSelections(summary?: PillarTrackerSummaryResponse | null, includeAllPillars = false): Record<string, boolean> {
   const activeKeys = new Set(
     (Array.isArray(summary?.pillars) ? summary?.pillars : [])
@@ -3594,7 +3582,6 @@ export default function LatestAssessmentPanel({
                   const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                   const palette = getPillarPalette(pillarKey);
                   const score = resolvePillarDisplayScore(pillar);
-                  const journalDate = formatJournalDate(summary.today || summary.week?.anchor_date || "");
                   const checkinOptions = Array.isArray(pillar.checkin_options)
                     ? pillar.checkin_options.filter((option) => String(option?.date || "").trim())
                     : [];
@@ -3634,15 +3621,10 @@ export default function LatestAssessmentPanel({
                       <div className="absolute right-5 top-5">
                         <WeeklyScoreRing value={score} tone={palette.accent} />
                       </div>
-                      <div className="pr-24">
+                      <div className="min-h-[84px] pr-24">
                         <p className="text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
                           {pillar.label}
                         </p>
-                        {journalDate ? (
-                          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-current opacity-50">
-                            Journal {journalDate}
-                          </p>
-                        ) : null}
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div className="relative w-full">
