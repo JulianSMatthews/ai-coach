@@ -41,6 +41,12 @@ Microphone tracks are stopped before reply playback, on pause, when the page is
 hidden, and when the component unmounts. Speech credentials refresh before
 expiry. Raw recordings are not stored by this implementation; transcripts and
 model prompt logs use the app's storage. Speech audio is processed by Azure.
+Temporary visibility changes while microphone permission is pending do not
+cancel the session. If permission resolves while the app is still hidden, the
+stream is stopped and the user is asked to resume in the foreground. Playback
+resumes its audio context after microphone/permission changes. Recognition
+allows 15 seconds of initial silence and retries up to twice on a no-match
+result before pausing; no empty answer is submitted to the coach.
 
 ## Configuration and validation
 

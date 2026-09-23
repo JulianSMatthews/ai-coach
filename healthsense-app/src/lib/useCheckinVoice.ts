@@ -28,6 +28,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
     audio?: AudioContext;
     source?: AudioBufferSourceNode;
     cancel?: () => void;
+    requestingMicrophone?: boolean;
   }>({});
 
   const stop = useCallback(() => {
@@ -45,7 +46,12 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
   }, []);
 
   useEffect(() => {
-    const onVisibility = () => { if (document.hidden) stop(); };
+    const onVisibility = () => {
+      // iOS can temporarily hide the webview while its permission sheet is open.
+      // Once that request resolves, the foreground check below still prevents
+      // capture if the user actually left the app.
+      if (document.hidden && !resources.current.requestingMicrophone) stop();
+    };
     document.addEventListener("visibilitychange", onVisibility);
     return () => { document.removeEventListener("visibilitychange", onVisibility); stop(); };
   }, [stop]);
@@ -71,6 +77,22 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
         work((value) => finish(undefined, value), (error) => finish(error));
       });
     }
+    const getMicrophone = async () => {
+      resources.current.requestingMicrophone = true;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      } finally {
+        if (active()) resources.current.requestingMicrophone = false;
+      }
+      if (!active() || document.hidden) {
+        stream.getTracks().forEach((track) => track.stop());
+        assertActive();
+        throw new Error("Voice paused while the app was in the background. Resume when you’re ready.");
+      }
+      resources.current.stream = stream;
+      return stream;
+    };
     try {
       if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" && window.__healthsenseNativeMicrophoneReady !== true) {
         throw new Error("This installed app needs an update before it can use the microphone. Open CoachSense in Safari for a voice check-in, or use text here.");
@@ -81,9 +103,10 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
       resources.current.audio = audio;
       await audio.resume();
       assertActive();
-      const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const permissionStream = await getMicrophone();
       permissionStream.getTracks().forEach((track) => track.stop());
       assertActive();
+      resources.current.stream = undefined;
       const sdk = await import("microsoft-cognitiveservices-speech-sdk");
       assertActive();
       let credentials: Credentials | undefined;
@@ -104,6 +127,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
         settings.speechRecognitionLanguage = credentials.locale;
         settings.speechSynthesisVoiceName = credentials.voice;
         settings.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
+        settings.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "15000");
         return settings;
       };
       // Verify speech access before beginning a check-in turn.
@@ -133,6 +157,9 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
         assertActive();
         const buffer = await audio.decodeAudioData(data.slice(0));
         assertActive();
+        // Permission sheets and microphone routing can suspend Web Audio on iOS.
+        await operation<void>((resolve, reject) => { audio.resume().then(resolve, reject); });
+        assertActive();
         const source = audio.createBufferSource();
         resources.current.source = source;
         source.buffer = buffer;
@@ -143,27 +170,32 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
         resources.current.source = undefined;
         assertActive();
         if (/^(stop|pause|cancel|done|finish|stop listening|that['’]s all)[.!?\s]*$/i.test(next)) { stop(); return; }
-        const recognitionConfig = await config();
-        assertActive();
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-        if (!active()) { stream.getTracks().forEach((track) => track.stop()); return; }
-        resources.current.stream = stream;
-        const recognizer = new sdk.SpeechRecognizer(recognitionConfig, sdk.AudioConfig.fromStreamInput(stream));
-        resources.current.recognizer = recognizer;
-        recognizer.recognizing = (_sender, event) => { if (active()) setTranscript(event.result.text); };
-        setStatus("listening");
-        next = await operation<string>((resolve, reject) => {
-          recognizer.recognizeOnceAsync((result) => {
-            if (result.reason === sdk.ResultReason.RecognizedSpeech && result.text.trim()) resolve(result.text);
-            else reject(new Error("I didn’t catch that. Resume when you’re ready, or use text."));
-          }, () => reject(new Error("The microphone could not hear you. Check permission and resume, or use text.")));
-        });
-        assertActive();
-        stream.getTracks().forEach((track) => track.stop());
-        recognizer.close();
-        resources.current.stream = undefined;
-        resources.current.recognizer = undefined;
-        assertActive();
+        next = "";
+        for (let attempt = 0; attempt < 3 && !next; attempt += 1) {
+          const recognitionConfig = await config();
+          assertActive();
+          const stream = await getMicrophone();
+          assertActive();
+          resources.current.stream = stream;
+          const recognizer = new sdk.SpeechRecognizer(recognitionConfig, sdk.AudioConfig.fromStreamInput(stream));
+          resources.current.recognizer = recognizer;
+          recognizer.recognizing = (_sender, event) => { if (active()) setTranscript(event.result.text); };
+          setStatus("listening");
+          next = await operation<string>((resolve, reject) => {
+            recognizer.recognizeOnceAsync((result) => {
+              if (result.reason === sdk.ResultReason.RecognizedSpeech && result.text.trim()) resolve(result.text);
+              else if (result.reason === sdk.ResultReason.NoMatch) resolve("");
+              else reject(new Error("Speech recognition is unavailable right now. Please resume to reconnect, or use text."));
+            }, () => reject(new Error("The microphone could not hear you. Check permission and resume, or use text.")));
+          });
+          assertActive();
+          stream.getTracks().forEach((track) => track.stop());
+          recognizer.close();
+          resources.current.stream = undefined;
+          resources.current.recognizer = undefined;
+          if (!next) setTranscript("I’m still listening. Take your time, then speak your answer.");
+        }
+        if (!next) throw new Error("I didn’t catch that. Resume when you’re ready, or use text.");
         setTranscript(next);
       }
     } catch (err) {
