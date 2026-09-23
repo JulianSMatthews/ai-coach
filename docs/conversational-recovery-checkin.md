@@ -1,5 +1,10 @@
 # Spoken Recovery check-in
 
+**Currently withdrawn from the app.** The Recovery screen uses the standard
+check-in prompts. The conversation component and backend remain in the
+repository for future work; the screen no longer mounts the component.
+The instructions below describe the implementation when enabled.
+
 Open today's **Recovery** card and choose **Talk to your coach**, then **Start
 voice conversation**. Grant microphone permission. The coach speaks each reply,
 then listens for an answer. Users can answer several tracker questions together,
