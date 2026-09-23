@@ -8062,11 +8062,9 @@ def api_user_pillar_checkin_state(
 def api_user_pillar_checkin_voice_session(user_id: int, request: Request):
     from .avatar import issue_avatar_speech_token, _avatar_region, azure_avatar_defaults
 
-    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
     if _is_readonly_admin_preview_request(request):
         raise HTTPException(status_code=403, detail="Admin app preview is read-only")
-    if not _general_support_ready_for_user(user):
-        raise HTTPException(status_code=409, detail="Complete your assessment before starting a Recovery check-in.")
     try:
         token, expires = issue_avatar_speech_token()
         defaults = azure_avatar_defaults()
@@ -8086,11 +8084,9 @@ def api_user_pillar_checkin_message(
 ):
     from .pillar_checkin import handle_message
 
-    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
     if _is_readonly_admin_preview_request(request):
         raise HTTPException(status_code=403, detail="Admin app preview is read-only")
-    if not _general_support_ready_for_user(user):
-        raise HTTPException(status_code=409, detail="Complete your assessment before starting a Recovery check-in.")
     text = body.get("text")
     request_id = body.get("request_id")
     if not isinstance(text, str) or not text.strip() or len(text) > 4000:

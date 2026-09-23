@@ -33,6 +33,8 @@ load and advance the conversation. The `/voice-session` POST endpoint issues an
 expiring Azure Speech token; subscription keys stay server-side. The Next.js
 proxy requires a signed-in session and does not fall back to admin credentials.
 Admin previews cannot write or start a voice session.
+Check-ins require account access, but do not require a legacy assessment or
+legacy coaching activation.
 
 `useCheckinVoice.ts` uses the installed Azure Speech SDK for speech recognition
 and synthesis. It alternates one spoken answer with one reply, rather than
