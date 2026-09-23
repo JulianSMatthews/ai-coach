@@ -8047,6 +8047,69 @@ def api_user_progress(
     return data
 
 
+@api_v1.get("/users/{user_id}/pillar-checkin")
+def api_user_pillar_checkin_state(
+    user_id: int,
+    request: Request,
+):
+    from .pillar_checkin import get_state, public_state
+
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
+    return public_state(get_state(user_id))
+
+
+@api_v1.post("/users/{user_id}/pillar-checkin/voice-session")
+def api_user_pillar_checkin_voice_session(user_id: int, request: Request):
+    from .avatar import issue_avatar_speech_token, _avatar_region, azure_avatar_defaults
+
+    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
+    if _is_readonly_admin_preview_request(request):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    if not _general_support_ready_for_user(user):
+        raise HTTPException(status_code=409, detail="Complete your assessment before starting a Recovery check-in.")
+    try:
+        token, expires = issue_avatar_speech_token()
+        defaults = azure_avatar_defaults()
+        return JSONResponse({"token": token, "region": _avatar_region(), "expires_in": expires,
+                             "voice": defaults["voice"], "locale": defaults["locale"]},
+                            headers={"Cache-Control": "no-store"})
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Voice is unavailable right now. Please try again or use text.") from exc
+
+
+@api_v1.post("/users/{user_id}/pillar-checkin")
+def api_user_pillar_checkin_message(
+    user_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    body: dict[str, Any] = Body(...),
+):
+    from .pillar_checkin import handle_message
+
+    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=None, x_admin_user_id=None)
+    if _is_readonly_admin_preview_request(request):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    if not _general_support_ready_for_user(user):
+        raise HTTPException(status_code=409, detail="Complete your assessment before starting a Recovery check-in.")
+    text = body.get("text")
+    request_id = body.get("request_id")
+    if not isinstance(text, str) or not text.strip() or len(text) > 4000:
+        raise HTTPException(status_code=400, detail="text must contain 1–4000 characters")
+    if not isinstance(request_id, str) or not 8 <= len(request_id) <= 80:
+        raise HTTPException(status_code=400, detail="A request_id of 8–80 characters is required")
+    try:
+        result, saved = handle_message(user_id, text.strip(), request_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if saved:
+        _log_app_engagement_event(user_id=user_id, unit_type="pillar_tracker_update", meta={
+            "page": "recovery_conversation", "pillar_key": "recovery", "score_date": result.get("saved_date"),
+        })
+        queue_coach_home_tracker_refresh(user_id, trigger="pillar_tracker_update", pillar_key="recovery",
+                                        score_date=result.get("saved_date"), background_tasks=background_tasks)
+    return result
+
+
 @api_v1.get("/users/{user_id}/pillar-tracker")
 def api_user_pillar_tracker_summary(
     user_id: int,

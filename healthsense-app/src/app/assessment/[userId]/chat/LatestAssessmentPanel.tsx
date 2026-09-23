@@ -28,6 +28,7 @@ import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
+import RecoveryCheckinChat from "@/components/RecoveryCheckinChat";
 
 type LatestAssessmentPanelProps = {
   userId: string;
@@ -4935,6 +4936,22 @@ export default function LatestAssessmentPanel({
 
               {detail ? (
                 <div className="space-y-4">
+                  {selectedPillarKey === "recovery" && activeDate === detail.pillar?.today ? (
+                    <RecoveryCheckinChat
+                      key={userId}
+                      userId={userId}
+                      onSaved={(scoreDate) => {
+                        for (const key of trackerDetailCacheRef.current.keys()) {
+                          if (key.startsWith("recovery:")) trackerDetailCacheRef.current.delete(key);
+                        }
+                        void loadTrackerDetail("recovery", scoreDate);
+                        void refreshSummary({ anchorDate: scoreDate, skipQuoteGeneration: false }).catch(() => undefined);
+                        window.dispatchEvent(new CustomEvent("healthsense-tracker-updated", {
+                          detail: { pillarKey: "recovery", scoreDate, guided: false },
+                        }));
+                      }}
+                    />
+                  ) : null}
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];
