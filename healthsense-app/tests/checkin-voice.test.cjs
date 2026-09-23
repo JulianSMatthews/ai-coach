@@ -6,12 +6,14 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
 
-function harness({ utterances = ["Save.", "Pause."], permissionError, recognitionReason = 1, recognitionReasons, getMedia, nativeIOS = false, microphoneReady, permissionSheet = false, backgroundDuringPermission = false } = {}) {
+function harness({ utterances = ["Save.", "Pause."], permissionError, recognitionReason = 1, recognitionReasons, getMedia, nativeIOS = false, microphoneReady, permissionSheet = false, backgroundDuringPermission = false, hasAudioSession = false } = {}) {
   const states = [], effects = [], events = [], streams = [];
   const listeners = new Map();
   const document = { hidden: false, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name) => listeners.delete(name) };
   function visibility(hidden) { document.hidden = hidden; listeners.get("visibilitychange")?.(); }
   let audioContext;
+  let audioType = "auto";
+  const audioSession = { get type() { return audioType; }, set type(value) { audioType = value; events.push(["audio-mode", value]); } };
   let microphoneLive = false;
   const react = {
     useState(initial) { const slot = states.length; states.push(initial); return [initial, (value) => { states[slot] = value; events.push(["state", slot, value]); }]; },
@@ -21,6 +23,7 @@ function harness({ utterances = ["Save.", "Pause."], permissionError, recognitio
   };
   const media = async () => {
     if (permissionError) throw permissionError;
+    if (hasAudioSession) assert.equal(audioType, "play-and-record");
     if (permissionSheet || backgroundDuringPermission) {
       visibility(true);
       if (audioContext) audioContext.state = "suspended";
@@ -40,7 +43,7 @@ function harness({ utterances = ["Save.", "Pause."], permissionError, recognitio
     createBufferSource() {
       return {
         connect() {}, disconnect() {}, stop() { events.push(["playback-stop"]); },
-        start() { assert.equal(microphoneLive, false, "microphone must be off while coach speaks"); assert.equal(audioContext.state, "running"); events.push(["play"]); queueMicrotask(() => this.onended()); },
+        start() { assert.equal(microphoneLive, false, "microphone must be off while coach speaks"); assert.equal(audioContext.state, "running"); if (hasAudioSession) assert.equal(audioType, "playback", "iOS must use media playback instead of the silent-switch-sensitive default"); events.push(["play"]); queueMicrotask(() => this.onended()); },
       };
     }
   }
@@ -66,7 +69,7 @@ function harness({ utterances = ["Save.", "Pause."], permissionError, recognitio
     exports: {}, require: (name) => name === "react" ? react : name === "@capacitor/core" ? {
       Capacitor: { isNativePlatform: () => nativeIOS, getPlatform: () => nativeIOS ? "ios" : "web" },
     } : sdk,
-    navigator: { mediaDevices: { getUserMedia: getMedia || media } },
+    navigator: { mediaDevices: { getUserMedia: getMedia || media }, audioSession: hasAudioSession ? audioSession : undefined },
     window: { AudioContext, __healthsenseNativeMicrophoneReady: microphoneReady }, AudioContext,
     document,
     fetch: async () => ({ ok: true, json: async () => ({ token: "test", region: "test", voice: "test", locale: "en-GB", expires_in: 540 }) }),
@@ -76,7 +79,7 @@ function harness({ utterances = ["Save.", "Pause."], permissionError, recognitio
   const exchanges = [];
   const voice = context.exports.useCheckinVoice("1", async (text) => { exchanges.push(text); return `Coach reply to ${text}`; });
   const cleanups = effects.map((effect) => effect());
-  return { voice, states, events, streams, exchanges, visibility, cleanup: () => cleanups.forEach((fn) => fn?.()) };
+  return { voice, states, events, streams, exchanges, visibility, audioSession, cleanup: () => cleanups.forEach((fn) => fn?.()) };
 }
 
 test("speaks, listens, submits spoken confirmation, then pauses without an extra turn", async () => {
@@ -85,6 +88,28 @@ test("speaks, listens, submits spoken confirmation, then pauses without an extra
   assert.deepEqual(h.exchanges, ["start", "Save.", "Pause."]);
   assert.equal(h.events.filter((event) => event[0] === "play").length, 3);
   assert.ok(h.streams.every((stream) => stream.stopped));
+  assert.equal(h.states[0], "idle");
+  assert.equal(h.states[1], null);
+  h.cleanup();
+});
+
+test("iOS uses playback mode for replies and restores the previous mode on stop", async () => {
+  const h = harness({ hasAudioSession: true, nativeIOS: true, microphoneReady: true });
+  await h.voice.start("start");
+  assert.deepEqual(h.exchanges, ["start", "Save.", "Pause."]);
+  assert.equal(h.audioSession.type, "auto");
+  assert.equal(h.states[1], null);
+  h.cleanup();
+});
+
+test("hearing an existing reply needs no microphone, new chat turn, or new iOS shell", async () => {
+  const h = harness({ hasAudioSession: true, nativeIOS: true, permissionError: new Error("Microphone must not be requested") });
+  await h.voice.replay("How rested do you feel?");
+  assert.equal(h.streams.length, 0);
+  assert.equal(h.exchanges.length, 0);
+  assert.deepEqual(h.events.filter((event) => event[0] === "say"), [["say", "How rested do you feel?"]]);
+  assert.equal(h.events.filter((event) => event[0] === "play").length, 1);
+  assert.equal(h.audioSession.type, "auto");
   assert.equal(h.states[0], "idle");
   assert.equal(h.states[1], null);
   h.cleanup();

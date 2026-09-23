@@ -69,6 +69,7 @@ export default function RecoveryCheckinChat({ userId, onSaved }: {
   }
 
   function submit(event: FormEvent) { event.preventDefault(); void send(draft.trim()); }
+  const lastCoachReply = [...(conversation.messages || [])].reverse().find((message) => message.role === "assistant")?.text;
   const buttonClass = "rounded-full bg-[var(--action-primary-bg)] px-5 py-3 text-sm font-semibold text-[var(--action-primary-text)] disabled:opacity-45";
 
   return (
@@ -83,8 +84,13 @@ export default function RecoveryCheckinChat({ userId, onSaved }: {
             <button type="button" disabled={!ready || (busy && !voice.active)} onClick={() => voice.active ? voice.stop() : void voice.start(pending.current?.text || (conversation.phase ? "resume" : "start"))} className={buttonClass}>
               {voice.active ? "Pause voice conversation" : conversation.phase ? "Resume voice conversation" : "Start voice conversation"}
             </button>
+            {lastCoachReply ? (
+              <button type="button" disabled={busy || voice.active} onClick={() => void voice.replay(lastCoachReply)} className="ml-3 rounded-full border border-[var(--border)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] disabled:opacity-45">
+                Hear coach’s reply
+              </button>
+            ) : null}
             <p role="status" className="text-sm text-[var(--text-secondary)]">
-              {voice.status === "listening" ? "Listening — speak your answer. You can say ‘pause’ at any time." : voice.status === "speaking" ? "Your coach is speaking…" : voice.status === "thinking" ? "Your coach is thinking…" : voice.status === "connecting" ? "Connecting your microphone…" : "Your coach will speak, then listen. You can correct answers and say ‘save’ to confirm."}
+              {voice.status === "listening" ? "Listening — speak your answer. You can say ‘pause’ at any time." : voice.status === "speaking" ? "Your coach is speaking…" : voice.status === "thinking" ? "Your coach is thinking…" : voice.status === "connecting" ? "Preparing voice…" : "Your coach will speak, then listen. You can correct answers and say ‘save’ to confirm."}
             </p>
             {voice.transcript ? <p className="text-sm italic text-[var(--text-secondary)]">{voice.transcript}</p> : null}
             {voice.error ? <p role="alert" className="text-sm text-[#8a3e1a]">{voice.error}</p> : null}

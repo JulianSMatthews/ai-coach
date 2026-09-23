@@ -6,6 +6,8 @@ then listens for an answer. Users can answer several tracker questions together,
 correct the summary, and say **save** to confirm. A saved check-in leads into a
 spoken reflection. Say **pause**, or use the pause button, to end audio capture.
 The transcript and a text fallback remain available.
+**Hear coach’s reply** plays the last coach message without opening the
+microphone or submitting another chat turn, including after a text conversation.
 
 ## Current scope
 
@@ -49,6 +51,11 @@ stream is stopped and the user is asked to resume in the foreground. Playback
 resumes its audio context after microphone/permission changes. Recognition
 allows 15 seconds of initial silence and retries up to twice on a no-match
 result before pausing; no empty answer is submitted to the coach.
+Where the browser exposes Audio Session, replies explicitly use `playback`
+instead of the default audio mode, which can follow the iPhone Silent switch.
+Microphone turns use `play-and-record`, and ending a session restores the
+previous mode. Replay uses the same playback path without requesting microphone
+permission. See [WebKit's audio-mode discussion](https://bugs.webkit.org/show_bug.cgi?id=237322).
 
 ## Configuration and validation
 

@@ -6,6 +6,7 @@ import type { SpeechRecognizer, SpeechSynthesizer } from "microsoft-cognitiveser
 
 type Credentials = { token: string; region: string; voice: string; locale: string; expires_in: number };
 type Status = "idle" | "connecting" | "listening" | "thinking" | "speaking";
+type BrowserAudioSession = { type: string };
 
 declare global {
   interface Window {
@@ -29,6 +30,8 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
     source?: AudioBufferSourceNode;
     cancel?: () => void;
     requestingMicrophone?: boolean;
+    audioSession?: BrowserAudioSession;
+    previousAudioType?: string;
   }>({});
 
   const stop = useCallback(() => {
@@ -41,6 +44,9 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
     try { current.synthesizer?.close(); } catch { /* Already closed. */ }
     try { current.source?.stop(); } catch { /* Already ended. */ }
     if (current.audio && current.audio.state !== "closed") void current.audio.close().catch(() => undefined);
+    if (current.audioSession && current.previousAudioType) {
+      try { current.audioSession.type = current.previousAudioType; } catch { /* Optional browser API. */ }
+    }
     setStatus("idle");
     setTranscript("");
   }, []);
@@ -56,13 +62,16 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
     return () => { document.removeEventListener("visibilitychange", onVisibility); stop(); };
   }, [stop]);
 
-  async function start(command: string) {
+  async function start(command: string, replayText?: string) {
     stop();
     const run = generation.current;
     const active = () => generation.current === run;
     setError(null);
     setStatus("connecting");
     const assertActive = () => { if (!active()) throw new Error("Voice paused"); };
+    const audioMode = (type: "playback" | "play-and-record") => {
+      try { if (resources.current.audioSession) resources.current.audioSession.type = type; } catch { /* Optional browser API. */ }
+    };
     // Ensure pending SDK operations settle when the user pauses or leaves.
     function operation<T>(work: (resolve: (value: T) => void, reject: (error: Error) => void) => void, timeoutMs = 45000): Promise<T> {
       return new Promise<T>((resolve, reject) => {
@@ -78,6 +87,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
       });
     }
     const getMicrophone = async () => {
+      audioMode("play-and-record");
       resources.current.requestingMicrophone = true;
       let stream: MediaStream;
       try {
@@ -94,19 +104,29 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
       return stream;
     };
     try {
-      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" && window.__healthsenseNativeMicrophoneReady !== true) {
+      if (replayText === undefined && Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" && window.__healthsenseNativeMicrophoneReady !== true) {
         throw new Error("This installed app needs an update before it can use the microphone. Open CoachSense in Safari for a voice check-in, or use text here.");
       }
-      if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw new Error("Voice is not supported here. Please open the app in a supported browser or use text.");
+      if ((replayText === undefined && !navigator.mediaDevices?.getUserMedia) || !window.AudioContext) throw new Error("Voice is not supported here. Please open the app in a supported browser or use text.");
+      const audioSession = (navigator as Navigator & { audioSession?: BrowserAudioSession }).audioSession;
+      if (audioSession) {
+        resources.current.audioSession = audioSession;
+        resources.current.previousAudioType = audioSession.type;
+      }
+      // Explicit media playback avoids iOS treating replies as muted sound effects.
+      audioMode("playback");
       // Resume audio on the initiating tap so mobile browsers can play replies.
       const audio = new AudioContext();
       resources.current.audio = audio;
       await audio.resume();
       assertActive();
-      const permissionStream = await getMicrophone();
-      permissionStream.getTracks().forEach((track) => track.stop());
-      assertActive();
-      resources.current.stream = undefined;
+      if (replayText === undefined) {
+        const permissionStream = await getMicrophone();
+        permissionStream.getTracks().forEach((track) => track.stop());
+        assertActive();
+        resources.current.stream = undefined;
+        audioMode("playback");
+      }
       const sdk = await import("microsoft-cognitiveservices-speech-sdk");
       assertActive();
       let credentials: Credentials | undefined;
@@ -136,7 +156,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
       let next = command;
       while (active()) {
         setStatus("thinking");
-        const reply = await exchangeRef.current(next);
+        const reply = replayText ?? await exchangeRef.current(next);
         assertActive();
         if (!reply.trim()) throw new Error("There was no coach response. Please resume to try again.");
         setTranscript("");
@@ -157,6 +177,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
         assertActive();
         const buffer = await audio.decodeAudioData(data.slice(0));
         assertActive();
+        audioMode("playback");
         // Permission sheets and microphone routing can suspend Web Audio on iOS.
         await operation<void>((resolve, reject) => { audio.resume().then(resolve, reject); });
         assertActive();
@@ -169,7 +190,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
         source.disconnect();
         resources.current.source = undefined;
         assertActive();
-        if (/^(stop|pause|cancel|done|finish|stop listening|that['’]s all)[.!?\s]*$/i.test(next)) { stop(); return; }
+        if (replayText !== undefined || /^(stop|pause|cancel|done|finish|stop listening|that['’]s all)[.!?\s]*$/i.test(next)) { stop(); return; }
         next = "";
         for (let attempt = 0; attempt < 3 && !next; attempt += 1) {
           const recognitionConfig = await config();
@@ -193,6 +214,7 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
           recognizer.close();
           resources.current.stream = undefined;
           resources.current.recognizer = undefined;
+          audioMode("playback");
           if (!next) setTranscript("I’m still listening. Take your time, then speak your answer.");
         }
         if (!next) throw new Error("I didn’t catch that. Resume when you’re ready, or use text.");
@@ -205,5 +227,6 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
     }
   }
 
-  return { start, stop, status, error, transcript, active: status !== "idle" };
+  const replay = (text: string) => start("", text);
+  return { start, replay, stop, status, error, transcript, active: status !== "idle" };
 }
