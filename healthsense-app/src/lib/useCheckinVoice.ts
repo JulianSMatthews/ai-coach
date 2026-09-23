@@ -1,10 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import type { SpeechRecognizer, SpeechSynthesizer } from "microsoft-cognitiveservices-speech-sdk";
 
 type Credentials = { token: string; region: string; voice: string; locale: string; expires_in: number };
 type Status = "idle" | "connecting" | "listening" | "thinking" | "speaking";
+
+declare global {
+  interface Window {
+    __healthsenseNativeMicrophoneReady?: boolean;
+  }
+}
 
 /** Alternating spoken turns. The microphone is released before synthesis/playback. */
 export function useCheckinVoice(userId: string, exchange: (text: string) => Promise<string>) {
@@ -65,6 +72,9 @@ export function useCheckinVoice(userId: string, exchange: (text: string) => Prom
       });
     }
     try {
+      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" && window.__healthsenseNativeMicrophoneReady !== true) {
+        throw new Error("This installed app needs an update before it can use the microphone. Open CoachSense in Safari for a voice check-in, or use text here.");
+      }
       if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw new Error("Voice is not supported here. Please open the app in a supported browser or use text.");
       // Resume audio on the initiating tap so mobile browsers can play replies.
       const audio = new AudioContext();

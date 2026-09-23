@@ -49,8 +49,8 @@ export default function RecoveryCheckinChat({ userId, onSaved }: {
     inFlight.current = true;
     setBusy(true);
     setError(null);
-    if (!pending.current || pending.current.text !== text) pending.current = { text, id: crypto.randomUUID() };
     try {
+      if (!pending.current || pending.current.text !== text) pending.current = { text, id: crypto.randomUUID() };
       const res = await fetch("/api/pillar-checkin", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, text, request_id: pending.current.id }),

@@ -53,6 +53,10 @@ configuration for answer extraction and reflection.
 Microphone access requires a secure context (HTTPS or localhost). iOS microphone
 purpose text and Android `RECORD_AUDIO` permission are included. Native builds
 must be rebuilt to pick up permission changes.
+The iOS bridge advertises microphone capability from the installed bundle at
+document start. Older binaries without that capability are blocked before any
+microphone request and offer Safari or text instead. This protects installed
+apps when the hosted web code updates ahead of the native release.
 
 Automated checks:
 

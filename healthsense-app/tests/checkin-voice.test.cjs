@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
 
-function harness({ utterances = ["Save.", "Pause."], permissionError, recognitionReason = 1, getMedia } = {}) {
+function harness({ utterances = ["Save.", "Pause."], permissionError, recognitionReason = 1, getMedia, nativeIOS = false, microphoneReady } = {}) {
   const states = [], effects = [], events = [], streams = [];
   let microphoneLive = false;
   const react = {
@@ -52,9 +52,11 @@ function harness({ utterances = ["Save.", "Pause."], permissionError, recognitio
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   const context = {
-    exports: {}, require: (name) => name === "react" ? react : sdk,
+    exports: {}, require: (name) => name === "react" ? react : name === "@capacitor/core" ? {
+      Capacitor: { isNativePlatform: () => nativeIOS, getPlatform: () => nativeIOS ? "ios" : "web" },
+    } : sdk,
     navigator: { mediaDevices: { getUserMedia: getMedia || media } },
-    window: { AudioContext }, AudioContext,
+    window: { AudioContext, __healthsenseNativeMicrophoneReady: microphoneReady }, AudioContext,
     document: { hidden: false, addEventListener() {}, removeEventListener() {} },
     fetch: async () => ({ ok: true, json: async () => ({ token: "test", region: "test", voice: "test", locale: "en-GB", expires_in: 540 }) }),
     setTimeout, clearTimeout, console, Date, Error, Promise,
@@ -73,6 +75,26 @@ test("speaks, listens, submits spoken confirmation, then pauses without an extra
   assert.equal(h.events.filter((event) => event[0] === "play").length, 3);
   assert.ok(h.streams.every((stream) => stream.stopped));
   assert.equal(h.states[0], "idle");
+  assert.equal(h.states[1], null);
+  h.cleanup();
+});
+
+test("older iOS shells cannot access the microphone or begin an activity", async () => {
+  for (const microphoneReady of [undefined, false]) {
+    const h = harness({ nativeIOS: true, microphoneReady });
+    await h.voice.start("start");
+    assert.equal(h.streams.length, 0);
+    assert.equal(h.exchanges.length, 0);
+    assert.match(h.states[1], /installed app needs an update/);
+    assert.equal(h.states[0], "idle");
+    h.cleanup();
+  }
+});
+
+test("iOS builds declaring microphone capability can complete spoken turns", async () => {
+  const h = harness({ nativeIOS: true, microphoneReady: true });
+  await h.voice.start("start");
+  assert.deepEqual(h.exchanges, ["start", "Save.", "Pause."]);
   assert.equal(h.states[1], null);
   h.cleanup();
 });
