@@ -22634,71 +22634,8 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
             elif gia_message.get("generated_at"):
                 gia_message_detail = f"Generated {str(gia_message.get('generated_at') or '').strip()}"
 
-        education_plan_row = (
-            s.execute(
-                select(UserEducationPlan, EducationProgramme)
-                .join(EducationProgramme, UserEducationPlan.programme_id == EducationProgramme.id)
-                .where(
-                    UserEducationPlan.user_id == int(user_id),
-                    UserEducationPlan.status == "active",
-                )
-                .order_by(desc(UserEducationPlan.updated_at), desc(UserEducationPlan.id))
-            )
-            .first()
-        )
-        education = None
-        if education_plan_row:
-            plan, programme = education_plan_row
-            progress = (
-                s.execute(
-                    select(UserEducationDayProgress)
-                    .where(
-                        UserEducationDayProgress.user_plan_id == int(plan.id),
-                        UserEducationDayProgress.lesson_date == today,
-                    )
-                    .order_by(desc(UserEducationDayProgress.id))
-                )
-                .scalars()
-                .first()
-            )
-            if progress is None:
-                progress = (
-                    s.execute(
-                        select(UserEducationDayProgress)
-                        .where(UserEducationDayProgress.user_plan_id == int(plan.id))
-                        .order_by(desc(UserEducationDayProgress.lesson_date), desc(UserEducationDayProgress.id))
-                    )
-                    .scalars()
-                    .first()
-                )
-            education = {
-                "available": True,
-                "plan_id": int(plan.id),
-                "programme_id": int(programme.id),
-                "programme_name": programme.name,
-                "pillar_key": plan.pillar_key,
-                "concept_key": plan.entry_concept_key,
-                "concept_label": plan.entry_concept_label,
-                "starts_on": iso_value(plan.starts_on),
-                "current_day_index": plan.current_day_index,
-                "current_streak_days": plan.current_streak_days,
-                "best_streak_days": plan.best_streak_days,
-                "progress": (
-                    {
-                        "id": int(progress.id),
-                        "is_today": bool(progress.lesson_date == today),
-                        "lesson_date": iso_value(progress.lesson_date),
-                        "completion_status": progress.completion_status,
-                        "watch_pct": progress.watch_pct,
-                        "quiz_score_pct": progress.quiz_score_pct,
-                        "video_completed_at": iso_value(progress.video_completed_at),
-                        "quiz_completed_at": iso_value(progress.quiz_completed_at),
-                        "completed_at": iso_value(progress.completed_at),
-                    }
-                    if progress is not None
-                    else None
-                ),
-            }
+        from .admin_user_learning import load_user_learning
+        education = capture("education", lambda: load_user_learning(s, int(user_id), today))
 
         tracker_rows = (
             s.execute(

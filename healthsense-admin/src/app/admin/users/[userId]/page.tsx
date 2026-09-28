@@ -312,6 +312,7 @@ export default async function UserProfilePage({
             <div className="grid gap-5 md:grid-cols-2">
               <section className={panel}>
                 <h2 className="text-lg font-semibold">Learning</h2>
+                <p className={`mt-1 ${muted}`}>Latest recorded lesson activity across programmes.</p>
                 {lesson?.available ? (
                   <div className="mt-3 space-y-2 text-sm">
                     <p className="font-medium">
@@ -322,9 +323,11 @@ export default async function UserProfilePage({
                     <p>Lesson date: {dateLabel(progress?.lesson_date)}</p>
                     <p>
                       Video progress:{" "}
-                      {progress?.watch_pct == null
-                        ? "Not recorded"
-                        : `${progress.watch_pct}%`}
+                      {progress?.video_completed_at
+                        ? `Completed${progress.watch_pct == null ? "" : ` · ${progress.watch_pct}%`}`
+                        : progress?.watch_pct == null
+                          ? "Not recorded"
+                          : `${progress.watch_pct}%`}
                     </p>
                     <p>
                       Quiz:{" "}
