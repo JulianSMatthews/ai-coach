@@ -1641,6 +1641,12 @@ export default function LatestAssessmentPanel({
   const activeDate = String(detail?.pillar?.active_date || detail?.pillar?.today || "").trim();
   const canEditActiveWeek = detail?.pillar?.is_editable !== false;
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
+  const viewingLastWeek = detail?.pillar?.is_current_week === false;
+  const scorePeriodStart = parseIsoLocalDay(detail?.pillar?.week_start);
+  const scorePeriodEnd = parseIsoLocalDay(detail?.pillar?.week_end);
+  const scorePeriodLabel = scorePeriodStart && scorePeriodEnd
+    ? `${scorePeriodStart.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} – ${scorePeriodEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+    : "";
   const wellbeingObjectiveItems = useMemo(
     () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
     [weeklyObjectives],
@@ -4934,9 +4940,17 @@ export default function LatestAssessmentPanel({
 
               {detail ? (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
-                    <p className="text-lg font-semibold text-[var(--text-primary)]">{detail.pillar?.label}</p>
-                    <WeeklyScoreRing value={resolveTrackerDetailDisplayScore(detail, summary)} tone="var(--accent)" />
+                  <div className={`flex items-center justify-between gap-4 rounded-3xl px-6 py-4 ${viewingLastWeek ? "bg-white text-[#181512] [--ring-track:#ece5d9]" : "bg-[var(--surface-muted)] text-[var(--text-primary)]"}`}>
+                    <div>
+                      <p className="text-lg font-semibold">{detail.pillar?.label}</p>
+                      {viewingLastWeek && scorePeriodLabel ? (
+                        <p className="mt-1 text-sm text-[#625b52]">{scorePeriodLabel}</p>
+                      ) : null}
+                    </div>
+                    <WeeklyScoreRing
+                      value={resolveTrackerDetailDisplayScore(detail, summary)}
+                      tone={viewingLastWeek ? getPillarPalette(trackerPillarKey).accent : "var(--accent)"}
+                    />
                   </div>
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
