@@ -74,3 +74,15 @@ test('historical and Tuesday detail scores keep their own week', () => {
   assert.equal(detailScore({ pillar: { pillar_key: 'reflection', tracker_score: 74, is_current_week: false } }, summary), 74);
   assert.equal(detailScore({ pillar: { pillar_key: 'reflection', tracker_score: null, current_date: '2026-09-29', is_current_week: true } }, summary), null);
 });
+const { resolveTrackerDayStatus: dayStatus } = context.exports;
+test('achieved Nutrition daily targets override an outdated orange status', () => {
+  for (const concept_key of ['protein_intake', 'fruit_veg', 'hydration', 'processed_food']) {
+    assert.equal(dayStatus({ concept_key, target_period: 'day' }, { target_met: true, daily_status: 'warning' }), 'success');
+    assert.equal(dayStatus({ concept_key, target_period: 'day' }, { target_met: false, target_reached: true, daily_status: 'warning' }), 'warning');
+  }
+});
+test('weekly progress does not override daily success or colour missing days', () => {
+  assert.equal(dayStatus({ target_period: 'week' }, { target_reached: true, target_met: false, daily_status: 'warning' }), 'success');
+  assert.equal(dayStatus({ target_period: 'week' }, { target_reached: false, target_met: true, daily_status: 'danger' }), 'danger');
+  assert.equal(dayStatus({ target_period: 'day' }, { target_met: null, daily_status: null }), null);
+});

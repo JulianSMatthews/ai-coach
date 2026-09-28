@@ -1,4 +1,4 @@
-import type { PillarTrackerSummaryResponse, PillarTrackerDetailResponse } from "@/lib/api";
+import type { PillarTrackerSummaryResponse, PillarTrackerDetailResponse, PillarTrackerConcept, PillarTrackerConceptWeekDay } from "@/lib/api";
 
 export const PILLAR_TRACKER_OVERALL_SCORE_EVENT = "healthsense-overall-score-updated";
 
@@ -68,4 +68,15 @@ export function resolveTrackerDetailDisplayScore(
   const todayComplete = detail.days?.find((day) => day.date === today)?.complete ?? homePillar?.today_complete;
   if (todayComplete === true) return ownScore;
   return homePillar?.tracker_score ?? homePillar?.score ?? ownScore;
+}
+
+export function resolveTrackerDayStatus(
+  concept: PillarTrackerConcept,
+  day: PillarTrackerConceptWeekDay,
+): PillarTrackerConceptWeekDay["daily_status"] {
+  // Weekly progress and daily success are different: a green day need not
+  // complete the whole weekly target. Prefer the appropriate achievement flag.
+  const achieved = concept.target_period === "day" ? day.target_met : day.target_reached;
+  if (achieved === true) return "success";
+  return day.daily_status;
 }

@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore, resolveTrackerDayStatus } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -3277,6 +3277,7 @@ export default function LatestAssessmentPanel({
         }),
       );
     } else {
+      setReturnToPillarKey(selectedPillarKey);
       setActiveDockKey("checkin");
       setSummaryPanelVisible(true);
       if (typeof window !== "undefined") {
@@ -4999,7 +5000,7 @@ export default function LatestAssessmentPanel({
                             {(concept.week || []).map((day) => (
                               <div
                                 key={`${conceptKey}-${day.date}`}
-                                className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(displayTheme, day.daily_status, day.is_active)}`}
+                                className={`rounded-xl border px-1.5 py-2 text-center text-[10px] ${circleDayTone(displayTheme, resolveTrackerDayStatus(concept, day), day.is_active)}`}
                               >
                                 <p className="font-semibold">{day.label}</p>
                                 <p className="mt-1 truncate">{day.value_label || "-"}</p>
