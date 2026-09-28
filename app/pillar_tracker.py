@@ -1637,6 +1637,14 @@ def _build_concept_week_evaluations(
         concept_key = concept_def.concept_key
         resolved_target = resolved_targets.get(concept_key) or _default_resolved_target("", concept_def)
         effective_start = _effective_okr_window_start(resolved_target, week_days, week_days[-1])
+        # A newer target must not hide answers already recorded in a past week.
+        if week_days[-1] < tracker_today():
+            recorded_days = [
+                day for day in week_days
+                if getattr((entries_by_day.get(day) or {}).get(concept_key), "value_num", None) is not None
+            ]
+            if recorded_days:
+                effective_start = min(effective_start, min(recorded_days))
         concept_rows: dict[date, dict[str, Any]] = {}
         cumulative_value = 0.0
         answered_days = 0
@@ -2608,7 +2616,12 @@ def get_pillar_tracker_detail(
                 ],
             }
         )
+    historical_summary = (
+        get_pillar_tracker_summary(user_id, anchor=resolved_anchor, skip_quote_generation=True)
+        if not is_current_week else None
+    )
     result = {
+        "overall_score": historical_summary.get("overall_score") if historical_summary is not None else None,
         "pillar": {
             "pillar_key": key,
             "label": _pillar_label(key),

@@ -4931,6 +4931,26 @@ export default function LatestAssessmentPanel({
 
               {detail ? (
                 <div className="space-y-4">
+                  {!viewingCurrentWeek ? (
+                    <>
+                      <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
+                        <div>
+                          <p className="text-lg font-semibold text-[var(--text-primary)]">{detail.pillar?.label}</p>
+                          <p className="text-sm text-[var(--text-secondary)]">{trackerScoreLabel}</p>
+                        </div>
+                        <WeeklyScoreRing value={detail.pillar?.tracker_score} tone="var(--accent)" />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
+                        <div>
+                          <p className="text-lg font-semibold text-[var(--text-primary)]">Last week overall</p>
+                          <p className="text-sm text-[var(--text-secondary)]">
+                            {detail.overall_score == null ? "No check-ins recorded" : "Across your pillars"}
+                          </p>
+                        </div>
+                        <WeeklyScoreRing value={detail.overall_score} tone="var(--accent)" />
+                      </div>
+                    </>
+                  ) : null}
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];

@@ -2,6 +2,7 @@
 import unittest
 from contextlib import ExitStack
 from datetime import date, timedelta
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 from app import pillar_tracker as tracker
@@ -12,6 +13,7 @@ class TrackerScoreTests(unittest.TestCase):
         stack = self.enterContext(ExitStack())
         for name, value in {
             'ensure_pillar_tracker_schema': None,
+            'tracker_today': date(2026, 9, 28),
             '_latest_assessment_scores_for_user': {},
             '_app_setup_completed_for_user': True,
             '_daily_pillar_quote': 'Test quote',
@@ -43,7 +45,7 @@ class TrackerScoreTests(unittest.TestCase):
         self.assertIsNone(result[day + timedelta(days=1)]['daily_status'])
         self.assertIsNone(result[day + timedelta(days=1)]['score'])
 
-    def summary(self, today, rows, anchor=None, pillar_rows=None):
+    def summary(self, today, rows, anchor=None, pillar_rows=None, detail_pillar=None):
         def load(_user, _pillar, day):
             source = pillar_rows[_pillar] if pillar_rows is not None else rows
             return {d: row for d, row in source.items() if tracker.start_of_week(d) == tracker.start_of_week(day)}
@@ -53,6 +55,8 @@ class TrackerScoreTests(unittest.TestCase):
              patch.object(tracker, '_resolve_pillar_targets_for_user', return_value={'alcohol_units': self.target}), \
              patch.object(tracker, '_load_week_entries', side_effect=load), \
              patch.object(tracker, '_editable_tracker_dates_for_pillar', return_value=[today - timedelta(days=1), today]):
+            if detail_pillar:
+                return tracker.get_pillar_tracker_detail(1, detail_pillar, anchor=anchor)
             return tracker.get_pillar_tracker_summary(1, anchor=anchor)
 
     def test_monday_switches_only_after_todays_completed_checkin(self):
@@ -93,6 +97,37 @@ class TrackerScoreTests(unittest.TestCase):
             if key not in {'score', 'tracker_score', 'source'}:
                 self.assertEqual(default['pillars'][0][key], explicit['pillars'][0][key], key)
         self.assertIsNone(self.summary(monday + timedelta(days=1), rows)['overall_score'])
+
+    def test_past_answers_still_score_when_target_start_is_newer(self):
+        monday = date(2026, 9, 28)
+        self.target = replace(self.target, start_date=monday)
+        # No Sunday entry: previously every historical score was excluded.
+        rows = {date(2026, 9, 25): {'alcohol_units': SimpleNamespace(value_num=0)}}
+        result = self.summary(monday, rows)
+        self.assertEqual(result['pillars'][0]['tracker_score'], 100)
+        self.assertEqual(result['overall_score'], 100)
+        detail = self.summary(monday, rows, anchor=date(2026, 9, 21), detail_pillar='nutrition')
+        self.assertEqual(detail['pillar']['tracker_score'], 100)
+        self.assertEqual(detail['overall_score'], 100)
+        self.assertFalse(detail['pillar']['is_current_week'])
+
+    def test_last_week_overall_excludes_this_weeks_scores(self):
+        monday = date(2026, 9, 28)
+        friday = date(2026, 9, 25)
+        data = {
+            'nutrition': {friday: {'alcohol_units': SimpleNamespace(value_num=0)}, monday: {'alcohol_units': SimpleNamespace(value_num=6)}},
+            'recovery': {friday: {'alcohol_units': SimpleNamespace(value_num=6)}, monday: {'alcohol_units': SimpleNamespace(value_num=0)}},
+        }
+        detail = self.summary(monday, {}, anchor=date(2026, 9, 21), pillar_rows=data, detail_pillar='nutrition')
+        self.assertEqual(detail['pillar']['tracker_score'], 100)
+        self.assertEqual(detail['overall_score'], 50)
+
+    def test_current_week_target_window_is_unchanged(self):
+        monday = date(2026, 9, 28)
+        self.target = replace(self.target, start_date=monday + timedelta(days=3))
+        rows = {monday: {'alcohol_units': SimpleNamespace(value_num=0)}}
+        result = self.summary(monday + timedelta(days=4), rows)
+        self.assertIsNone(result['overall_score'])
 
     def test_empty_week_stays_unrated_and_explicit_history_is_respected(self):
         result = self.summary(date(2026, 9, 28), {})
