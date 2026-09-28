@@ -4,6 +4,7 @@ apscheduler
 apscheduler-di
 sqlalchemy
 psycopg2-binary
+psycopg[binary]
 pydantic-settings
 python-dotenv
 httpx
