@@ -1505,6 +1505,7 @@ export default function LatestAssessmentPanel({
     () => resolveSummaryPanelVisible(initialSummary, "idle"),
   );
   const [displayTheme, setDisplayTheme] = useState<DisplayTheme>("light");
+  const [performanceMode, setPerformanceMode] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -1642,9 +1643,9 @@ export default function LatestAssessmentPanel({
       return conceptKey && Number.isFinite(Number(draft[conceptKey]));
     });
   const activeDate = String(detail?.pillar?.active_date || detail?.pillar?.today || "").trim();
-  const canEditActiveWeek = detail?.pillar?.is_editable !== false;
+  const canEditActiveWeek = !performanceMode && detail?.pillar?.is_editable !== false;
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
-  const viewingLastWeek = detail?.pillar?.is_current_week === false;
+  const viewingLastWeek = performanceMode || detail?.pillar?.is_current_week === false;
   const scorePeriodLabel = formatTrackerWeekRange(detail?.pillar?.week_start, detail?.pillar?.week_end);
   const historyWeeks = trackerWeekNavigation(detail?.pillar?.week_start, detail?.pillar?.current_date || summary.today);
   const wellbeingObjectiveItems = useMemo(
@@ -3227,11 +3228,12 @@ export default function LatestAssessmentPanel({
   const openTracker = useCallback(async (
     pillarKey: string,
     anchorDate?: string,
-    options?: { guided?: boolean; returnSurface?: TrackerReturnSurface | null },
+    options?: { guided?: boolean; returnSurface?: TrackerReturnSurface | null; performance?: boolean },
   ) => {
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
     if (!normalizedPillarKey) return;
     const guided = Boolean(options?.guided);
+    setPerformanceMode(Boolean(options?.performance));
     setStreakSectionOpen(false);
     setObjectivesModalOpen(false);
     setBiometricsModalOpen(false);
@@ -3260,6 +3262,7 @@ export default function LatestAssessmentPanel({
   const closeTracker = () => {
     detailRequestRef.current += 1;
     setSelectedPillarKey(null);
+    setPerformanceMode(false);
     setGuidedTrackingActive(false);
     setTrackerReturnSurface(null);
     setDetail(null);
@@ -3300,7 +3303,7 @@ export default function LatestAssessmentPanel({
   };
 
   const saveTracker = async () => {
-    if (!detail?.pillar?.pillar_key || !canSave) return;
+    if (!detail?.pillar?.pillar_key || !canSave || !canEditActiveWeek) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -3710,6 +3713,7 @@ export default function LatestAssessmentPanel({
                                 onClick={() =>
                                   void openTracker(pillarKey, optionDate || undefined, {
                                     guided: false,
+                                    performance: option?.is_last_week === true,
                                   })
                                 }
                                 className={`min-h-[2.7rem] rounded-full border px-3 py-2 text-center text-[0.88rem] font-semibold leading-tight transition active:scale-[0.98] ${
@@ -4948,7 +4952,7 @@ export default function LatestAssessmentPanel({
                     className={`flex items-center justify-between gap-4 rounded-3xl px-6 py-4 ${viewingLastWeek ? "cursor-grab select-none bg-white text-[#181512] [--ring-track:#ece5d9] active:cursor-grabbing" : "bg-[var(--surface-muted)] text-[var(--text-primary)]"}`}
                     style={viewingLastWeek ? { touchAction: "pan-y", transform: `translateX(${historySwipeOffset}px)`, transition: historySwipeOffset ? "none" : "transform 160ms ease-out" } : undefined}
                     role={viewingLastWeek ? "region" : undefined}
-                    aria-label={viewingLastWeek ? `${detail.pillar?.label} performance. ${scorePeriodLabel}. Swipe right for earlier weeks, left for newer weeks. Or use the left and right arrow keys.` : undefined}
+                    aria-label={viewingLastWeek ? `${detail.pillar?.label} performance. ${scorePeriodLabel}. Swipe left for earlier weeks, right for newer weeks. Or use the left and right arrow keys.` : undefined}
                     aria-busy={viewingLastWeek && loadingDetail}
                     tabIndex={viewingLastWeek ? 0 : undefined}
                     onKeyDown={(event) => {
@@ -4957,18 +4961,20 @@ export default function LatestAssessmentPanel({
                       if (week) { event.preventDefault(); void loadTrackerDetail(trackerPillarKey, week); }
                     }}
                     onPointerDown={(event) => {
-                      if (!viewingLastWeek || loadingDetail || !event.isPrimary || event.button !== 0) return;
+                      if (!viewingLastWeek || loadingDetail || event.pointerType === "touch" || !event.isPrimary || event.button !== 0) return;
                       historySwipeRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
                       event.currentTarget.setPointerCapture(event.pointerId);
                     }}
                     onPointerMove={(event) => {
+                      if (event.pointerType === "touch") return;
                       const gesture = historySwipeRef.current;
                       if (!gesture || gesture.id !== event.pointerId) return;
                       const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
-                      const canMove = dx > 0 ? historyWeeks.previous : historyWeeks.next;
+                      const canMove = dx < 0 ? historyWeeks.previous : historyWeeks.next;
                       setHistorySwipeOffset(canMove && Math.abs(dx) > Math.abs(dy) ? Math.max(-40, Math.min(40, dx * 0.35)) : 0);
                     }}
                     onPointerUp={(event) => {
+                      if (event.pointerType === "touch") return;
                       const gesture = historySwipeRef.current;
                       if (!gesture || gesture.id !== event.pointerId) return;
                       historySwipeRef.current = null;
@@ -4977,8 +4983,33 @@ export default function LatestAssessmentPanel({
                       const week = trackerSwipeWeek(event.clientX - gesture.x, event.clientY - gesture.y, historyWeeks);
                       if (week && !loadingDetail) void loadTrackerDetail(trackerPillarKey, week);
                     }}
-                    onPointerCancel={() => { historySwipeRef.current = null; setHistorySwipeOffset(0); }}
-                    onLostPointerCapture={() => { historySwipeRef.current = null; setHistorySwipeOffset(0); }}
+                    onTouchStart={(event) => {
+                      if (!viewingLastWeek || loadingDetail || event.touches.length !== 1) return;
+                      const touch = event.touches[0];
+                      historySwipeRef.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY };
+                    }}
+                    onTouchMove={(event) => {
+                      const gesture = historySwipeRef.current;
+                      if (!gesture) return;
+                      const touch = Array.from(event.touches).find((item) => item.identifier === gesture.id);
+                      if (!touch) return;
+                      const dx = touch.clientX - gesture.x, dy = touch.clientY - gesture.y;
+                      const canMove = dx < 0 ? historyWeeks.previous : historyWeeks.next;
+                      setHistorySwipeOffset(canMove && Math.abs(dx) > Math.abs(dy) ? Math.max(-40, Math.min(40, dx * 0.35)) : 0);
+                    }}
+                    onTouchEnd={(event) => {
+                      const gesture = historySwipeRef.current;
+                      if (!gesture) return;
+                      const touch = Array.from(event.changedTouches).find((item) => item.identifier === gesture.id);
+                      historySwipeRef.current = null;
+                      setHistorySwipeOffset(0);
+                      if (!touch || loadingDetail) return;
+                      const week = trackerSwipeWeek(touch.clientX - gesture.x, touch.clientY - gesture.y, historyWeeks);
+                      if (week) void loadTrackerDetail(trackerPillarKey, week);
+                    }}
+                    onTouchCancel={() => { historySwipeRef.current = null; setHistorySwipeOffset(0); }}
+                    onPointerCancel={(event) => { if (event.pointerType !== "touch") { historySwipeRef.current = null; setHistorySwipeOffset(0); } }}
+                    onLostPointerCapture={(event) => { if (event.pointerType !== "touch") { historySwipeRef.current = null; setHistorySwipeOffset(0); } }}
                   >
                     <div>
                       {viewingLastWeek ? <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#625b52]">Performance</p> : null}
@@ -4986,7 +5017,7 @@ export default function LatestAssessmentPanel({
                       {viewingLastWeek && scorePeriodLabel ? (
                         <div className="mt-1 text-sm text-[#625b52]">
                           <p aria-live="polite">{scorePeriodLabel}</p>
-                          <p className="mt-2 text-xs">{loadingDetail ? "Loading week…" : historyWeeks.next ? "Swipe right for earlier · left for newer" : "Swipe right for earlier weeks"}</p>
+                          <p className="mt-2 text-xs">{loadingDetail ? "Loading week…" : historyWeeks.next ? "Swipe left for earlier · right for newer" : "Swipe left for earlier weeks"}</p>
                           {detail.pillar?.tracker_score == null ? <p className="mt-1">No check-ins recorded this week</p> : null}
                         </div>
                       ) : null}
