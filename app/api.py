@@ -22495,6 +22495,14 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, user)
+        # Use the same event source and UK-calendar calculation as the app streak.
+        engagement_summary = capture("engagement", lambda: build_engagement_summary(
+            s.execute(
+                select(UsageEvent.created_at)
+                .where(UsageEvent.user_id == user_id, UsageEvent.tag == APP_ENGAGEMENT_TAG)
+                .order_by(desc(UsageEvent.created_at))
+            ).scalars().all()
+        ))
         billing_status = getattr(user, "billing_status", None)
         billing_provider = getattr(user, "billing_provider", None)
         today = get_virtual_date(s, int(user_id)) or datetime.utcnow().date()
@@ -22849,6 +22857,7 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
     return {
         "user_id": int(user_id),
         "today": today.isoformat(),
+        "engagement_summary": engagement_summary,
         "billing": {
             "status": billing_status,
             "provider": billing_provider,

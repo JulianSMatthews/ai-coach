@@ -217,7 +217,15 @@ export default async function UserProfilePage({
               />
             ) : null}
             <section className={panel}>
-              <h2 className="text-lg font-semibold">Check-ins by pillar</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Check-ins by pillar</h2>
+                <p className="rounded-full bg-[#f7f4ee] px-4 py-2 text-sm font-medium">
+                  Check-in streak: {state?.engagement_summary?.current_streak_days == null
+                    ? "Unavailable"
+                    : `${state.engagement_summary.current_streak_days} ${state.engagement_summary.current_streak_days === 1 ? "day" : "days"}`}
+                </p>
+              </div>
+              <p className="mt-2 text-sm text-[#6b6257]">Same as the app: consecutive days of recorded app activity, including check-ins and learning.</p>
             <p className="mt-2 text-sm text-[#6b6257]">
               Pillar setup: {state?.tracker?.app_setup_completed == null ? "Unknown" : state.tracker.app_setup_completed ? "Complete" : "Not completed"}
             </p>

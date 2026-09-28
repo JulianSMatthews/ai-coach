@@ -1055,6 +1055,10 @@ export type AdminUserSummary = {
 };
 
 export type AdminUserAppState = {
+  engagement_summary?: {
+    current_streak_days?: number | null;
+    best_streak_days?: number | null;
+  } | null;
   user_id?: number;
   today?: string | null;
   billing?: {
