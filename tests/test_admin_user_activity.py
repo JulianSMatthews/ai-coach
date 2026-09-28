@@ -32,6 +32,24 @@ class ActivityDataTests(unittest.TestCase):
             self.assertNotIn('secret', row)
             self.assertNotIn('must-not-leak', str(result))
 
+    def test_filters_apply_before_limit_and_keep_older_learning_visible(self):
+        engine = create_engine('sqlite://')
+        self.addCleanup(engine.dispose)
+        column = UsageEvent.__table__.c.meta
+        self.enterContext(patch.object(column, 'type', column.type.with_variant(JSON(), 'sqlite')))
+        UsageEvent.__table__.create(engine)
+        with Session(engine) as session:
+            for index in range(105):
+                session.add(UsageEvent(user_id=4, provider='app', product='engagement', tag='app', unit_type='pillar_tracker_update', created_at=datetime(2026, 9, 28), units=1))
+            session.add(UsageEvent(user_id=4, provider='app', product='engagement', tag='app', unit_type='education_quiz_submit', created_at=datetime(2026, 9, 27), units=1))
+            session.commit()
+            def events(category):
+                return load_user_activity(session, 4, provider='app', product='engagement', tag='app', category=category)['events']
+            self.assertEqual([item['kind'] for item in events('learn')], ['education_quiz_submit'])
+            self.assertEqual(len(events('checkin')), 100)
+            self.assertTrue(all(item['kind'] == 'pillar_tracker_update' for item in events('checkin')))
+            self.assertEqual(len(events('all')), 100)
+
 
 class AdminUserRouteTests(unittest.TestCase):
     def setUp(self):
@@ -73,6 +91,13 @@ class AdminUserRouteTests(unittest.TestCase):
         self.assertEqual(self.get('performance?week=2026-09-14').status_code, 200)
         self.assertEqual(self.summary.call_args.kwargs['anchor'], date(2026, 9, 14))
         self.assertEqual(self.get('performance?week=bad').status_code, 400)
+
+    def test_activity_category_validation_and_forwarding(self):
+        self.assertEqual(self.get('activity?category=learn').status_code, 200)
+        self.assertEqual(self.activity.call_args.kwargs['category'], 'learn')
+        self.assertEqual(self.get('activity?category=checkin').status_code, 200)
+        self.assertEqual(self.activity.call_args.kwargs['category'], 'checkin')
+        self.assertEqual(self.get('activity?category=invalid').status_code, 400)
 
     def test_missing_user_is_not_returned(self):
         self.session.get.return_value = None

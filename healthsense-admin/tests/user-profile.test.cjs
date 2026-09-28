@@ -10,11 +10,12 @@ function load(file, mocks) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020 } }).outputText, { exports, process, URL, require: name => name in mocks ? mocks[name] : require(name) });
   return exports.default;
 }
-async function render(section, failActivity = false) {
+async function render(section, failActivity = false, activity = "all") {
   const api = {
     getAdminUserDetails: async () => ({ user: { display_name: 'Test User', password_hash: 'secret-hash', consent_given: true }, onboarding: {} }),
     getAdminUserAppState: async () => ({ today: '2026-09-28', pillar_configuration: { setup_last_saved_at: '2026-09-20T10:00:00Z', pillars: [{key: 'nutrition', label: 'Nutrition', selected: true, source: 'saved', last_saved_at: '2026-09-20T10:00:00Z'}], objectives: [{pillar_key: 'nutrition', label: 'Nutrition', objective: 'Eat well', concepts: [{concept_key: 'alcohol', label: 'Alcohol', selected_value: 0, unit_label: 'units', target_source: 'default'}]}]}, engagement_summary: { current_streak_days: 7, best_streak_days: 12 }, journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', day_before_yesterday_complete: false, yesterday_complete: true, today_complete: false }] } }, education: { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
-    getAdminUserActivity: async () => {
+    getAdminUserActivity: async (_userId, category) => {
+      assert.equal(category, section === "activity" ? activity : "all");
       if (failActivity) throw new Error('offline');
       return { events: [{ id: 1, recorded_at: '2026-09-28T09:00:00Z', kind: 'pillar_tracker_update', label: 'Recorded check-in', pillar_key: 'nutrition', for_date: '2026-09-27' }] };
     },
@@ -23,7 +24,7 @@ async function render(section, failActivity = false) {
   const mocks = { '@/lib/api': api, 'next/navigation': { notFound: () => { throw new Error('404'); }, redirect: () => {} }, 'next/cache': { revalidatePath: () => {} }, 'next/link': { default: props => React.createElement('a', props) }, '@/components/AdminNav': { default: ({ title }) => React.createElement('h1', null, title) } };
   mocks['./AccountTools'] = { default: load('src/app/admin/users/[userId]/AccountTools.tsx', mocks) };
   const Page = load('src/app/admin/users/[userId]/page.tsx', mocks);
-  return renderToStaticMarkup(await Page({ params: Promise.resolve({ userId: '1' }), searchParams: Promise.resolve({ section }) }));
+  return renderToStaticMarkup(await Page({ params: Promise.resolve({ userId: '1' }), searchParams: Promise.resolve({ section, activity }) }));
 }
 test('overview shows recording day separately and surfaces lesson progress', async () => {
   const html = await render('overview');
@@ -59,4 +60,13 @@ test('activity failure is reported rather than claiming no user activity', async
   const html = await render('activity', true);
   assert.match(html, /Activity could not be loaded/);
   assert.doesNotMatch(html, /No recorded app activity/);
+});
+
+test('activity filters select learning and check-ins while retaining the user profile', async () => {
+  for (const [filter, label] of [['learn', 'Learning'], ['checkin', 'Check-ins']]) {
+    const html = await render('activity', false, filter);
+    assert.match(html, /aria-label="Activity filters"/);
+    assert.ok(html.includes(`/admin/users/1?section=activity&amp;activity=${filter}" aria-current="page"`));
+    assert.ok(html.includes(label));
+  }
 });

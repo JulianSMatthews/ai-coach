@@ -22413,15 +22413,17 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
 
 
 @admin.get("/users/{user_id}/activity")
-def admin_user_activity(user_id: int, admin_user: User = Depends(_require_admin)):
+def admin_user_activity(user_id: int, category: str = "all", admin_user: User = Depends(_require_admin)):
     from .admin_user_activity import load_user_activity
+    if category not in {"all", "learn", "checkin"}:
+        raise HTTPException(status_code=400, detail="category must be all, learn or checkin")
     with SessionLocal() as s:
         user = s.get(User, user_id)
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, user)
         return load_user_activity(s, user_id, provider=APP_ENGAGEMENT_PROVIDER,
-                                  product=APP_ENGAGEMENT_PRODUCT, tag=APP_ENGAGEMENT_TAG)
+                                  product=APP_ENGAGEMENT_PRODUCT, tag=APP_ENGAGEMENT_TAG, category=category)
 
 
 @admin.get("/users/{user_id}/performance")

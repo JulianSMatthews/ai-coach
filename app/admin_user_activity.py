@@ -37,14 +37,22 @@ def activity_item(row):
     }
 
 
-def load_user_activity(session, user_id, *, provider, product, tag):
+ACTIVITY_GROUPS = {
+    'all': tuple(ACTIVITY_LABELS),
+    'learn': ('education_plan_view', 'education_video_progress', 'education_quiz_submit'),
+    'checkin': ('pillar_tracker_update',),
+}
+
+
+def load_user_activity(session, user_id, *, provider, product, tag, category='all'):
+    kinds = ACTIVITY_GROUPS[category]
     rows = session.execute(
         select(UsageEvent).where(
             UsageEvent.user_id == user_id,
             UsageEvent.provider == provider,
             UsageEvent.product == product,
             UsageEvent.tag == tag,
-            UsageEvent.unit_type.in_(list(ACTIVITY_LABELS)),
+            UsageEvent.unit_type.in_(kinds),
         ).order_by(desc(UsageEvent.created_at), desc(UsageEvent.id)).limit(100)
     ).scalars().all()
     return {'events': [activity_item(row) for row in rows], 'limit': 100}

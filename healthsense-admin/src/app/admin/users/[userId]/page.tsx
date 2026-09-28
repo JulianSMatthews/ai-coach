@@ -52,9 +52,9 @@ function ErrorNotice({ text }: { text: string }) {
     </p>
   );
 }
-function ActivityList({ events }: { events: AdminUserActivity["events"] }) {
+function ActivityList({ events, filtered = false }: { events: AdminUserActivity["events"]; filtered?: boolean }) {
   if (!events.length)
-    return <p className={muted}>No recorded app activity is available.</p>;
+    return <p className={muted}>{filtered ? "No recorded activity matches this filter." : "No recorded app activity is available."}</p>;
   return (
     <ol className="divide-y divide-[#efe7db]">
       {events.map((event) => (
@@ -91,7 +91,7 @@ export default async function UserProfilePage({
   searchParams,
 }: {
   params: Promise<{ userId: string }>;
-  searchParams: Promise<{ section?: string; week?: string }>;
+  searchParams: Promise<{ section?: string; week?: string; activity?: string }>;
 }) {
   const { userId: rawId } = await params;
   const query = await searchParams;
@@ -100,13 +100,14 @@ export default async function UserProfilePage({
   const section = sections.some((item) => item.key === query.section)
     ? query.section!
     : "overview";
+  const activityFilter = section === "activity" && (query.activity === "learn" || query.activity === "checkin") ? query.activity : "all";
   const [details, stateResult, activityResult, historyResult] =
     await Promise.all([
       getAdminUserDetails(userId),
       getAdminUserAppState(userId)
         .then((data) => ({ data, error: false }))
         .catch(() => ({ data: null, error: true })),
-      getAdminUserActivity(userId)
+      getAdminUserActivity(userId, activityFilter)
         .then((data) => ({ data, error: false }))
         .catch(() => ({ data: null, error: true })),
       section === "history"
@@ -419,14 +420,23 @@ export default async function UserProfilePage({
         {section === "activity" ? (
           <section className={panel}>
             <h2 className="text-lg font-semibold">Recorded app activity</h2>
+            <nav aria-label="Activity filters" className="mt-4 flex flex-wrap gap-2">
+              {([{ key: "all", label: "All" }, { key: "learn", label: "Learning" }, { key: "checkin", label: "Check-ins" }]).map((filter) => (
+                <Link key={filter.key} href={`${base}?section=activity&activity=${filter.key}`}
+                  aria-current={activityFilter === filter.key ? "page" : undefined}
+                  className={`rounded-full border px-4 py-2 text-sm ${activityFilter === filter.key ? "border-[#c54817] bg-[#c54817] text-white" : "border-[#e7e1d6] bg-white"}`}>
+                  {filter.label}
+                </Link>
+              ))}
+            </nav>
             <p className={`my-3 ${muted}`}>
-              Latest 100 recorded actions, newest first. Times are shown in UK
+              Latest 100 {activityFilter === "learn" ? "learning actions" : activityFilter === "checkin" ? "check-ins" : "recorded actions"}, newest first. Times are shown in UK
               time. An opened lesson or insight is not counted as completed.
             </p>
             {activityResult.error ? (
               <ErrorNotice text="Activity could not be loaded. Refresh to try again." />
             ) : (
-              <ActivityList events={events} />
+              <ActivityList events={events} filtered={activityFilter !== "all"} />
             )}
           </section>
         ) : null}

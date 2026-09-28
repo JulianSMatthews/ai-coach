@@ -2051,8 +2051,8 @@ export type AdminUserPerformance = {
   overall_score?: number | null;
   pillars?: Array<{ pillar_key?: string; label?: string; tracker_score?: number | null; completed_days_count?: number }>;
 };
-export async function getAdminUserActivity(userId: number): Promise<AdminUserActivity> {
-  return apiAdmin<AdminUserActivity>(`/admin/users/${userId}/activity`);
+export async function getAdminUserActivity(userId: number, category: "all" | "learn" | "checkin" = "all"): Promise<AdminUserActivity> {
+  return apiAdmin<AdminUserActivity>(`/admin/users/${userId}/activity`, { query: { category } });
 }
 export async function getAdminUserPerformance(userId: number, week?: string): Promise<AdminUserPerformance> {
   return apiAdmin<AdminUserPerformance>(`/admin/users/${userId}/performance`, { query: { week } });
