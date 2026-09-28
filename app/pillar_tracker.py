@@ -2324,9 +2324,8 @@ def _summary_pillar_payload(
     completed_days = _completed_days(entries_by_day, required_concepts)
     editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
     last_week_anchor = _last_week_anchor(current_day)
-    checkin_dates = list(editable_dates)
-    if _week_has_completed_tracker_days(int(user_id), pillar_key, last_week_anchor):
-        checkin_dates.insert(0, last_week_anchor)
+    # History is a calendar browser: an empty last week must not hide older records.
+    checkin_dates = [last_week_anchor, *editable_dates]
     resolved_score = tracker_score
     resolved_source = "tracker" if tracker_score is not None else "none"
     label = _pillar_label(pillar_key)

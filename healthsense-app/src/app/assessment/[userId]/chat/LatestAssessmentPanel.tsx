@@ -4952,7 +4952,7 @@ export default function LatestAssessmentPanel({
                     className={`flex items-center justify-between gap-4 rounded-3xl px-6 py-4 ${viewingLastWeek ? "cursor-grab select-none bg-white text-[#181512] [--ring-track:#ece5d9] active:cursor-grabbing" : "bg-[var(--surface-muted)] text-[var(--text-primary)]"}`}
                     style={viewingLastWeek ? { touchAction: "pan-y", transform: `translateX(${historySwipeOffset}px)`, transition: historySwipeOffset ? "none" : "transform 160ms ease-out" } : undefined}
                     role={viewingLastWeek ? "region" : undefined}
-                    aria-label={viewingLastWeek ? `${detail.pillar?.label} previous weeks. ${scorePeriodLabel}. Swipe left for earlier weeks, right for newer weeks. Or use the left and right arrow keys.` : undefined}
+                    aria-label={viewingLastWeek ? `${detail.pillar?.label} previous weeks. ${scorePeriodLabel}. Swipe right for earlier weeks, left for newer weeks. Or use the left and right arrow keys.` : undefined}
                     aria-busy={viewingLastWeek && loadingDetail}
                     tabIndex={viewingLastWeek ? 0 : undefined}
                     onKeyDown={(event) => {
@@ -4970,7 +4970,7 @@ export default function LatestAssessmentPanel({
                       const gesture = historySwipeRef.current;
                       if (!gesture || gesture.id !== event.pointerId) return;
                       const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
-                      const canMove = dx < 0 ? historyWeeks.previous : historyWeeks.next;
+                      const canMove = dx > 0 ? historyWeeks.previous : historyWeeks.next;
                       setHistorySwipeOffset(canMove && Math.abs(dx) > Math.abs(dy) ? Math.max(-40, Math.min(40, dx * 0.35)) : 0);
                     }}
                     onPointerUp={(event) => {
@@ -4994,7 +4994,7 @@ export default function LatestAssessmentPanel({
                       const touch = Array.from(event.touches).find((item) => item.identifier === gesture.id);
                       if (!touch) return;
                       const dx = touch.clientX - gesture.x, dy = touch.clientY - gesture.y;
-                      const canMove = dx < 0 ? historyWeeks.previous : historyWeeks.next;
+                      const canMove = dx > 0 ? historyWeeks.previous : historyWeeks.next;
                       setHistorySwipeOffset(canMove && Math.abs(dx) > Math.abs(dy) ? Math.max(-40, Math.min(40, dx * 0.35)) : 0);
                     }}
                     onTouchEnd={(event) => {
@@ -5017,7 +5017,7 @@ export default function LatestAssessmentPanel({
                       {viewingLastWeek && scorePeriodLabel ? (
                         <div className="mt-1 text-sm text-[#625b52]">
                           <p aria-live="polite">{scorePeriodLabel}</p>
-                          <p className="mt-2 text-xs">{loadingDetail ? "Loading week…" : historyWeeks.next ? "Swipe left for earlier · right for newer" : "Swipe left for earlier weeks"}</p>
+                          <p className="mt-2 text-xs">{loadingDetail ? "Loading week…" : historyWeeks.next ? "Swipe right for earlier · left for newer" : "Swipe right for earlier weeks"}</p>
                           {detail.pillar?.tracker_score == null ? <p className="mt-1">No check-ins recorded this week</p> : null}
                         </div>
                       ) : null}

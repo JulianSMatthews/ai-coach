@@ -20,7 +20,7 @@ function harness() {
   const calls = [];
   const env = { viewingLastWeek: true, loadingDetail: false, historySwipeRef: { current: null }, setHistorySwipeOffset: () => {}, historyWeeks: { previous: '2026-09-14', next: null }, trackerPillarKey: 'nutrition', trackerSwipeWeek: utility.exports.trackerSwipeWeek, loadTrackerDetail: (...args) => calls.push(args) };
   const handlers = Object.fromEntries(Object.entries(expressions).filter(([key]) => key !== 'canEdit').map(([key, value]) => [key, vm.runInNewContext(ts.transpileModule(`(${value})`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText, env)]));
-  return { handlers, calls };
+  return { handlers, calls, env };
 }
 test('phone swipe requests previous week despite pointer cancellation', () => {
   const { handlers: h, calls } = harness();
@@ -28,7 +28,7 @@ test('phone swipe requests previous week despite pointer cancellation', () => {
   h.onPointerCancel({ pointerType: 'touch' });
   h.onLostPointerCapture({ pointerType: 'touch' });
   h.onPointerUp({ pointerType: 'touch' });
-  h.onTouchEnd({ changedTouches: [{ identifier: 1, clientX: 100, clientY: 25 }] });
+  h.onTouchEnd({ changedTouches: [{ identifier: 1, clientX: 300, clientY: 25 }] });
   assert.deepEqual(calls, [['nutrition', '2026-09-14']]);
 });
 test('vertical scrolling and cancelled touches do not request another week', () => {
@@ -44,4 +44,18 @@ test('Performance blocks editing editable Sunday; Yesterday retains catch-up', (
   const detail = { pillar: { is_editable: true, is_current_week: false } };
   assert.equal(vm.runInNewContext(expressions.canEdit, { performanceMode: true, detail }), false);
   assert.equal(vm.runInNewContext(expressions.canEdit, { performanceMode: false, detail }), true);
+});
+
+test('phone swipes traverse every calendar week in both directions across gaps', () => {
+  const { handlers: h, calls, env } = harness();
+  let week = '2026-09-21';
+  // No score is needed to navigate the two empty weeks before older history.
+  for (const [dx, expected] of [[100, '2026-09-14'], [100, '2026-09-07'], [-100, '2026-09-14'], [-100, '2026-09-21']]) {
+    env.historyWeeks = utility.exports.trackerWeekNavigation(week, '2026-09-28');
+    h.onTouchStart({ touches: [{ identifier: 1, clientX: 200, clientY: 20 }] });
+    h.onTouchEnd({ changedTouches: [{ identifier: 1, clientX: 200 + dx, clientY: 20 }] });
+    assert.deepEqual(calls.at(-1), ['nutrition', expected]);
+    week = expected;
+  }
+  assert.equal(calls.length, 4);
 });

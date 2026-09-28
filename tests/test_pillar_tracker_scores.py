@@ -154,6 +154,20 @@ class TrackerScoreTests(unittest.TestCase):
         self.assertEqual(last_week['pillar']['week_start'], '2026-09-21')
         self.assertFalse(last_week['pillar']['is_editable'])
 
+    def test_history_option_and_navigation_survive_empty_recent_weeks(self):
+        today = date(2026, 9, 28)
+        rows = {date(2026, 9, 9): {'alcohol_units': SimpleNamespace(value_num=0)}}
+        summary = self.summary(today, rows)
+        history = [option for option in summary['pillars'][0]['checkin_options'] if option['is_last_week']]
+        self.assertEqual([option['date'] for option in history], ['2026-09-21'])
+        for day, score in [(21, None), (14, None), (7, 100), (14, None), (21, None)]:
+            with self.subTest(day=day):
+                anchor = date(2026, 9, day)
+                detail = self.summary(today, rows, anchor=anchor, detail_pillar='nutrition')['pillar']
+                self.assertEqual(detail['week_start'], anchor.isoformat())
+                self.assertEqual(detail['tracker_score'], score)
+                self.assertFalse(detail['is_editable'])
+
     def test_empty_week_stays_unrated_and_explicit_history_is_respected(self):
         result = self.summary(date(2026, 9, 28), {})
         self.assertIsNone(result['overall_score'])

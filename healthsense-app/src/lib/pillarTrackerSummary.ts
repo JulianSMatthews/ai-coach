@@ -120,5 +120,5 @@ export function trackerSwipeWeek(
   weeks: { previous: string | null; next: string | null },
 ): string | null {
   if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return null;
-  return deltaX < 0 ? weeks.previous : weeks.next;
+  return deltaX > 0 ? weeks.previous : weeks.next;
 }
