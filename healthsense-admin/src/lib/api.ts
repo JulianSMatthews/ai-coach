@@ -1114,6 +1114,7 @@ export type AdminUserAppState = {
         status?: "today" | "yesterday" | "open" | string | null;
         today_complete?: boolean | null;
         yesterday_complete?: boolean | null;
+        day_before_yesterday_complete?: boolean | null;
       }>;
     };
     daily_plan?: {

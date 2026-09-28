@@ -13,7 +13,7 @@ function load(file, mocks) {
 async function render(section, failActivity = false) {
   const api = {
     getAdminUserDetails: async () => ({ user: { display_name: 'Test User', password_hash: 'secret-hash', consent_given: true }, onboarding: {} }),
-    getAdminUserAppState: async () => ({ today: '2026-09-28', journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', yesterday_complete: true, today_complete: false }] } }, education: { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
+    getAdminUserAppState: async () => ({ today: '2026-09-28', journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', day_before_yesterday_complete: false, yesterday_complete: true, today_complete: false }] } }, education: { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
     getAdminUserActivity: async () => {
       if (failActivity) throw new Error('offline');
       return { events: [{ id: 1, recorded_at: '2026-09-28T09:00:00Z', kind: 'pillar_tracker_update', label: 'Recorded check-in', pillar_key: 'nutrition', for_date: '2026-09-27' }] };
@@ -28,6 +28,8 @@ async function render(section, failActivity = false) {
 test('overview shows recording day separately and surfaces lesson progress', async () => {
   const html = await render('overview');
   assert.match(html, /Yesterday’s check-ins/);
+  assert.match(html, /Day before yesterday<\/th><th[^>]*>Yesterday<\/th><th>Today<\/th>/);
+  assert.match(html, /Nutrition<\/td><td[^>]*>Not recorded<\/td><td[^>]*>Recorded<\/td><td[^>]*>Not recorded<\/td>/);
   assert.match(html, /27 Sept 2026/);
   assert.match(html, /28 Sept 2026/);
   assert.match(html, /Video progress: 50%/);

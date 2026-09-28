@@ -22499,6 +22499,7 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         billing_provider = getattr(user, "billing_provider", None)
         today = get_virtual_date(s, int(user_id)) or datetime.utcnow().date()
         yesterday = today - timedelta(days=1)
+        day_before_yesterday = today - timedelta(days=2)
         day_start_local = datetime.combine(today, datetime.min.time(), tzinfo=ZoneInfo("Europe/London"))
         day_end_local = day_start_local + timedelta(days=1)
         day_start_utc = day_start_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
@@ -22696,7 +22697,7 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
                 select(DailyPillarTrackerEntry)
                 .where(
                     DailyPillarTrackerEntry.user_id == int(user_id),
-                    DailyPillarTrackerEntry.score_date >= yesterday,
+                    DailyPillarTrackerEntry.score_date >= day_before_yesterday,
                     DailyPillarTrackerEntry.score_date <= today,
                 )
                 .order_by(
@@ -22786,6 +22787,9 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         yesterday_complete = bool(required_keys) and required_keys.issubset(
             tracker_day_concepts.get(yesterday, {}).get(pillar_key, set())
         )
+        day_before_yesterday_complete = bool(required_keys) and required_keys.issubset(
+            tracker_day_concepts.get(day_before_yesterday, {}).get(pillar_key, set())
+        )
         tracker_status = "today" if today_complete else "yesterday" if yesterday_complete else "open"
         tracker_journey_pillars.append(
             {
@@ -22794,6 +22798,7 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
                 "status": tracker_status,
                 "today_complete": today_complete,
                 "yesterday_complete": yesterday_complete,
+                "day_before_yesterday_complete": day_before_yesterday_complete,
             }
         )
     tracker_today_count = sum(1 for pillar in tracker_journey_pillars if bool(pillar.get("today_complete")))

@@ -231,7 +231,8 @@ export default async function UserProfilePage({
                     <thead>
                       <tr className="border-b">
                         <th className="py-3">Pillar</th>
-                        <th>Yesterday</th>
+                        <th className="pr-4">Day before yesterday</th>
+                        <th className="pr-4">Yesterday</th>
                         <th>Today</th>
                       </tr>
                     </thead>
@@ -243,6 +244,19 @@ export default async function UserProfilePage({
                         >
                           <td className="py-3 font-medium">
                             {pillar.label || label(pillar.pillar_key)}
+                          </td>
+                          <td
+                            className={
+                              pillar.day_before_yesterday_complete
+                                ? "text-[#397224]"
+                                : muted
+                            }
+                          >
+                            {pillar.day_before_yesterday_complete == null
+                              ? "Unavailable"
+                              : pillar.day_before_yesterday_complete
+                                ? "Recorded"
+                                : "Not recorded"}
                           </td>
                           <td
                             className={
