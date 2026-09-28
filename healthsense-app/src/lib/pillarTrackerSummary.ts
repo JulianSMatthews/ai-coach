@@ -53,3 +53,19 @@ export async function resolveMondayCueScores(
   if (pillars.every((pillar, index) => pillar === summary.pillars?.[index])) return summary;
   return { ...summary, pillars, overall_score: resolvePillarTrackerOverallScore({ pillars }) };
 }
+
+export function resolveTrackerDetailDisplayScore(
+  detail: PillarTrackerDetailResponse,
+  summary: PillarTrackerSummaryResponse,
+): number | null {
+  const pillar = detail.pillar;
+  const ownScore = pillar?.tracker_score ?? pillar?.score ?? null;
+  const today = pillar?.current_date || summary.today;
+  if (!today || pillar?.is_current_week === false || new Date(`${today}T12:00:00Z`).getUTCDay() !== 1) {
+    return ownScore;
+  }
+  const homePillar = summary.pillars?.find((item) => item.pillar_key === pillar?.pillar_key);
+  const todayComplete = detail.days?.find((day) => day.date === today)?.complete ?? homePillar?.today_complete;
+  if (todayComplete === true) return ownScore;
+  return homePillar?.tracker_score ?? homePillar?.score ?? ownScore;
+}

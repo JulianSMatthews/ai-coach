@@ -60,3 +60,17 @@ test('historical zero is valid; accidental current-week response is ignored', as
   assert.equal(result.pillars[0].tracker_score, 0);
   assert.equal(await resolveMondayCueScores(input, async () => ({ pillar: { tracker_score: 90, is_current_week: true } })), input);
 });
+const { resolveTrackerDetailDisplayScore: detailScore } = context.exports;
+test('Today on Monday shows the same previous-week score as its cue card', async () => {
+  const summary = await resolveMondayCueScores(mondaySummary(), async () => ({ pillar: { tracker_score: 82, is_current_week: false } }));
+  const detail = { pillar: { pillar_key: 'reflection', tracker_score: null, current_date: '2026-09-28', is_current_week: true }, days: [{ date: '2026-09-28', complete: false }] };
+  assert.equal(detailScore(detail, summary), 82);
+  detail.pillar.tracker_score = 60;
+  detail.days[0].complete = true;
+  assert.equal(detailScore(detail, summary), 60);
+});
+test('historical and Tuesday detail scores keep their own week', () => {
+  const summary = mondaySummary(); summary.pillars[0].tracker_score = 82;
+  assert.equal(detailScore({ pillar: { pillar_key: 'reflection', tracker_score: 74, is_current_week: false } }, summary), 74);
+  assert.equal(detailScore({ pillar: { pillar_key: 'reflection', tracker_score: null, current_date: '2026-09-29', is_current_week: true } }, summary), null);
+});

@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore, resolveMondayCueScores } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -1639,7 +1639,6 @@ export default function LatestAssessmentPanel({
       return conceptKey && Number.isFinite(Number(draft[conceptKey]));
     });
   const activeDate = String(detail?.pillar?.active_date || detail?.pillar?.today || "").trim();
-  const viewingCurrentWeek = detail?.pillar?.is_current_week !== false;
   const canEditActiveWeek = detail?.pillar?.is_editable !== false;
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
   const wellbeingObjectiveItems = useMemo(
@@ -2546,7 +2545,10 @@ export default function LatestAssessmentPanel({
   }, [pillarNeedsGeneratedCue, refreshSummary, summaryHasFallbackCueMessages]);
 
   useEffect(() => {
-    void refreshSummary().catch(() => undefined);
+    // Show scores promptly, without waiting for new coaching text to generate.
+    void refreshSummary({ skipQuoteGeneration: true })
+      .then(() => refreshSummary())
+      .catch(() => undefined);
   }, [refreshSummary]);
 
   const loadRestingHeartRate = useCallback(async () => {
@@ -4932,12 +4934,10 @@ export default function LatestAssessmentPanel({
 
               {detail ? (
                 <div className="space-y-4">
-                  {!viewingCurrentWeek ? (
-                    <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
-                      <p className="text-lg font-semibold text-[var(--text-primary)]">{detail.pillar?.label}</p>
-                      <WeeklyScoreRing value={detail.pillar?.tracker_score} tone="var(--accent)" />
-                    </div>
-                  ) : null}
+                  <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
+                    <p className="text-lg font-semibold text-[var(--text-primary)]">{detail.pillar?.label}</p>
+                    <WeeklyScoreRing value={resolveTrackerDetailDisplayScore(detail, summary)} tone="var(--accent)" />
+                  </div>
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];
