@@ -28,7 +28,8 @@ async function render(section, failActivity = false) {
 test('overview shows recording day separately and surfaces lesson progress', async () => {
   const html = await render('overview');
   assert.match(html, /Yesterday’s check-ins/);
-  assert.match(html, /Check-in streak: 7 days/);
+  assert.match(html, /Check-in streak<\/h2><p[^>]*>7 days<\/p>/);
+  assert.ok(html.indexOf("Check-in streak") < html.indexOf("Check-ins by pillar"));
   assert.match(html, /Day before yesterday<\/th><th[^>]*>Yesterday<\/th><th>Today<\/th>/);
   assert.match(html, /Nutrition<\/td><td[^>]*>Not recorded<\/td><td[^>]*>Recorded<\/td><td[^>]*>Not recorded<\/td>/);
   assert.match(html, /27 Sept 2026/);
