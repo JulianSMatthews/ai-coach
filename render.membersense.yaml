@@ -75,8 +75,8 @@ services:
     region: oregon
     plan: 1c-2g
     dockerfilePath: ./Dockerfile.clubwise
-    # Render cron is UTC. Only the slot that is 06:00 London runs the import.
-    schedule: "0 5,6 * * *"
+    # Check manual requests every five minutes; one daily import at 06:00 London.
+    schedule: "*/5 * * * *"
     envVars:
       - key: MEMBERSENSE_DATABASE_URL
         fromDatabase:
