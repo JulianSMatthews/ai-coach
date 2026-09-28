@@ -22365,7 +22365,6 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             "display_name": display_full_name(u),
             "phone": getattr(u, "phone", None),
             "email": getattr(u, "email", None),
-            "password_hash": getattr(u, "password_hash", None),
             "phone_verified_at": getattr(u, "phone_verified_at", None),
             "email_verified_at": getattr(u, "email_verified_at", None),
             "two_factor_enabled": bool(getattr(u, "two_factor_enabled", False)),
@@ -22410,6 +22409,33 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         },
         "current_weekly_plan": current_weekly_plan,
     }
+
+
+@admin.get("/users/{user_id}/activity")
+def admin_user_activity(user_id: int, admin_user: User = Depends(_require_admin)):
+    from .admin_user_activity import load_user_activity
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, user)
+        return load_user_activity(s, user_id, provider=APP_ENGAGEMENT_PROVIDER,
+                                  product=APP_ENGAGEMENT_PRODUCT, tag=APP_ENGAGEMENT_TAG)
+
+
+@admin.get("/users/{user_id}/performance")
+def admin_user_performance(user_id: int, week: str | None = None, admin_user: User = Depends(_require_admin)):
+    from .pillar_tracker import tracker_today
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, user)
+    today = tracker_today()
+    anchor = parse_tracker_anchor(week) if week else today - timedelta(days=today.weekday() + 1)
+    if anchor is None or anchor > today:
+        raise HTTPException(status_code=400, detail="week must be a valid date on or before today")
+    return get_pillar_tracker_summary(user_id, anchor=anchor, skip_quote_generation=True)
 
 
 @admin.get("/users/{user_id}/app-state")

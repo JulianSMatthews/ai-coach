@@ -1062,6 +1062,7 @@ export type AdminUserAppState = {
     provider?: string | null;
   };
   tracker?: {
+    app_setup_completed?: boolean;
     today_complete?: boolean;
     today_completed_pillars_count?: number | null;
     total_pillars?: number | null;
@@ -2024,4 +2025,21 @@ export async function generateOkrSummary(start?: string, end?: string, includePr
       include_llm_prompt: includePrompt ? "true" : undefined,
     },
   });
+}
+
+export type AdminUserActivity = {
+  limit: number;
+  events: Array<{ id: number; recorded_at: string | null; kind: string; label: string; pillar_key?: string | null; for_date?: string | null; watch_pct?: number | null; quiz_score_pct?: number | null; completion_status?: string | null }>;
+};
+export type AdminUserPerformance = {
+  today?: string;
+  week?: { start?: string; end?: string };
+  overall_score?: number | null;
+  pillars?: Array<{ pillar_key?: string; label?: string; tracker_score?: number | null; completed_days_count?: number }>;
+};
+export async function getAdminUserActivity(userId: number): Promise<AdminUserActivity> {
+  return apiAdmin<AdminUserActivity>(`/admin/users/${userId}/activity`);
+}
+export async function getAdminUserPerformance(userId: number, week?: string): Promise<AdminUserPerformance> {
+  return apiAdmin<AdminUserPerformance>(`/admin/users/${userId}/performance`, { query: { week } });
 }

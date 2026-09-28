@@ -50,8 +50,8 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <AdminNav title="Users" subtitle="Search users and review account activity and app state." />
 
-        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <h2 className="text-lg font-semibold">Create a new user</h2>
+        <details className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <summary className="cursor-pointer text-lg font-semibold">Add user</summary>
           <form action={createUserAction} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
             <input
               name="first_name"
@@ -75,7 +75,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
               Create
             </button>
           </form>
-        </section>
+        </details>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -97,56 +97,18 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[600px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                <tr>
-                  <th className="sticky left-0 z-20 min-w-[80px] bg-white py-2 pr-6 whitespace-nowrap">ID</th>
-                  <th className="sticky left-[80px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">First name</th>
-                  <th className="sticky left-[240px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">Surname</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Phone</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Consent given</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Date created</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Last app access</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Days since last accessed</th>
-                  <th className="py-2 whitespace-nowrap">Action</th>
-                </tr>
+                <tr><th className="py-3 pr-6">User</th><th className="py-3 pr-6">Last app access</th><th className="py-3 pr-6">Joined</th><th className="py-3">Profile</th></tr>
               </thead>
               <tbody className="divide-y divide-[#efe7db]">
-                {users.map((u) => {
-                  return (
-                    <tr key={u.id}>
-                    <td className="sticky left-0 z-10 min-w-[80px] bg-white py-3 pr-6 whitespace-nowrap text-[#6b6257]">#{u.id}</td>
-                    <td className="sticky left-[80px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.first_name || "—"}</td>
-                    <td className="sticky left-[240px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.surname || "—"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.phone || "—"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.consent_given ? "Yes" : "No"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {formatDate(u.created_on)}
-                    </td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {formatDate(u.last_app_access_at)}
-                    </td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {u.days_since_last_accessed ?? "Never"}
-                    </td>
-                    <td className="py-3 whitespace-nowrap">
-                      <Link
-                        href={`/admin/users/${u.id}/actions`}
-                        className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                      >
-                        action
-                      </Link>
-                    </td>
-                    </tr>
-                  );
-                })}
-                {!users.length ? (
-                  <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={9}>
-                      No users found. Try a different search.
-                    </td>
-                  </tr>
-                ) : null}
+                {users.map((u) => <tr key={u.id}>
+                  <td className="py-4 pr-6"><Link href={`/admin/users/${u.id}`} className="font-semibold hover:underline">{[u.first_name, u.surname].filter(Boolean).join(" ") || `User #${u.id}`}</Link><p className="mt-1 text-xs text-[#6b6257]">#{u.id}</p></td>
+                  <td className="py-4 pr-6 text-[#6b6257]">{u.last_app_access_at ? <>{formatDate(u.last_app_access_at)}<p className="mt-1 text-xs">{u.days_since_last_accessed === 0 ? "Today" : u.days_since_last_accessed != null ? `${u.days_since_last_accessed} days ago` : ""}</p></> : "No recorded access"}</td>
+                  <td className="py-4 pr-6 text-[#6b6257]">{formatDate(u.created_on)}</td>
+                  <td className="py-4"><Link href={`/admin/users/${u.id}`} className="rounded-full border border-[#efe7db] px-3 py-2 text-xs">View user</Link></td>
+                </tr>)}
+                {!users.length ? <tr><td className="py-6 text-[#6b6257]" colSpan={4}>No users found. Try a different search.</td></tr> : null}
               </tbody>
             </table>
           </div>

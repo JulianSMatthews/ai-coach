@@ -87,7 +87,7 @@ const SETUP_GUIDE_CARDS = [
   {
     icon: "checkin",
     title: "Check in",
-    body: "Each selected pillar becomes a daily cue card. Tap Today or Yesterday to check in, or Performance to review previous weeks.",
+    body: "Each selected pillar becomes a daily cue card. Tap Today or Yesterday to check in, or Previous week(s) to review your history.",
   },
   {
     icon: "targets",
@@ -3703,7 +3703,7 @@ export default function LatestAssessmentPanel({
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
-                              option?.is_last_week ? "Performance" : option?.label || (option?.is_yesterday ? "Yesterday" : "Today"),
+                              option?.is_last_week ? "Previous week(s)" : option?.label || (option?.is_yesterday ? "Yesterday" : "Today"),
                             ).trim();
                             const complete = option?.complete === true;
                             return (
@@ -4952,7 +4952,7 @@ export default function LatestAssessmentPanel({
                     className={`flex items-center justify-between gap-4 rounded-3xl px-6 py-4 ${viewingLastWeek ? "cursor-grab select-none bg-white text-[#181512] [--ring-track:#ece5d9] active:cursor-grabbing" : "bg-[var(--surface-muted)] text-[var(--text-primary)]"}`}
                     style={viewingLastWeek ? { touchAction: "pan-y", transform: `translateX(${historySwipeOffset}px)`, transition: historySwipeOffset ? "none" : "transform 160ms ease-out" } : undefined}
                     role={viewingLastWeek ? "region" : undefined}
-                    aria-label={viewingLastWeek ? `${detail.pillar?.label} performance. ${scorePeriodLabel}. Swipe left for earlier weeks, right for newer weeks. Or use the left and right arrow keys.` : undefined}
+                    aria-label={viewingLastWeek ? `${detail.pillar?.label} previous weeks. ${scorePeriodLabel}. Swipe left for earlier weeks, right for newer weeks. Or use the left and right arrow keys.` : undefined}
                     aria-busy={viewingLastWeek && loadingDetail}
                     tabIndex={viewingLastWeek ? 0 : undefined}
                     onKeyDown={(event) => {
@@ -5012,7 +5012,7 @@ export default function LatestAssessmentPanel({
                     onLostPointerCapture={(event) => { if (event.pointerType !== "touch") { historySwipeRef.current = null; setHistorySwipeOffset(0); } }}
                   >
                     <div>
-                      {viewingLastWeek ? <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#625b52]">Performance</p> : null}
+                      {viewingLastWeek ? <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#625b52]">Previous week(s)</p> : null}
                       <p className="text-lg font-semibold">{detail.pillar?.label}</p>
                       {viewingLastWeek && scorePeriodLabel ? (
                         <div className="mt-1 text-sm text-[#625b52]">

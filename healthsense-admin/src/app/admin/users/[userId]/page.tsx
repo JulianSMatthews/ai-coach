@@ -1,461 +1,506 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import AdminNav from "@/components/AdminNav";
-import { getAdminUserAppState, getAdminUserDetails, type AdminUserAppState } from "@/lib/api";
-
-type UserStatusPageProps = {
-  params: Promise<{ userId: string }>;
-};
+import AccountTools from "./AccountTools";
+import {
+  getAdminUserDetails,
+  getAdminUserAppState,
+  getAdminUserActivity,
+  getAdminUserPerformance,
+  type AdminUserActivity,
+} from "@/lib/api";
 
 export const dynamic = "force-dynamic";
-
-function AppStateCard({
-  title,
-  eyebrow,
-  rows,
-}: {
-  title: string;
-  eyebrow: string;
-  rows: Array<{ label: string; value: string | number | null | undefined }>;
-}) {
+const sections = [
+  { key: "overview", label: "Overview" },
+  { key: "activity", label: "Activity" },
+  { key: "history", label: "Previous week(s)" },
+  { key: "account", label: "Account" },
+];
+const panel = "rounded-3xl border border-[#e7e1d6] bg-white p-6";
+const muted = "text-sm text-[#6b6257]";
+function dateLabel(value: unknown, withTime = false) {
+  if (!value) return "—";
+  const raw = String(value);
+  const parsed = new Date(
+    raw.includes("T") && !/Z$|[+-]\d{2}:\d{2}$/.test(raw) ? `${raw}Z` : raw,
+  );
+  if (!Number.isFinite(parsed.getTime())) return "—";
+  return parsed.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+    timeZone: "Europe/London",
+  });
+}
+function shiftWeek(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+function label(value?: string | null) {
+  return value ? value.replaceAll("_", " ") : "—";
+}
+function ErrorNotice({ text }: { text: string }) {
   return (
-    <div className="rounded-2xl border border-[#efe7db] bg-[#faf8f3] p-4">
-      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{eyebrow}</p>
-      <h3 className="mt-2 text-base font-semibold">{title}</h3>
-      <div className="mt-3 space-y-2">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-start justify-between gap-3 text-sm">
-            <span className="text-[#6b6257]">{row.label}</span>
-            <span className="max-w-[65%] text-right font-medium">
-              {row.value === null || row.value === undefined || row.value === "" ? "—" : row.value}
-            </span>
+    <p
+      role="alert"
+      className="rounded-2xl border border-[#e5b8ad] bg-[#fff3ee] p-4 text-sm text-[#92321b]"
+    >
+      {text}
+    </p>
+  );
+}
+function ActivityList({ events }: { events: AdminUserActivity["events"] }) {
+  if (!events.length)
+    return <p className={muted}>No recorded app activity is available.</p>;
+  return (
+    <ol className="divide-y divide-[#efe7db]">
+      {events.map((event) => (
+        <li key={event.id} className="py-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="font-medium">
+              {event.label}
+              {event.pillar_key ? ` · ${label(event.pillar_key)}` : ""}
+            </p>
+            <time className={muted}>{dateLabel(event.recorded_at, true)}</time>
           </div>
-        ))}
-      </div>
-    </div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#6b6257]">
+            {event.for_date ? (
+              <span>For {dateLabel(event.for_date)}</span>
+            ) : null}
+            {event.watch_pct != null ? (
+              <span>Video progress: {event.watch_pct}%</span>
+            ) : null}
+            {event.quiz_score_pct != null ? (
+              <span>Quiz result: {event.quiz_score_pct}%</span>
+            ) : null}
+            {event.completion_status ? (
+              <span>Status: {label(event.completion_status)}</span>
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-export default async function UserStatusPage({ params }: UserStatusPageProps) {
-  const resolvedParams = await params;
-  const userId = Number(resolvedParams.userId);
-  const detail = await getAdminUserDetails(userId);
-  let appState: AdminUserAppState | null = null;
-  let appStateError: string | null = null;
-  try {
-    appState = await getAdminUserAppState(userId);
-  } catch (error) {
-    appStateError = error instanceof Error ? error.message : String(error);
-  }
-  const user = detail.user as Record<string, unknown> | undefined;
-  const status = detail.status as string | undefined;
-  const onboarding = (detail.onboarding || {}) as Record<string, unknown>;
-  const introContent = (onboarding.intro_content || {}) as Record<string, unknown>;
-  const weeklyPlan = (detail.current_weekly_plan || null) as Record<string, unknown> | null;
-  const weeklyPlanKrs = Array.isArray(weeklyPlan?.krs) ? (weeklyPlan?.krs as Record<string, unknown>[]) : [];
-  const fields = user ? Object.entries(user) : [];
-  const firstLoginMet = Boolean(onboarding.first_app_login_at);
-  const introCompletedMet = Boolean(onboarding.intro_content_completed_at);
-  const activationReady = firstLoginMet && introCompletedMet;
-  const coachingEnabledNow = Boolean(onboarding.coaching_enabled_now);
-  const onboardingFields = [
-    ["first_app_login_at", onboarding.first_app_login_at],
-    ["intro_content_presented_at", onboarding.intro_content_presented_at],
-    ["intro_content_listened_at", onboarding.intro_content_listened_at],
-    ["intro_content_read_at", onboarding.intro_content_read_at],
-    ["intro_content_completed_at", onboarding.intro_content_completed_at],
-    ["coaching_auto_enabled_at", onboarding.coaching_auto_enabled_at],
-    ["coaching_first_day_sent_at", onboarding.coaching_first_day_sent_at],
-  ] as const;
-  const essentialActivationRows = [
-    {
-      label: "First app login",
-      met: firstLoginMet,
-      value: onboarding.first_app_login_at,
-    },
-    {
-      label: "App introduction completed",
-      met: introCompletedMet,
-      value: onboarding.intro_content_completed_at,
-    },
-  ] as const;
-
-  const formatValue = (value: unknown) => {
-    if (value === null || value === undefined || value === "") return "—";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return String(value);
-  };
-  const formatDateTime = (value: unknown) => {
-    if (!value) return "—";
-    const raw = String(value);
-    const dt = new Date(raw);
-    if (Number.isNaN(dt.getTime())) return raw;
-    return dt
-      .toLocaleString("en-GB", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-        timeZone: "Europe/London",
-      })
-      .replace(",", "");
-  };
-  const formatJourneyValue = (label: unknown, detail?: unknown) => {
-    const primary = label === null || label === undefined || label === "" ? "" : String(label);
-    const secondary = detail === null || detail === undefined || detail === "" ? "" : String(detail);
-    if (primary && secondary) return `${primary} · ${secondary}`;
-    return primary || secondary || "—";
-  };
-  const tracker = appState?.tracker;
-  const trackerPillars = Array.isArray(tracker?.pillars) ? tracker.pillars : [];
-  const dailyPlan = appState?.daily_plan || null;
-  const journey = appState?.journey;
-  const journeyDailyRecording = journey?.daily_recording;
-  const journeyDailyPlan = journey?.daily_plan;
-  const journeyTodaysFocus = journey?.todays_focus;
-  const journeyGiaMessage = journey?.gia_message;
-  const objectives = appState?.weekly_objectives;
-  const pillarJourneySummary =
-    (journeyDailyRecording?.pillars || [])
-      .map((pillar) => {
-        const label = String(pillar?.label || pillar?.pillar_key || "Pillar").trim();
-        const status = String(pillar?.status || "open").trim().toLowerCase();
-        const statusLabel = status === "today" ? "today" : status === "yesterday" ? "yesterday" : "open";
-        return `${label}: ${statusLabel}`;
-      })
-      .join(" · ") ||
-    trackerPillars
-      .map((pillar) => `${pillar.label || pillar.pillar_key}: ${pillar.today_complete ? "today" : "open"}`)
-      .join(" · ");
-
+export default async function UserProfilePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ userId: string }>;
+  searchParams: Promise<{ section?: string; week?: string }>;
+}) {
+  const { userId: rawId } = await params;
+  const query = await searchParams;
+  const userId = Number(rawId);
+  if (!Number.isInteger(userId) || userId <= 0) notFound();
+  const section = sections.some((item) => item.key === query.section)
+    ? query.section!
+    : "overview";
+  const [details, stateResult, activityResult, historyResult] =
+    await Promise.all([
+      getAdminUserDetails(userId),
+      getAdminUserAppState(userId)
+        .then((data) => ({ data, error: false }))
+        .catch(() => ({ data: null, error: true })),
+      getAdminUserActivity(userId)
+        .then((data) => ({ data, error: false }))
+        .catch(() => ({ data: null, error: true })),
+      section === "history"
+        ? getAdminUserPerformance(userId, query.week)
+            .then((data) => ({ data, error: false }))
+            .catch(() => ({ data: null, error: true }))
+        : Promise.resolve({ data: null, error: false }),
+    ]);
+  const user = (details.user || {}) as Record<string, unknown>;
+  const onboarding = (details.onboarding || {}) as Record<string, unknown>;
+  const state = stateResult.data;
+  const events = activityResult.data?.events || [];
+  const journey = state?.journey?.daily_recording;
+  const pillars = journey?.pillars || [];
+  const lesson = state?.education;
+  const progress = lesson?.progress;
+  const history = historyResult.data;
+  const userName = String(
+    user.display_name ||
+      [user.first_name, user.surname].filter(Boolean).join(" ") ||
+      `User #${userId}`,
+  );
+  const base = `/admin/users/${userId}`;
+  const historyStart = history?.week?.start;
+  const newer = historyStart ? shiftWeek(historyStart, 7) : null;
+  const historyToday = history?.today;
+  const nextIsPast =
+    newer && historyToday && shiftWeek(newer, 6) < historyToday;
+  const latestCheckin = events.find(
+    (event) => event.kind === "pillar_tracker_update",
+  );
+  const dataWarnings =
+    state?.errors?.filter((error) =>
+      ["tracker", "education", "weekly_objectives"].includes(
+        error.section || "",
+      ),
+    ) || [];
   return (
-    <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
-      <div className="mx-auto w-full max-w-5xl space-y-6">
+    <main className="min-h-screen bg-[#f7f4ee] px-4 py-8 text-[#1e1b16] sm:px-6">
+      <div className="mx-auto max-w-6xl space-y-5">
         <AdminNav
-          title={
-            typeof user?.display_name === "string"
-              ? `Details · ${user.display_name}`
-              : `Details · #${userId}`
-          }
-          subtitle="User profile, app access, onboarding, activity, and coaching state."
+          title={userName}
+          subtitle="Check-ins, learning and recorded app activity."
         />
-
-        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Status</p>
-              <p className="mt-2 text-lg font-semibold capitalize">{status || "unknown"}</p>
-              <p className="mt-1 text-sm text-[#6b6257]">App account and coaching status</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-sm text-[#6b6257]">
+          <span>
+            User #{userId} · Joined {dateLabel(user.created_on)}
+          </span>
+          <Link className="underline" href="/admin/users">
+            Back to users
+          </Link>
+        </div>
+        <nav aria-label="User profile" className="flex flex-wrap gap-2">
+          {sections.map((item) => (
+            <Link
+              key={item.key}
+              href={`${base}?section=${item.key}`}
+              aria-current={section === item.key ? "page" : undefined}
+              className={`rounded-full border px-5 py-3 text-sm font-medium ${section === item.key ? "border-[#c54817] bg-[#c54817] text-white" : "border-[#e7e1d6] bg-white"}`}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        {stateResult.error && section === "overview" ? (
+          <ErrorNotice text="The app snapshot could not be loaded. Refresh to try again; unavailable data does not mean the user is inactive." />
+        ) : null}
+        {section === "overview" ? (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  title: "Last recorded activity",
+                  value: activityResult.error
+                    ? "Unavailable"
+                    : dateLabel(events[0]?.recorded_at, true),
+                },
+                {
+                  title: "Today’s check-ins",
+                  value:
+                    state && journey
+                      ? `${journey.completed_today_count ?? 0}/${journey.total_pillars ?? 0} pillars`
+                      : "Unavailable",
+                },
+                {
+                  title: "Yesterday’s check-ins",
+                  value:
+                    state && journey
+                      ? `${journey.completed_yesterday_count ?? 0}/${journey.total_pillars ?? 0} pillars`
+                      : "Unavailable",
+                },
+                {
+                  title: "Learning streak",
+                  value: lesson?.available
+                    ? `${lesson.current_streak_days ?? 0} days`
+                    : "Not available",
+                },
+              ].map((card) => (
+                <section key={card.title} className={panel}>
+                  <h2 className={muted}>{card.title}</h2>
+                  <p className="mt-2 text-xl font-semibold">{card.value}</p>
+                </section>
+              ))}
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">First app access</p>
-              <p className="mt-2 text-sm text-[#6b6257]">{formatDateTime(onboarding.first_app_login_at)}</p>
-            </div>
-          </div>
-
-          <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
-            <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">First-day coaching</p>
-            </div>
-            <table className="w-full text-left text-sm">
-              <tbody className="divide-y divide-[#efe7db]">
-                <tr>
-                  <td className="px-4 py-3 font-medium">First day coaching sent on</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboarding.coaching_first_day_sent_at)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
-            <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching activation essentials</p>
-            </div>
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                <tr>
-                  <th className="px-4 py-3">Requirement</th>
-                  <th className="px-4 py-3">Met</th>
-                  <th className="px-4 py-3">Timestamp / Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#efe7db]">
-                {essentialActivationRows.map((row) => (
-                  <tr key={row.label}>
-                    <td className="px-4 py-3 font-medium">{row.label}</td>
-                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(row.met)}</td>
-                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(row.value)}</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td className="px-4 py-3 font-medium">Activation ready</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(activationReady)}</td>
-                  <td className="px-4 py-3 text-[#6b6257]">All requirements above must be Yes</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-3 font-medium">Coaching enabled now</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(coachingEnabledNow)}</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboarding.coaching_auto_enabled_at)}</td>
-                </tr>
-              </tbody>
-            </table>
-            <details className="border-t border-[#efe7db]">
-              <summary className="cursor-pointer px-4 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                More onboarding diagnostics
-              </summary>
-              <div className="overflow-hidden border-t border-[#efe7db]">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    <tr>
-                      <th className="px-4 py-3">Field</th>
-                      <th className="px-4 py-3">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#efe7db]">
-                    {onboardingFields.map(([key, value]) => (
-                      <tr key={key}>
-                        <td className="px-4 py-3 font-medium">{key}</td>
-                        <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
-                      </tr>
-                    ))}
-                    <tr>
-                      <td className="px-4 py-3 font-medium">intro_content_id</td>
-                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.content_id)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3 font-medium">intro_content_title</td>
-                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.title)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3 font-medium">intro_content_podcast_url</td>
-                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.podcast_url)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3 font-medium">intro_content_body_present</td>
-                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.body_present)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-[#efe7db] bg-white p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User app snapshot</p>
-                <h2 className="mt-2 text-lg font-semibold">Current user app state</h2>
-                <p className="mt-1 text-sm text-[#6b6257]">
-                  Read-only overview of the user&apos;s current daily journey in the user app.
-                </p>
-              </div>
-              {appState?.today ? (
-                <span className="rounded-full border border-[#efe7db] bg-[#fdfaf4] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                  {appState.today}
-                </span>
-              ) : null}
-            </div>
-
-            {appStateError ? (
-              <p className="mt-4 rounded-2xl border border-[#f2c1b5] bg-[#fef1ee] px-4 py-3 text-sm text-[#8c1d1d]">
-                User app snapshot unavailable: {appStateError}
-              </p>
-            ) : (
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <AppStateCard
-                  eyebrow="Daily journey"
-                  title={journeyDailyRecording?.summary_label || (tracker?.today_complete ? "Complete today" : "Incomplete today")}
-                  rows={[
-                    {
-                      label: "Daily recording",
-                      value: journeyDailyRecording?.summary_label,
-                    },
-                    {
-                      label: "Pillars",
-                      value: pillarJourneySummary,
-                    },
-                    { label: "Plan date", value: dailyPlan?.plan_date },
-                    {
-                      label: "Daily plan",
-                      value: formatJourneyValue(journeyDailyPlan?.label, journeyDailyPlan?.detail),
-                    },
-                    {
-                      label: "Today's focus",
-                      value: formatJourneyValue(journeyTodaysFocus?.label, journeyTodaysFocus?.detail),
-                    },
-                    {
-                      label: "Gia message",
-                      value: formatJourneyValue(journeyGiaMessage?.label, journeyGiaMessage?.detail),
-                    },
-                  ]}
-                />
-                <AppStateCard
-                  eyebrow="Weekly objectives"
-                  title={`${objectives?.configured_count ?? 0} configured`}
-                  rows={[
-                    { label: "Week start", value: objectives?.week?.start },
-                    { label: "Week end", value: objectives?.week?.end },
-                    {
-                      label: "Sections",
-                      value: (objectives?.sections || [])
-                        .map((section) => `${section.label || section.key}: ${section.configured_count ?? 0}/${section.total_count ?? 0}`)
-                        .join(" · "),
-                    },
-                  ]}
-                />
-                <AppStateCard
-                  eyebrow="Billing"
-                  title={String(appState?.billing?.status || "Not configured")}
-                  rows={[
-                    { label: "Provider", value: appState?.billing?.provider },
-                    { label: "Status", value: appState?.billing?.status },
-                  ]}
-                />
-              </div>
-            )}
-
-            {appState?.errors?.length ? (
-              <details className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf8f3] px-4 py-3 text-sm">
-                <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                  Snapshot section warnings
-                </summary>
-                <div className="mt-3 space-y-2 text-[#6b6257]">
-                  {appState.errors.map((error, index) => (
-                    <p key={`${error.section || "section"}-${index}`}>
-                      {error.section || "section"}: {error.message || "unavailable"}
-                    </p>
-                  ))}
-                </div>
-              </details>
+            {dataWarnings.length ? (
+              <ErrorNotice
+                text={`Some snapshot data is unavailable: ${dataWarnings.map((error) => error.section).join(", ")}.`}
+              />
             ) : null}
-          </div>
-
-          <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
-            <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User fields</p>
-            </div>
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                <tr>
-                  <th className="px-4 py-3">Field</th>
-                  <th className="px-4 py-3">Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#efe7db]">
-                {fields.map(([key, value]) => (
-                  <tr key={key}>
-                    <td className="px-4 py-3 font-medium">{key}</td>
-                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
-                  </tr>
-                ))}
-                {!fields.length ? (
-                  <tr>
-                    <td className="px-4 py-6 text-[#6b6257]" colSpan={2}>
-                      No user fields available.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
-            <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Current weekly plan</p>
-            </div>
-            {!weeklyPlan ? (
-              <div className="px-4 py-4 text-sm text-[#6b6257]">No weekly plan found.</div>
-            ) : (
-              <div className="space-y-4 p-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Week</p>
-                    <p className="mt-1 text-sm font-medium">{formatValue(weeklyPlan.week_no)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Start</p>
-                    <p className="mt-1 text-sm text-[#6b6257]">{formatDateTime(weeklyPlan.starts_on)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">End</p>
-                    <p className="mt-1 text-sm text-[#6b6257]">{formatDateTime(weeklyPlan.ends_on)}</p>
-                  </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</p>
-                    <p className="mt-1 text-sm text-[#6b6257]">{formatValue(weeklyPlan.source)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Notes</p>
-                    <p className="mt-1 text-sm text-[#6b6257]">{formatValue(weeklyPlan.notes)}</p>
-                  </div>
-                </div>
-                <div className="overflow-x-auto rounded-xl border border-[#efe7db]">
-                  <table className="w-full min-w-[900px] text-left text-sm">
-                    <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                      <tr>
-                        <th className="px-3 py-2">Order</th>
-                        <th className="px-3 py-2">KR</th>
-                        <th className="px-3 py-2">Pillar</th>
-                        <th className="px-3 py-2">Target</th>
-                        <th className="px-3 py-2">Current</th>
-                        <th className="px-3 py-2">Habit steps</th>
+            <section className={panel}>
+              <h2 className="text-lg font-semibold">Check-ins by pillar</h2>
+            <p className="mt-2 text-sm text-[#6b6257]">
+              Pillar setup: {state?.tracker?.app_setup_completed == null ? "Unknown" : state.tracker.app_setup_completed ? "Complete" : "Not completed"}
+            </p>
+              <p className="mt-1 mb-4 text-sm text-[#6b6257]">
+                Recording dates are separate from submission times. Snapshot for{" "}
+                {dateLabel(state?.today)}.
+              </p>
+              {pillars.length ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="py-3">Pillar</th>
+                        <th>Yesterday</th>
+                        <th>Today</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#efe7db]">
-                      {weeklyPlanKrs.map((kr, idx) => {
-                        const habits = Array.isArray(kr.habit_steps) ? (kr.habit_steps as Record<string, unknown>[]) : [];
-                        return (
-                          <tr key={String(kr.id || idx)}>
-                            <td className="px-3 py-2 text-[#6b6257]">
-                              {formatValue(kr.priority_order)} {kr.role ? `(${String(kr.role)})` : ""}
-                            </td>
-                            <td className="px-3 py-2">{formatValue(kr.description)}</td>
-                            <td className="px-3 py-2 text-[#6b6257]">{formatValue(kr.pillar_key)}</td>
-                            <td className="px-3 py-2 text-[#6b6257]">{formatValue(kr.target_num)}</td>
-                            <td className="px-3 py-2 text-[#6b6257]">{formatValue(kr.actual_num)}</td>
-                            <td className="px-3 py-2 text-[#6b6257]">
-                              {habits.length ? (
-                                <div className="space-y-1">
-                                  {habits.map((step, stepIdx) => (
-                                    <p key={String(step.id || `${idx}-${stepIdx}`)}>
-                                      {String(step.text || "")}
-                                      {step.status ? ` (${String(step.status)})` : ""}
-                                    </p>
-                                  ))}
-                                </div>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {!weeklyPlanKrs.length ? (
-                        <tr>
-                          <td className="px-3 py-4 text-[#6b6257]" colSpan={6}>
-                            No KRs linked to this weekly plan.
+                    <tbody>
+                      {pillars.map((pillar) => (
+                        <tr
+                          key={pillar.pillar_key}
+                          className="border-b border-[#efe7db]"
+                        >
+                          <td className="py-3 font-medium">
+                            {pillar.label || label(pillar.pillar_key)}
+                          </td>
+                          <td
+                            className={
+                              pillar.yesterday_complete
+                                ? "text-[#397224]"
+                                : muted
+                            }
+                          >
+                            {pillar.yesterday_complete
+                              ? "Recorded"
+                              : "Not recorded"}
+                          </td>
+                          <td
+                            className={
+                              pillar.today_complete ? "text-[#397224]" : muted
+                            }
+                          >
+                            {pillar.today_complete
+                              ? "Recorded"
+                              : "Not recorded"}
                           </td>
                         </tr>
-                      ) : null}
+                      ))}
                     </tbody>
                   </table>
                 </div>
+              ) : (
+                <p className={muted}>
+                  {state
+                    ? "No pillar recording information is available."
+                    : "Snapshot unavailable."}
+                </p>
+              )}
+              {latestCheckin ? (
+                <p className="mt-4 text-sm text-[#6b6257]">
+                  Latest check-in submitted{" "}
+                  {dateLabel(latestCheckin.recorded_at, true)}
+                  {latestCheckin.for_date
+                    ? ` for ${dateLabel(latestCheckin.for_date)}`
+                    : ""}
+                  .
+                </p>
+              ) : null}
+            </section>
+            <div className="grid gap-5 md:grid-cols-2">
+              <section className={panel}>
+                <h2 className="text-lg font-semibold">Learning</h2>
+                {lesson?.available ? (
+                  <div className="mt-3 space-y-2 text-sm">
+                    <p className="font-medium">
+                      {lesson.concept_label ||
+                        lesson.programme_name ||
+                        "Current lesson"}
+                    </p>
+                    <p>Lesson date: {dateLabel(progress?.lesson_date)}</p>
+                    <p>
+                      Video progress:{" "}
+                      {progress?.watch_pct == null
+                        ? "Not recorded"
+                        : `${progress.watch_pct}%`}
+                    </p>
+                    <p>
+                      Quiz:{" "}
+                      {progress?.quiz_completed_at
+                        ? `Completed · ${progress.quiz_score_pct ?? "—"}%`
+                        : "Not completed"}
+                    </p>
+                    <p>
+                      Lesson completion:{" "}
+                      {progress?.completed_at
+                        ? dateLabel(progress.completed_at, true)
+                        : label(progress?.completion_status || "not completed")}
+                    </p>
+                  </div>
+                ) : (
+                  <p className={`mt-3 ${muted}`}>
+                    No current lesson is available.
+                  </p>
+                )}
+              </section>
+              <section className={panel}>
+                <h2 className="text-lg font-semibold">Plan & targets</h2>
+                <div className="mt-3 space-y-2 text-sm">
+                  <p>{state?.daily_plan?.title || "No daily plan available"}</p>
+                  <p className={muted}>
+                    Plan date: {dateLabel(state?.daily_plan?.plan_date)}
+                  </p>
+                  <p>
+                    Daily plan: {state?.journey?.daily_plan?.label || "Unknown"}
+                  </p>
+                  <p>
+                    Today’s focus:{" "}
+                    {state?.journey?.todays_focus?.label || "Unknown"}
+                  </p>
+                  <p>
+                    Coach insight:{" "}
+                    {state?.journey?.gia_message?.label || "Unknown"}
+                  </p>
+                  <p>
+                    {state?.weekly_objectives
+                      ? `${state.weekly_objectives.configured_count ?? 0} targets configured`
+                      : "Target information unavailable"}
+                  </p>
+                  {state?.weekly_objectives?.sections?.map((item) => (
+                    <p key={item.key} className={muted}>
+                      {item.label || item.key}: {item.configured_count ?? 0}/
+                      {item.total_count ?? 0}
+                    </p>
+                  ))}
+                </div>
+              </section>
+            </div>
+            <section className={panel}>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Recent activity</h2>
+                <Link
+                  href={`${base}?section=activity`}
+                  className="text-sm underline"
+                >
+                  View activity
+                </Link>
               </div>
+              {activityResult.error ? (
+                <ErrorNotice text="Activity could not be loaded." />
+              ) : (
+                <ActivityList events={events.slice(0, 5)} />
+              )}
+            </section>
+          </>
+        ) : null}
+        {section === "activity" ? (
+          <section className={panel}>
+            <h2 className="text-lg font-semibold">Recorded app activity</h2>
+            <p className={`my-3 ${muted}`}>
+              Latest 100 recorded actions, newest first. Times are shown in UK
+              time. An opened lesson or insight is not counted as completed.
+            </p>
+            {activityResult.error ? (
+              <ErrorNotice text="Activity could not be loaded. Refresh to try again." />
+            ) : (
+              <ActivityList events={events} />
             )}
-          </div>
-
-          <div className="mt-6">
-            <Link
-              className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
-              href="/admin/users"
-            >
-              Back to users
-            </Link>
-          </div>
-        </section>
+          </section>
+        ) : null}
+        {section === "history" ? (
+          <section className={panel}>
+            <h2 className="text-lg font-semibold">Previous week(s)</h2>
+            {historyResult.error ? (
+              <ErrorNotice text="Weekly scores could not be loaded. Check the selected date or refresh to try again." />
+            ) : (
+              <>
+                <div className="my-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-medium">
+                    {dateLabel(history?.week?.start)} –{" "}
+                    {dateLabel(history?.week?.end)}
+                  </p>
+                  <div className="flex gap-4 text-sm">
+                    {historyStart ? (
+                      <Link
+                        className="underline"
+                        href={`${base}?section=history&week=${shiftWeek(historyStart, -7)}`}
+                      >
+                        ← Previous week
+                      </Link>
+                    ) : null}
+                    {nextIsPast ? (
+                      <Link
+                        className="underline"
+                        href={`${base}?section=history&week=${newer}`}
+                      >
+                        Next week →
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+                <p className="mb-4 text-sm text-[#6b6257]">
+                  Read-only scores for this week. Missing scores are not zero.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="py-3">Pillar</th>
+                        <th>Score / 100</th>
+                        <th>Completed recording days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history?.pillars?.map((pillar) => (
+                        <tr
+                          key={pillar.pillar_key}
+                          className="border-b border-[#efe7db]"
+                        >
+                          <td className="py-3 font-medium">{pillar.label}</td>
+                          <td>{pillar.tracker_score ?? "No recorded score"}</td>
+                          <td>{pillar.completed_days_count ?? 0}/7</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
+        {section === "account" ? (
+          <>
+            <section className={panel}>
+              <h2 className="text-lg font-semibold">Account details</h2>
+              <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                {[
+                  ["Name", userName],
+                  ["Email", user.email],
+                  ["Phone", user.phone],
+                  [
+                    "Consent",
+                    user.consent_given === true ? "Given" : "Not given",
+                  ],
+                  [
+                    "Billing",
+                    state
+                      ? state.billing?.status || "Not configured"
+                      : "Unavailable",
+                  ],
+                  [
+                    "First app access",
+                    dateLabel(onboarding.first_app_login_at, true),
+                  ],
+                ].map(([key, value]) => (
+                  <div key={String(key)}>
+                    <dt className={muted}>{String(key)}</dt>
+                    <dd className="mt-1 font-medium">{String(value || "—")}</dd>
+                  </div>
+                ))}
+              </dl>
+              <details className="mt-5 border-t pt-4">
+                <summary className="cursor-pointer font-medium">
+                  Setup details
+                </summary>
+                <p className={`mt-3 ${muted}`}>
+                  Introduction completed:{" "}
+                  {dateLabel(onboarding.intro_content_completed_at, true)}
+                </p>
+                <p className={`mt-2 ${muted}`}>
+                  Email verified: {dateLabel(user.email_verified_at, true)}
+                </p>
+                <p className={`mt-2 ${muted}`}>
+                  Phone verified: {dateLabel(user.phone_verified_at, true)}
+                </p>
+              </details>
+            </section>
+            <AccountTools
+              userId={userId}
+              coachingOn={onboarding.coaching_enabled_now === true}
+              promptState={String(user.prompt_state_override || "live")}
+            />
+          </>
+        ) : null}
       </div>
     </main>
   );
