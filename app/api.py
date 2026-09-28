@@ -22714,6 +22714,12 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
     weekly_objectives = capture("weekly_objectives", lambda: get_weekly_objectives_config(int(user_id)))
     tracker_pillars = tracker.get("pillars") if isinstance(tracker, dict) else []
     objective_sections = weekly_objectives.get("sections") if isinstance(weekly_objectives, dict) else []
+    from .admin_user_configuration import load_user_configuration
+    with SessionLocal() as configuration_session:
+        pillar_configuration = capture("pillar_configuration", lambda: load_user_configuration(
+            configuration_session, int(user_id), weekly_objectives
+        )) if weekly_objectives is not None else None
+
     tracker_journey_pillars = []
     for pillar in tracker_pillars if isinstance(tracker_pillars, list) else []:
         if not isinstance(pillar, dict):
@@ -22848,6 +22854,7 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
                 "urine_status": str((urine or {}).get("status") or "").strip() if isinstance(urine, dict) else None,
             },
         },
+        "pillar_configuration": pillar_configuration,
         "weekly_objectives": {
             "week": weekly_objectives.get("week") if isinstance(weekly_objectives, dict) else None,
             "sections": objective_sections if isinstance(objective_sections, list) else [],

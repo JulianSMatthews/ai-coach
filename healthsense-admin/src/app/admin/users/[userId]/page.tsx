@@ -140,7 +140,7 @@ export default async function UserProfilePage({
   );
   const dataWarnings =
     state?.errors?.filter((error) =>
-      ["tracker", "education", "weekly_objectives"].includes(
+      ["tracker", "education", "weekly_objectives", "pillar_configuration"].includes(
         error.section || "",
       ),
     ) || [];
@@ -348,35 +348,54 @@ export default async function UserProfilePage({
                 )}
               </section>
               <section className={panel}>
-                <h2 className="text-lg font-semibold">Plan & targets</h2>
-                <div className="mt-3 space-y-2 text-sm">
-                  <p>{state?.daily_plan?.title || "No daily plan available"}</p>
-                  <p className={muted}>
-                    Plan date: {dateLabel(state?.daily_plan?.plan_date)}
-                  </p>
-                  <p>
-                    Daily plan: {state?.journey?.daily_plan?.label || "Unknown"}
-                  </p>
-                  <p>
-                    Today’s focus:{" "}
-                    {state?.journey?.todays_focus?.label || "Unknown"}
-                  </p>
-                  <p>
-                    Coach insight:{" "}
-                    {state?.journey?.gia_message?.label || "Unknown"}
-                  </p>
-                  <p>
-                    {state?.weekly_objectives
-                      ? `${state.weekly_objectives.configured_count ?? 0} targets configured`
-                      : "Target information unavailable"}
-                  </p>
-                  {state?.weekly_objectives?.sections?.map((item) => (
-                    <p key={item.key} className={muted}>
-                      {item.label || item.key}: {item.configured_count ?? 0}/
-                      {item.total_count ?? 0}
-                    </p>
-                  ))}
-                </div>
+                <h2 className="text-lg font-semibold">Pillars & objectives</h2>
+                {state?.pillar_configuration ? (
+                  <div className="mt-3 space-y-4 text-sm">
+                    <p>Setup last saved: {state.pillar_configuration.setup_last_saved_at ? dateLabel(state.pillar_configuration.setup_last_saved_at, true) : "Date not recorded"}</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead><tr className="border-b"><th className="py-2">Pillar</th><th>Selection</th><th>Last saved</th></tr></thead>
+                        <tbody>{state.pillar_configuration.pillars.map((pillar) => (
+                          <tr key={pillar.key} className="border-b border-[#efe7db]">
+                            <td className="py-2 pr-3 font-medium">{pillar.label}</td>
+                            <td className="pr-3">{pillar.selected ? "Selected" : "Not selected"}{pillar.source === "default" ? " (default)" : ""}</td>
+                            <td>{pillar.last_saved_at ? dateLabel(pillar.last_saved_at, true) : "Date not recorded"}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                    <p className={muted}>Current settings. Saved dates show the latest stored record; previous values are not retained here.</p>
+                    {state.pillar_configuration.objectives.map((pillar) => (
+                      <details key={pillar.pillar_key} className="rounded-xl border border-[#e7e1d6] p-3">
+                        <summary className="cursor-pointer font-semibold">{pillar.label} — objectives & targets</summary>
+                        <p className="mt-3">{pillar.objective}</p>
+                        <p className={`mt-1 ${muted}`}>Objective record created: {pillar.objective_created_at ? dateLabel(pillar.objective_created_at, true) : "Date not recorded"}</p>
+                        <ul className="mt-3 divide-y divide-[#efe7db]">
+                          {pillar.concepts.map((concept) => (
+                            <li key={concept.concept_key} className="py-2">
+                              <p className="font-medium">{concept.label}</p>
+                              <p>{concept.target_label || (concept.selected_value == null ? "Not set" : `${concept.selected_value} ${concept.unit_label || ""}`)}</p>
+                              <p className={muted}>{concept.target_source === "default" ? "App default" : "Saved target"}</p>
+                              {concept.record_created_at ? <p className={muted}>Record created: {dateLabel(concept.record_created_at, true)}</p> : null}
+                              {concept.record_updated_at ? <p className={muted}>Record updated: {dateLabel(concept.record_updated_at, true)}</p> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ))}
+                    {state.pillar_configuration.wellbeing?.items?.length ? (
+                      <details className="rounded-xl border border-[#e7e1d6] p-3">
+                        <summary className="cursor-pointer font-semibold">Wellbeing options</summary>
+                        <ul className="mt-3 divide-y divide-[#efe7db]">{state.pillar_configuration.wellbeing.items.map((item) => (
+                          <li key={item.key} className="py-2">
+                            <p className="font-medium">{item.label}: {item.options?.find((option) => option.value === item.value)?.label || item.value}</p>
+                            {item.fields?.map((field) => <p key={field.key}>{field.label}: {field.options?.find((option) => option.value === field.value)?.label || field.value}</p>)}
+                          </li>
+                        ))}</ul>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : <p className={`mt-3 ${muted}`}>Pillar configuration could not be loaded.</p>}
               </section>
             </div>
             <section className={panel}>

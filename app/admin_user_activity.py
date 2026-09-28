@@ -14,6 +14,7 @@ ACTIVITY_LABELS = {
     'education_plan_view': 'Opened lesson',
     'education_video_progress': 'Recorded lesson progress',
     'education_quiz_submit': 'Submitted quiz',
+    'weekly_objectives_save': 'Saved objectives',
 }
 
 

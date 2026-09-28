@@ -13,7 +13,7 @@ function load(file, mocks) {
 async function render(section, failActivity = false) {
   const api = {
     getAdminUserDetails: async () => ({ user: { display_name: 'Test User', password_hash: 'secret-hash', consent_given: true }, onboarding: {} }),
-    getAdminUserAppState: async () => ({ today: '2026-09-28', engagement_summary: { current_streak_days: 7, best_streak_days: 12 }, journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', day_before_yesterday_complete: false, yesterday_complete: true, today_complete: false }] } }, education: { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
+    getAdminUserAppState: async () => ({ today: '2026-09-28', pillar_configuration: { setup_last_saved_at: '2026-09-20T10:00:00Z', pillars: [{key: 'nutrition', label: 'Nutrition', selected: true, source: 'saved', last_saved_at: '2026-09-20T10:00:00Z'}], objectives: [{pillar_key: 'nutrition', label: 'Nutrition', objective: 'Eat well', concepts: [{concept_key: 'alcohol', label: 'Alcohol', selected_value: 0, unit_label: 'units', target_source: 'default'}]}]}, engagement_summary: { current_streak_days: 7, best_streak_days: 12 }, journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', day_before_yesterday_complete: false, yesterday_complete: true, today_complete: false }] } }, education: { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
     getAdminUserActivity: async () => {
       if (failActivity) throw new Error('offline');
       return { events: [{ id: 1, recorded_at: '2026-09-28T09:00:00Z', kind: 'pillar_tracker_update', label: 'Recorded check-in', pillar_key: 'nutrition', for_date: '2026-09-27' }] };
@@ -34,6 +34,11 @@ test('overview shows recording day separately and surfaces lesson progress', asy
   assert.match(html, /Nutrition<\/td><td[^>]*>Not recorded<\/td><td[^>]*>Recorded<\/td><td[^>]*>Not recorded<\/td>/);
   assert.match(html, /27 Sept 2026/);
   assert.match(html, /28 Sept 2026/);
+  assert.match(html, /Pillars &amp; objectives/);
+  assert.match(html, /Nutrition — objectives &amp; targets/);
+  assert.match(html, /0 units/);
+  assert.match(html, /App default/);
+  assert.doesNotMatch(html, /Plan &amp; targets|Daily plan:|Coach insight:/);
   assert.match(html, /Video progress: 50%/);
   assert.match(html, /Quiz: Not completed/);
   assert.doesNotMatch(html, /First-day coaching|Coaching activation|secret-hash|assessment/i);

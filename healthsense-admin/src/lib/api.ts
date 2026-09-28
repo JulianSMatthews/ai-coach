@@ -1055,6 +1055,15 @@ export type AdminUserSummary = {
 };
 
 export type AdminUserAppState = {
+  pillar_configuration?: {
+    setup_last_saved_at?: string | null;
+    pillars: Array<{ key: string; label: string; selected: boolean; source: string; last_saved_at?: string | null }>;
+    objectives: Array<{
+      pillar_key: string; label: string; objective: string; objective_created_at?: string | null;
+      concepts: Array<{ concept_key: string; label: string; selected_value?: number | null; unit_label?: string | null; target_label?: string | null; target_source?: string | null; record_created_at?: string | null; record_updated_at?: string | null }>;
+    }>;
+    wellbeing?: { items?: Array<{ key: string; label: string; value: string; options?: Array<{ value: string; label: string }>; fields?: Array<{ key: string; label: string; value: string; options?: Array<{ value: string; label: string }> }> }> } | null;
+  } | null;
   engagement_summary?: {
     current_streak_days?: number | null;
     best_streak_days?: number | null;
