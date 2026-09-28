@@ -2315,11 +2315,6 @@ def _summary_pillar_payload(
         checkin_dates.insert(0, last_week_anchor)
     resolved_score = tracker_score
     resolved_source = "tracker" if tracker_score is not None else "none"
-    # Completion belongs to the actual editable dates, independently of the score week.
-    completion_entries = dict(entries_by_day)
-    for checkin_week in {start_of_week(day) for day in [current_day, *editable_dates]}:
-        if checkin_week != week_days[0]:
-            completion_entries.update(_load_week_entries(user_id, pillar_key, checkin_week))
     label = _pillar_label(pillar_key)
     concept_context = _concept_score_context(required_concepts, evaluations_by_concept)
     daily_quote = _daily_pillar_quote(
@@ -2344,7 +2339,7 @@ def _summary_pillar_payload(
         "daily_quote_pending": not daily_quote_generated,
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
-        "today_complete": _day_complete(completion_entries.get(current_day, {}), required_concepts),
+        "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),
         "checkin_options": [
             {
                 "date": item.isoformat(),
@@ -2352,7 +2347,7 @@ def _summary_pillar_payload(
                 "complete": (
                     True
                     if _is_last_week_anchor(item, current_day)
-                    else _day_complete(completion_entries.get(item, {}), required_concepts)
+                    else _day_complete(entries_by_day.get(item, {}), required_concepts)
                 ),
                 "is_today": item == current_day,
                 "is_yesterday": item == current_day - timedelta(days=1),
@@ -2396,8 +2391,7 @@ def _app_setup_completed_for_user(user_id: int) -> bool:
 def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip_quote_generation: bool = True) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     current_day = tracker_today()
-    # Check-ins describe yesterday: on Monday, Sunday closes the previous week.
-    resolved_anchor = anchor or (current_day - timedelta(days=1))
+    resolved_anchor = anchor or current_day
     baseline_scores = _latest_assessment_scores_for_user(user_id)
     week_days = _week_days(resolved_anchor)
     pillars = []
@@ -2422,6 +2416,23 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
                 skip_quote_generation=skip_quote_generation,
             )
         )
+        # Only the home score display falls back on Monday. Explicit history,
+        # completion state, streaks, quotes and the current-week context stay intact.
+        if anchor is None and current_day.weekday() == 0 and not pillars[-1]["today_complete"]:
+            previous_anchor = current_day - timedelta(days=1)
+            previous_days = _week_days(previous_anchor)
+            previous_entries = _load_week_entries(user_id, pillar_key, previous_anchor)
+            previous_evaluations = _build_concept_week_evaluations(
+                previous_entries, required_concepts, resolved_targets, previous_days
+            )
+            previous_score = _week_score(
+                previous_entries, required_concepts, previous_evaluations, previous_days
+            )
+            pillars[-1].update(
+                score=previous_score,
+                tracker_score=previous_score,
+                source="tracker" if previous_score is not None else "none",
+            )
     total_pillars = len(pillars)
     today_completed_pillars_count = sum(1 for pillar in pillars if pillar.get("today_complete") is True)
     pillar_scores = [

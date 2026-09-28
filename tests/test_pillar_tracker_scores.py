@@ -43,29 +43,56 @@ class TrackerScoreTests(unittest.TestCase):
         self.assertIsNone(result[day + timedelta(days=1)]['daily_status'])
         self.assertIsNone(result[day + timedelta(days=1)]['score'])
 
-    def summary(self, today, rows, anchor=None):
+    def summary(self, today, rows, anchor=None, pillar_rows=None):
         def load(_user, _pillar, day):
-            return {d: row for d, row in rows.items() if tracker.start_of_week(d) == tracker.start_of_week(day)}
+            source = pillar_rows[_pillar] if pillar_rows is not None else rows
+            return {d: row for d, row in source.items() if tracker.start_of_week(d) == tracker.start_of_week(day)}
         with patch.object(tracker, 'tracker_today', return_value=today), \
-             patch.object(tracker, 'active_pillar_keys', return_value=['nutrition']), \
+             patch.object(tracker, 'active_pillar_keys', return_value=list(pillar_rows) if pillar_rows is not None else ['nutrition']), \
              patch.object(tracker, 'tracker_concepts_for_pillar', return_value=(self.concept,)), \
              patch.object(tracker, '_resolve_pillar_targets_for_user', return_value={'alcohol_units': self.target}), \
              patch.object(tracker, '_load_week_entries', side_effect=load), \
              patch.object(tracker, '_editable_tracker_dates_for_pillar', return_value=[today - timedelta(days=1), today]):
             return tracker.get_pillar_tracker_summary(1, anchor=anchor)
 
-    def test_monday_scores_sunday_but_tracks_monday_completion_separately(self):
+    def test_monday_switches_only_after_todays_completed_checkin(self):
         monday = date(2026, 9, 28)
-        rows = {monday: {'alcohol_units': SimpleNamespace(value_num=6)}, monday - timedelta(days=1): {'alcohol_units': SimpleNamespace(value_num=0)}}
+        rows = {monday - timedelta(days=1): {'alcohol_units': SimpleNamespace(value_num=0)}}
         result = self.summary(monday, rows)
-        self.assertEqual(result['week']['start'], '2026-09-21')
+        self.assertEqual(result['week']['start'], '2026-09-28')
         self.assertEqual(result['overall_score'], 100)
+        self.assertFalse(result['today_complete'])
+        rows[monday] = {'alcohol_units': SimpleNamespace(value_num=6)}
+        result = self.summary(monday, rows)
+        self.assertEqual(result['overall_score'], 0)
         self.assertTrue(result['today_complete'])
-        self.assertTrue(all(option['complete'] for option in result['pillars'][0]['checkin_options']))
         tuesday = self.summary(monday + timedelta(days=1), rows)
         self.assertEqual(tuesday['week']['start'], '2026-09-28')
         self.assertEqual(tuesday['overall_score'], 0)
         self.assertFalse(tuesday['today_complete'])
+
+    def test_monday_pillars_switch_independently(self):
+        monday = date(2026, 9, 28)
+        sunday = monday - timedelta(days=1)
+        previous = {sunday: {'alcohol_units': SimpleNamespace(value_num=0)}}
+        completed = {**previous, monday: {'alcohol_units': SimpleNamespace(value_num=6)}}
+        result = self.summary(monday, {}, pillar_rows={'nutrition': completed, 'recovery': previous})
+        self.assertEqual([p['tracker_score'] for p in result['pillars']], [0, 100])
+        self.assertEqual([p['today_complete'] for p in result['pillars']], [True, False])
+        self.assertEqual(result['today_completed_pillars_count'], 1)
+        self.assertEqual(result['overall_score'], 50)
+
+    def test_fallback_does_not_change_other_summary_fields_or_explicit_week(self):
+        monday = date(2026, 9, 28)
+        rows = {monday - timedelta(days=1): {'alcohol_units': SimpleNamespace(value_num=0)}}
+        default = self.summary(monday, rows)
+        explicit = self.summary(monday, rows, anchor=monday)
+        self.assertIsNone(explicit['overall_score'])
+        self.assertEqual(default['week'], explicit['week'])
+        for key in default['pillars'][0]:
+            if key not in {'score', 'tracker_score', 'source'}:
+                self.assertEqual(default['pillars'][0][key], explicit['pillars'][0][key], key)
+        self.assertIsNone(self.summary(monday + timedelta(days=1), rows)['overall_score'])
 
     def test_empty_week_stays_unrated_and_explicit_history_is_respected(self):
         result = self.summary(date(2026, 9, 28), {})

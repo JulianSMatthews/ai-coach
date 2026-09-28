@@ -11,7 +11,6 @@ type AppNavProps = {
   userId?: string;
   promptBadge?: string;
   overallScore?: number | null;
-  scoreWeekLabel?: string;
   currentStreakDays?: number | null;
   userFirstName?: string | null;
 };
@@ -78,7 +77,6 @@ export default function AppNav({
   userId = "",
   promptBadge = "",
   overallScore = null,
-  scoreWeekLabel = "",
   currentStreakDays = null,
   userFirstName = "",
 }: AppNavProps) {
@@ -90,8 +88,6 @@ export default function AppNav({
   }, [router]);
   const [open, setOpen] = useState(false);
   const [liveOverallScore, setLiveOverallScore] = useState<number | null>(overallScore);
-  const [liveScoreWeekLabel, setLiveScoreWeekLabel] = useState(scoreWeekLabel);
-  useEffect(() => setLiveScoreWeekLabel(scoreWeekLabel), [scoreWeekLabel]);
   const resolvedUserId = String(userId || "").trim();
   const resolvedOverallScore = liveOverallScore != null && Number.isFinite(Number(liveOverallScore)) ? Math.max(0, Math.min(100, Math.round(Number(liveOverallScore)))) : null;
   const resolvedCurrentStreakDays = Number.isFinite(Number(currentStreakDays))
@@ -126,8 +122,7 @@ export default function AppNav({
 
   useEffect(() => {
     const onOverallScoreUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ overallScore?: number | null; weekLabel?: string }>).detail;
-      setLiveScoreWeekLabel(detail?.weekLabel || "");
+      const detail = (event as CustomEvent<{ overallScore?: number | null }>).detail;
       if (detail?.overallScore == null) {
         setLiveOverallScore(null);
         return;
@@ -165,8 +160,7 @@ export default function AppNav({
                   }
                 }}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)]"
-                aria-label={`Open overall score${liveScoreWeekLabel ? ` · ${liveScoreWeekLabel}` : ""}`}
-                title={liveScoreWeekLabel}
+                aria-label="Open overall score"
               >
                 <ScoreBadge score={resolvedOverallScore} />
               </button>

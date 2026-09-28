@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore, trackerWeekLabel } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -3622,9 +3622,6 @@ export default function LatestAssessmentPanel({
                           {pillar.label}
                         </p>
                       </div>
-                      <p className="mt-3 text-xs text-[var(--text-secondary)]">
-                        {trackerWeekLabel(summary)}{score === null ? " · No check-ins yet" : ""}
-                      </p>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div className="relative min-h-[11.75rem] w-full flex-1 sm:min-h-[13rem]">
                           <div

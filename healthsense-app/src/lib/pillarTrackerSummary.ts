@@ -23,18 +23,7 @@ export function dispatchPillarTrackerOverallScore(summary?: PillarTrackerSummary
   const overallScore = resolvePillarTrackerOverallScore(summary);
   window.dispatchEvent(
     new CustomEvent(PILLAR_TRACKER_OVERALL_SCORE_EVENT, {
-      detail: { overallScore, weekLabel: trackerWeekLabel(summary) },
+      detail: { overallScore },
     }),
   );
-}
-
-export function trackerWeekLabel(summary?: PillarTrackerSummaryResponse | null): string {
-  const start = summary?.week?.start;
-  const end = summary?.week?.end;
-  if (!start || !end) return "";
-  const format = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", timeZone: "UTC",
-  });
-  const period = summary?.today && end < summary.today ? "Last week" : "This week so far";
-  return `${period} · ${format(start)}–${format(end)}`;
 }
