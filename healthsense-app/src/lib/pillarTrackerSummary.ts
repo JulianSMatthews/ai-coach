@@ -80,3 +80,36 @@ export function resolveTrackerDayStatus(
   if (achieved === true) return "success";
   return day.daily_status;
 }
+
+function trackerDate(value?: string | null): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+export function formatTrackerWeekRange(start?: string | null, end?: string | null): string {
+  const from = trackerDate(start), to = trackerDate(end);
+  if (!from || !to) return "";
+  const ordinal = (d: Date) => {
+    const n = d.getUTCDate(), remainder = n % 100;
+    const suffix = remainder >= 11 && remainder <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] || "th";
+    return `${n}${suffix}`;
+  };
+  const month = (d: Date) => d.toLocaleDateString("en-GB", { month: "long", timeZone: "UTC" });
+  const year = (d: Date) => String(d.getUTCFullYear()).slice(-2);
+  const sameYear = from.getUTCFullYear() === to.getUTCFullYear();
+  const sameMonth = sameYear && from.getUTCMonth() === to.getUTCMonth();
+  const left = `${ordinal(from)}${sameMonth ? "" : ` ${month(from)}`}${sameYear ? "" : ` ${year(from)}`}`;
+  return `${left} - ${ordinal(to)} ${month(to)} ${year(to)}`;
+}
+
+export function trackerWeekNavigation(start?: string | null, today?: string | null): { previous: string | null; next: string | null } {
+  const week = trackerDate(start), now = trackerDate(today);
+  if (!week || !now) return { previous: null, next: null };
+  const currentMonday = new Date(now);
+  currentMonday.setUTCDate(now.getUTCDate() - (now.getUTCDay() + 6) % 7);
+  const previous = new Date(week), next = new Date(week);
+  previous.setUTCDate(week.getUTCDate() - 7);
+  next.setUTCDate(week.getUTCDate() + 7);
+  return { previous: previous.toISOString().slice(0, 10), next: next < currentMonday ? next.toISOString().slice(0, 10) : null };
+}

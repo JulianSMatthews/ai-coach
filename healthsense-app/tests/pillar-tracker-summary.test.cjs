@@ -86,3 +86,17 @@ test('weekly progress does not override daily success or colour missing days', (
   assert.equal(dayStatus({ target_period: 'week' }, { target_reached: false, target_met: true, daily_status: 'danger' }), 'danger');
   assert.equal(dayStatus({ target_period: 'day' }, { target_met: null, daily_status: null }), null);
 });
+const { formatTrackerWeekRange: weekRange, trackerWeekNavigation: navigation } = context.exports;
+test('week dates use ordinals and handle month and year boundaries', () => {
+  assert.equal(weekRange('2026-09-21', '2026-09-27'), '21st - 27th September 26');
+  assert.equal(weekRange('2026-09-28', '2026-10-04'), '28th September - 4th October 26');
+  assert.equal(weekRange('2026-12-28', '2027-01-03'), '28th December 26 - 3rd January 27');
+  assert.equal(weekRange('2026-05-11', '2026-05-13'), '11th - 13th May 26');
+  assert.equal(weekRange(null, null), '');
+});
+test('history can move backwards and forwards but stops at last week', () => {
+  assert.equal(navigation('2026-09-21', '2026-09-28').previous, '2026-09-14');
+  assert.equal(navigation('2026-09-21', '2026-09-28').next, null);
+  assert.equal(navigation('2026-09-14', '2026-09-28').next, '2026-09-21');
+  assert.equal(navigation('2026-10-19', '2026-10-28').next, null);
+});

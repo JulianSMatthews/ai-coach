@@ -138,6 +138,22 @@ class TrackerScoreTests(unittest.TestCase):
         result = self.summary(monday + timedelta(days=4), rows)
         self.assertIsNone(result['overall_score'])
 
+    def test_previous_weeks_are_readonly_and_empty_weeks_do_not_jump_to_today(self):
+        today = date(2026, 9, 28)
+        rows = {date(2026, 9, 16): {'alcohol_units': SimpleNamespace(value_num=0)}}
+        older = self.summary(today, rows, anchor=date(2026, 9, 14), detail_pillar='nutrition')
+        self.assertEqual(older['pillar']['week_start'], '2026-09-14')
+        self.assertEqual(older['pillar']['tracker_score'], 100)
+        self.assertFalse(older['pillar']['is_editable'])
+        self.assertFalse(older['pillar']['is_current_week'])
+        empty = self.summary(today, rows, anchor=date(2026, 9, 7), detail_pillar='nutrition')
+        self.assertEqual(empty['pillar']['week_start'], '2026-09-07')
+        self.assertIsNone(empty['pillar']['tracker_score'])
+        self.assertFalse(empty['pillar']['is_editable'])
+        last_week = self.summary(today, rows, anchor=date(2026, 9, 21), detail_pillar='nutrition')
+        self.assertEqual(last_week['pillar']['week_start'], '2026-09-21')
+        self.assertFalse(last_week['pillar']['is_editable'])
+
     def test_empty_week_stays_unrated_and_explicit_history_is_respected(self):
         result = self.summary(date(2026, 9, 28), {})
         self.assertIsNone(result['overall_score'])

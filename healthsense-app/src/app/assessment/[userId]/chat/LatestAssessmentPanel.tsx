@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore, resolveTrackerDayStatus } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore, resolveTrackerDayStatus, formatTrackerWeekRange, trackerWeekNavigation } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -1554,6 +1554,7 @@ export default function LatestAssessmentPanel({
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const summaryRequestRef = useRef(0);
+  const detailRequestRef = useRef(0);
   const trackerDetailCacheRef = useRef<Map<string, PillarTrackerDetailResponse>>(new Map());
   const pillarQuoteGestureRef = useRef<{
     pointerId: number;
@@ -1642,11 +1643,8 @@ export default function LatestAssessmentPanel({
   const canEditActiveWeek = detail?.pillar?.is_editable !== false;
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
   const viewingLastWeek = detail?.pillar?.is_current_week === false;
-  const scorePeriodStart = parseIsoLocalDay(detail?.pillar?.week_start);
-  const scorePeriodEnd = parseIsoLocalDay(detail?.pillar?.week_end);
-  const scorePeriodLabel = scorePeriodStart && scorePeriodEnd
-    ? `${scorePeriodStart.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} – ${scorePeriodEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
-    : "";
+  const scorePeriodLabel = formatTrackerWeekRange(detail?.pillar?.week_start, detail?.pillar?.week_end);
+  const historyWeeks = trackerWeekNavigation(detail?.pillar?.week_start, detail?.pillar?.current_date || summary.today);
   const wellbeingObjectiveItems = useMemo(
     () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
     [weeklyObjectives],
@@ -3174,12 +3172,14 @@ export default function LatestAssessmentPanel({
   }, [assessmentReviewed, assessmentReviewSyncStarted, summaryPanelVisible, userId]);
 
   const loadTrackerDetail = useCallback(async (pillarKey: string, anchorDate?: string) => {
+    const requestId = ++detailRequestRef.current;
     const cacheKey = `${pillarKey}:${anchorDate || "default"}`;
     const cachedDetail = trackerDetailCacheRef.current.get(cacheKey);
-    setLoadingDetail(!cachedDetail);
+    setLoadingDetail(true);
     setDetailError(null);
     setSaveError(null);
     const applyDetail = (payload: PillarTrackerDetailResponse) => {
+      if (requestId !== detailRequestRef.current) return;
       setDetail(payload);
       const nextDraft: Record<string, number> = {};
       (payload.concepts || []).forEach((concept) => {
@@ -3216,9 +3216,9 @@ export default function LatestAssessmentPanel({
       trackerDetailCacheRef.current.set(cacheKey, payload);
       applyDetail(payload);
     } catch (error) {
-      setDetailError(error instanceof Error ? error.message : String(error));
+      if (requestId === detailRequestRef.current) setDetailError(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoadingDetail(false);
+      if (requestId === detailRequestRef.current) setLoadingDetail(false);
     }
   }, [userId]);
 
@@ -3256,6 +3256,7 @@ export default function LatestAssessmentPanel({
   }, [loadTrackerDetail]);
 
   const closeTracker = () => {
+    detailRequestRef.current += 1;
     setSelectedPillarKey(null);
     setGuidedTrackingActive(false);
     setTrackerReturnSurface(null);
@@ -4945,7 +4946,10 @@ export default function LatestAssessmentPanel({
                     <div>
                       <p className="text-lg font-semibold">{detail.pillar?.label}</p>
                       {viewingLastWeek && scorePeriodLabel ? (
-                        <p className="mt-1 text-sm text-[#625b52]">{scorePeriodLabel}</p>
+                        <div className="mt-1 text-sm text-[#625b52]">
+                          <p>{scorePeriodLabel}</p>
+                          {detail.pillar?.tracker_score == null ? <p className="mt-1">No check-ins recorded this week</p> : null}
+                        </div>
                       ) : null}
                     </div>
                     <WeeklyScoreRing
@@ -4953,6 +4957,20 @@ export default function LatestAssessmentPanel({
                       tone={viewingLastWeek ? getPillarPalette(trackerPillarKey).accent : "var(--accent)"}
                     />
                   </div>
+                  {viewingLastWeek ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <button type="button" disabled={loadingDetail || !historyWeeks.previous}
+                        onClick={() => historyWeeks.previous && void loadTrackerDetail(trackerPillarKey, historyWeeks.previous)}
+                        className="rounded-full border border-[var(--border)] px-4 py-3 text-sm font-semibold disabled:opacity-40">
+                        ← Previous week
+                      </button>
+                      <button type="button" disabled={loadingDetail || !historyWeeks.next}
+                        onClick={() => historyWeeks.next && void loadTrackerDetail(trackerPillarKey, historyWeeks.next)}
+                        className="rounded-full border border-[var(--border)] px-4 py-3 text-sm font-semibold disabled:opacity-40">
+                        Next week →
+                      </button>
+                    </div>
+                  ) : null}
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];

@@ -1786,10 +1786,16 @@ def _resolve_tracker_detail_context(
     last_week_entries = cached_week_entries(last_week_anchor)
     last_week_completed_days = _completed_days(last_week_entries, required_concepts)
     viewable_dates = ([last_week_anchor] if last_week_completed_days else []) + editable_dates
-    if requested_anchor == last_week_anchor:
-        completed_days = last_week_completed_days
-        if completed_days:
-            return max(completed_days), viewable_dates
+    if (
+        requested_anchor is not None
+        and start_of_week(requested_anchor) < start_of_week(current_day)
+        and requested_anchor not in editable_dates
+    ):
+        # Historical navigation must stay in the requested week, including gaps.
+        historical_entries = cached_week_entries(requested_anchor)
+        historical_completed = _completed_days(historical_entries, required_concepts)
+        historical_anchor = max(historical_completed) if historical_completed else _week_days(requested_anchor)[-1]
+        return historical_anchor, viewable_dates
     if requested_anchor in viewable_dates:
         return requested_anchor, viewable_dates
     if not viewable_dates:
@@ -2511,7 +2517,12 @@ def get_pillar_tracker_detail(
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
     editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
-    is_editable = resolved_anchor in editable_dates
+    historical_request = (
+        anchor is not None
+        and anchor not in editable_dates
+        and start_of_week(anchor) < start_of_week(current_day)
+    )
+    is_editable = resolved_anchor in editable_dates and not historical_request
     is_current_week = start_of_week(resolved_anchor) == start_of_week(current_day)
     current_summary = _summary_pillar_payload(
         user_id=int(user_id),
