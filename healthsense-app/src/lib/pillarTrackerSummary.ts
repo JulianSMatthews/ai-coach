@@ -113,3 +113,12 @@ export function trackerWeekNavigation(start?: string | null, today?: string | nu
   next.setUTCDate(week.getUTCDate() + 7);
   return { previous: previous.toISOString().slice(0, 10), next: next < currentMonday ? next.toISOString().slice(0, 10) : null };
 }
+
+export function trackerSwipeWeek(
+  deltaX: number,
+  deltaY: number,
+  weeks: { previous: string | null; next: string | null },
+): string | null {
+  if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return null;
+  return deltaX > 0 ? weeks.previous : weeks.next;
+}

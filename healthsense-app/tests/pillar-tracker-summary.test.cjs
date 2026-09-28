@@ -100,3 +100,16 @@ test('history can move backwards and forwards but stops at last week', () => {
   assert.equal(navigation('2026-09-14', '2026-09-28').next, '2026-09-21');
   assert.equal(navigation('2026-10-19', '2026-10-28').next, null);
 });
+const { trackerSwipeWeek: swipeWeek } = context.exports;
+test('performance swipes move through weeks and respect the newest boundary', () => {
+  const weeks = navigation('2026-09-14', '2026-09-28');
+  assert.equal(swipeWeek(80, 5, weeks), '2026-09-07');
+  assert.equal(swipeWeek(-80, 5, weeks), '2026-09-21');
+  assert.equal(swipeWeek(-80, 0, navigation('2026-09-21', '2026-09-28')), null);
+});
+test('taps and vertical scrolling do not change the performance week', () => {
+  const weeks = navigation('2026-09-14', '2026-09-28');
+  assert.equal(swipeWeek(10, 0, weeks), null);
+  assert.equal(swipeWeek(50, 80, weeks), null);
+  assert.equal(swipeWeek(-50, -60, weeks), null);
+});

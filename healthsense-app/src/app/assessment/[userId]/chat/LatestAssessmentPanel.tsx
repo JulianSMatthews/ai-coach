@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore, resolveTrackerDayStatus, formatTrackerWeekRange, trackerWeekNavigation } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore, resolveTrackerDayStatus, formatTrackerWeekRange, trackerWeekNavigation, trackerSwipeWeek } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -87,7 +87,7 @@ const SETUP_GUIDE_CARDS = [
   {
     icon: "checkin",
     title: "Check in",
-    body: "Each selected pillar becomes a daily cue card. Tap Today, Yesterday, or Last week to answer the pillar questions.",
+    body: "Each selected pillar becomes a daily cue card. Tap Today or Yesterday to check in, or Performance to review previous weeks.",
   },
   {
     icon: "targets",
@@ -1555,6 +1555,8 @@ export default function LatestAssessmentPanel({
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const summaryRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
+  const historySwipeRef = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [historySwipeOffset, setHistorySwipeOffset] = useState(0);
   const trackerDetailCacheRef = useRef<Map<string, PillarTrackerDetailResponse>>(new Map());
   const pillarQuoteGestureRef = useRef<{
     pointerId: number;
@@ -3698,7 +3700,7 @@ export default function LatestAssessmentPanel({
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();
                             const optionLabel = String(
-                              option?.label || (option?.is_last_week ? "Last week" : option?.is_yesterday ? "Yesterday" : "Today"),
+                              option?.is_last_week ? "Performance" : option?.label || (option?.is_yesterday ? "Yesterday" : "Today"),
                             ).trim();
                             const complete = option?.complete === true;
                             return (
@@ -4942,12 +4944,49 @@ export default function LatestAssessmentPanel({
 
               {detail ? (
                 <div className="space-y-4">
-                  <div className={`flex items-center justify-between gap-4 rounded-3xl px-6 py-4 ${viewingLastWeek ? "bg-white text-[#181512] [--ring-track:#ece5d9]" : "bg-[var(--surface-muted)] text-[var(--text-primary)]"}`}>
+                  <div
+                    className={`flex items-center justify-between gap-4 rounded-3xl px-6 py-4 ${viewingLastWeek ? "cursor-grab select-none bg-white text-[#181512] [--ring-track:#ece5d9] active:cursor-grabbing" : "bg-[var(--surface-muted)] text-[var(--text-primary)]"}`}
+                    style={viewingLastWeek ? { touchAction: "pan-y", transform: `translateX(${historySwipeOffset}px)`, transition: historySwipeOffset ? "none" : "transform 160ms ease-out" } : undefined}
+                    role={viewingLastWeek ? "region" : undefined}
+                    aria-label={viewingLastWeek ? `${detail.pillar?.label} performance. ${scorePeriodLabel}. Swipe right for earlier weeks, left for newer weeks. Or use the left and right arrow keys.` : undefined}
+                    aria-busy={viewingLastWeek && loadingDetail}
+                    tabIndex={viewingLastWeek ? 0 : undefined}
+                    onKeyDown={(event) => {
+                      if (!viewingLastWeek || loadingDetail) return;
+                      const week = event.key === "ArrowLeft" ? historyWeeks.previous : event.key === "ArrowRight" ? historyWeeks.next : null;
+                      if (week) { event.preventDefault(); void loadTrackerDetail(trackerPillarKey, week); }
+                    }}
+                    onPointerDown={(event) => {
+                      if (!viewingLastWeek || loadingDetail || !event.isPrimary || event.button !== 0) return;
+                      historySwipeRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                      const gesture = historySwipeRef.current;
+                      if (!gesture || gesture.id !== event.pointerId) return;
+                      const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+                      const canMove = dx > 0 ? historyWeeks.previous : historyWeeks.next;
+                      setHistorySwipeOffset(canMove && Math.abs(dx) > Math.abs(dy) ? Math.max(-40, Math.min(40, dx * 0.35)) : 0);
+                    }}
+                    onPointerUp={(event) => {
+                      const gesture = historySwipeRef.current;
+                      if (!gesture || gesture.id !== event.pointerId) return;
+                      historySwipeRef.current = null;
+                      setHistorySwipeOffset(0);
+                      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                      const week = trackerSwipeWeek(event.clientX - gesture.x, event.clientY - gesture.y, historyWeeks);
+                      if (week && !loadingDetail) void loadTrackerDetail(trackerPillarKey, week);
+                    }}
+                    onPointerCancel={() => { historySwipeRef.current = null; setHistorySwipeOffset(0); }}
+                    onLostPointerCapture={() => { historySwipeRef.current = null; setHistorySwipeOffset(0); }}
+                  >
                     <div>
+                      {viewingLastWeek ? <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#625b52]">Performance</p> : null}
                       <p className="text-lg font-semibold">{detail.pillar?.label}</p>
                       {viewingLastWeek && scorePeriodLabel ? (
                         <div className="mt-1 text-sm text-[#625b52]">
-                          <p>{scorePeriodLabel}</p>
+                          <p aria-live="polite">{scorePeriodLabel}</p>
+                          <p className="mt-2 text-xs">{loadingDetail ? "Loading week…" : historyWeeks.next ? "Swipe right for earlier · left for newer" : "Swipe right for earlier weeks"}</p>
                           {detail.pillar?.tracker_score == null ? <p className="mt-1">No check-ins recorded this week</p> : null}
                         </div>
                       ) : null}
@@ -4957,20 +4996,6 @@ export default function LatestAssessmentPanel({
                       tone={viewingLastWeek ? getPillarPalette(trackerPillarKey).accent : "var(--accent)"}
                     />
                   </div>
-                  {viewingLastWeek ? (
-                    <div className="flex items-center justify-between gap-3">
-                      <button type="button" disabled={loadingDetail || !historyWeeks.previous}
-                        onClick={() => historyWeeks.previous && void loadTrackerDetail(trackerPillarKey, historyWeeks.previous)}
-                        className="rounded-full border border-[var(--border)] px-4 py-3 text-sm font-semibold disabled:opacity-40">
-                        ← Previous week
-                      </button>
-                      <button type="button" disabled={loadingDetail || !historyWeeks.next}
-                        onClick={() => historyWeeks.next && void loadTrackerDetail(trackerPillarKey, historyWeeks.next)}
-                        className="rounded-full border border-[var(--border)] px-4 py-3 text-sm font-semibold disabled:opacity-40">
-                        Next week →
-                      </button>
-                    </div>
-                  ) : null}
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];
