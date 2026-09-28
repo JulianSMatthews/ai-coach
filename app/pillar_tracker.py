@@ -1613,7 +1613,7 @@ def _daily_display_status_for_value(
     if defn.score_mode == "binary":
         return "success" if value >= 1 else "danger"
     score = _score_for_value(defn, value, resolved_target)
-    if defn.score_mode in {"likert", "reverse_scale"} and _target_met_for_value(defn, value, resolved_target):
+    if _target_met_for_value(defn, value, resolved_target):
         return "success"
     if score > 0:
         return "warning"

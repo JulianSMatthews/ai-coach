@@ -45,6 +45,27 @@ class TrackerScoreTests(unittest.TestCase):
         self.assertIsNone(result[day + timedelta(days=1)]['daily_status'])
         self.assertIsNone(result[day + timedelta(days=1)]['score'])
 
+    def test_nutrition_scale_days_turn_green_when_daily_target_is_met(self):
+        day = date(2026, 9, 21)
+        for concept in tracker.PILLAR_TRACKER_CONFIG['nutrition']:
+            if concept.score_mode != 'scale':
+                continue
+            default = tracker._default_resolved_target('nutrition', concept)
+            for threshold in (concept.target_value, concept.target_value - 1):
+                target = replace(default, target_period='day', target_value=threshold)
+                with self.subTest(concept=concept.concept_key, target=threshold):
+                    rows = {day: {concept.concept_key: SimpleNamespace(value_num=threshold)}}
+                    result = tracker._build_concept_week_evaluations(
+                        rows, (concept,), {concept.concept_key: target}, tracker._week_days(day)
+                    )[concept.concept_key]
+                    self.assertEqual(result[day]['daily_status'], 'success')
+                    self.assertTrue(result[day]['daily_positive'])
+                    self.assertTrue(result[day]['target_met'])
+                    self.assertIsNone(result[day + timedelta(days=1)]['daily_status'])
+                    self.assertEqual(tracker._daily_display_status_for_value(concept, threshold + 1, target), 'success')
+                    self.assertEqual(tracker._daily_display_status_for_value(concept, threshold / 2, target), 'warning')
+                    self.assertEqual(tracker._daily_display_status_for_value(concept, 0, target), 'danger')
+
     def summary(self, today, rows, anchor=None, pillar_rows=None, detail_pillar=None):
         def load(_user, _pillar, day):
             source = pillar_rows[_pillar] if pillar_rows is not None else rows
