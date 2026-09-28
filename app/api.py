@@ -8526,6 +8526,7 @@ def api_user_education_plan_video_progress(
         watch_pct=(body or {}).get("watch_pct"),
         watched_seconds=_safe_int((body or {}).get("watched_seconds")),
         anchor=anchor,
+        lesson_variant_id=_safe_int((body or {}).get("lesson_variant_id")),
     )
     _log_app_engagement_event(
         user_id=user_id,

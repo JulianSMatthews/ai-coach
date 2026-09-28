@@ -19,6 +19,7 @@ import AssessmentPromptCard, {
 } from "./AssessmentPromptCard";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import RealtimeSummaryAvatar from "./RealtimeSummaryAvatar";
+import EducationLessonMedia from "@/components/EducationLessonMedia";
 
 type ChatMessage = {
   id?: number;
@@ -3839,22 +3840,14 @@ export default function AssessmentChatBox({
                               Listen
                             </button>
                           </div>
-                          {educationLessonMediaMode === "watch" ? (
-                            <video
-                              className="mt-3 w-full rounded-[24px] bg-black"
-                              src={activeEducationLessonMediaUrl}
-                              controls
-                              playsInline
-                              poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
-                            />
-                          ) : (
-                            <div className="mt-3 rounded-[24px] bg-[var(--surface-muted)] px-4 py-5">
-                              <p className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-                                Listen to this lesson
-                              </p>
-                              <audio className="w-full" src={activeEducationLessonMediaUrl} controls preload="metadata" />
-                            </div>
-                          )}
+                          <EducationLessonMedia
+                            key={`${userId}:${activeEducationLessonVariantId}:${activeEducationLessonMediaUrl}`}
+                            userId={String(userId)}
+                            lessonVariantId={activeEducationLessonVariantId}
+                            src={activeEducationLessonMediaUrl}
+                            poster={String(activeEducationLessonContent?.poster_url || activeEducationLessonAvatar?.poster_url || "").trim() || undefined}
+                            mode={educationLessonMediaMode}
+                          />
                         </div>
                       ) : null}
                       <div className="mt-5 rounded-[24px] bg-[var(--surface-muted)] px-4 py-4">

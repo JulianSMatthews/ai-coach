@@ -4567,24 +4567,47 @@ def record_education_video_progress(
     watch_pct: float | int | None = None,
     watched_seconds: int | None = None,
     anchor: date | None = None,
+    lesson_variant_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
-        state = _lesson_state(
-            session,
-            user_id=int(user_id),
-            anchor=resolved_anchor,
-            refresh_avatar_media=False,
-        )
-        if not state.get("available"):
-            session.commit()
-            return state
-        progress_id = int(((state.get("progress") or {}).get("id") or 0) or 0)
-        progress = session.get(UserEducationDayProgress, progress_id)
-        if progress is None:
-            session.commit()
-            return state
+        if lesson_variant_id is not None:
+            # The explorer can play a different lesson from today's recommendation.
+            lesson_variant = session.get(EducationLessonVariant, int(lesson_variant_id))
+            programme_day = session.get(EducationProgrammeDay, int(lesson_variant.programme_day_id)) if lesson_variant else None
+            programme = session.get(EducationProgramme, int(programme_day.programme_id)) if programme_day else None
+            if programme_day is None or not _programme_is_available_in_app(programme):
+                return {"available": False, "video_progress_applied": False}
+            snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
+            plan = _get_or_create_programme_plan(
+                session, user_id=int(user_id), programme=programme, plan_date=resolved_anchor,
+                context=snapshot.get("context") or {},
+                context_hash=str(snapshot.get("context_hash") or ""),
+                assessment=_assessment_snapshot(session, int(user_id)),
+            )
+            progress = _get_or_create_day_progress(
+                session, plan=plan, programme_day=programme_day,
+                lesson_variant=lesson_variant, lesson_date=resolved_anchor,
+            )
+        else:
+            state = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor, refresh_avatar_media=False)
+            if not state.get("available"):
+                session.commit()
+                return state
+            progress = session.get(UserEducationDayProgress, int((state.get("progress") or {}).get("id") or 0))
+            if progress is None:
+                session.commit()
+                return state
+            lesson_variant = session.get(EducationLessonVariant, int(progress.lesson_variant_id)) if progress.lesson_variant_id else None
+            plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
+        # Serialise video and quiz writes so progress cannot overwrite a newer quiz result.
+        progress = session.execute(
+            select(UserEducationDayProgress)
+            .where(UserEducationDayProgress.id == int(progress.id))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalars().one()
         resolved_watch_pct = max(0.0, min(100.0, _safe_float(watch_pct) or 0.0))
         progress.watch_pct = max(_safe_float(getattr(progress, "watch_pct", None)) or 0.0, resolved_watch_pct)
         if watched_seconds is not None:
@@ -4594,24 +4617,30 @@ def record_education_video_progress(
                 pass
         if (progress.watch_pct or 0.0) >= _WATCH_COMPLETE_THRESHOLD_PCT and getattr(progress, "video_completed_at", None) is None:
             progress.video_completed_at = _now_utc()
-        lesson_variant_id = int((((state.get("lesson") or {}).get("lesson_variant_id")) or getattr(progress, "lesson_variant_id", 0) or 0) or 0)
-        lesson_variant = session.get(EducationLessonVariant, lesson_variant_id) if lesson_variant_id else None
-        quiz = _quiz_row(session, lesson_variant_id)
+        quiz = _quiz_row(session, int(lesson_variant.id)) if lesson_variant else None
         _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz))
         session.add(progress)
-        plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
             _sync_plan_streaks(session, plan)
         _clear_education_explore_catalog_cache(session, int(user_id))
         session.flush()
-        state = _lesson_state(
-            session,
-            user_id=int(user_id),
-            anchor=resolved_anchor,
-            refresh_avatar_media=False,
-        )
+        result = {
+            "available": True,
+            "video_progress_applied": True,
+            "lesson_variant_id": int(lesson_variant.id) if lesson_variant else None,
+            "lesson_date": progress.lesson_date.isoformat(),
+            "pillar_key": plan.pillar_key if plan else None,
+            "progress": {
+                "watch_pct": progress.watch_pct,
+                "watched_seconds": progress.watched_seconds,
+                "completion_status": progress.completion_status,
+            },
+        }
+        if lesson_variant_id is None:
+            result = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor, refresh_avatar_media=False)
+            result["video_progress_applied"] = True
         session.commit()
-        return state
+        return result
 
 
 def _apply_education_quiz_submission(
