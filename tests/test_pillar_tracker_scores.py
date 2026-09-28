@@ -108,19 +108,7 @@ class TrackerScoreTests(unittest.TestCase):
         self.assertEqual(result['overall_score'], 100)
         detail = self.summary(monday, rows, anchor=date(2026, 9, 21), detail_pillar='nutrition')
         self.assertEqual(detail['pillar']['tracker_score'], 100)
-        self.assertEqual(detail['overall_score'], 100)
         self.assertFalse(detail['pillar']['is_current_week'])
-
-    def test_last_week_overall_excludes_this_weeks_scores(self):
-        monday = date(2026, 9, 28)
-        friday = date(2026, 9, 25)
-        data = {
-            'nutrition': {friday: {'alcohol_units': SimpleNamespace(value_num=0)}, monday: {'alcohol_units': SimpleNamespace(value_num=6)}},
-            'recovery': {friday: {'alcohol_units': SimpleNamespace(value_num=6)}, monday: {'alcohol_units': SimpleNamespace(value_num=0)}},
-        }
-        detail = self.summary(monday, {}, anchor=date(2026, 9, 21), pillar_rows=data, detail_pillar='nutrition')
-        self.assertEqual(detail['pillar']['tracker_score'], 100)
-        self.assertEqual(detail['overall_score'], 50)
 
     def test_current_week_target_window_is_unchanged(self):
         monday = date(2026, 9, 28)

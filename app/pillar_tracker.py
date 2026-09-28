@@ -2616,12 +2616,7 @@ def get_pillar_tracker_detail(
                 ],
             }
         )
-    historical_summary = (
-        get_pillar_tracker_summary(user_id, anchor=resolved_anchor, skip_quote_generation=True)
-        if not is_current_week else None
-    )
     result = {
-        "overall_score": historical_summary.get("overall_score") if historical_summary is not None else None,
         "pillar": {
             "pillar_key": key,
             "label": _pillar_label(key),

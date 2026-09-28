@@ -397,7 +397,6 @@ export type PillarTrackerSummaryResponse = {
 };
 
 export type PillarTrackerDetailResponse = {
-  overall_score?: number | null;
   pillar?: PillarTrackerPillar;
   days?: PillarTrackerDay[];
   concepts?: PillarTrackerConcept[];

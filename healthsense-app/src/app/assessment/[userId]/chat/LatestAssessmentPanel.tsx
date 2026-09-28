@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore, resolveMondayCueScores } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -1553,6 +1553,7 @@ export default function LatestAssessmentPanel({
   const pillarCueCarouselRef = useRef<HTMLDivElement | null>(null);
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const summaryRequestRef = useRef(0);
   const trackerDetailCacheRef = useRef<Map<string, PillarTrackerDetailResponse>>(new Map());
   const pillarQuoteGestureRef = useRef<{
     pointerId: number;
@@ -1638,19 +1639,8 @@ export default function LatestAssessmentPanel({
       return conceptKey && Number.isFinite(Number(draft[conceptKey]));
     });
   const activeDate = String(detail?.pillar?.active_date || detail?.pillar?.today || "").trim();
-  const activeLabel = String(detail?.pillar?.active_label || "").trim();
-  const currentDate = String(detail?.pillar?.current_date || "").trim();
-  const savingPastDay = Boolean(activeDate && currentDate && activeDate !== currentDate);
   const viewingCurrentWeek = detail?.pillar?.is_current_week !== false;
   const canEditActiveWeek = detail?.pillar?.is_editable !== false;
-  const trackerScoreLabel =
-    detail?.pillar?.tracker_score !== null && detail?.pillar?.tracker_score !== undefined
-      ? `${detail?.pillar?.tracker_score}/100 ${viewingCurrentWeek ? "this week so far" : "last week"}`
-      : viewingCurrentWeek
-        ? savingPastDay
-          ? `Complete ${activeLabel || "yesterday"} to update this week's score`
-          : "Complete today to start this week's score"
-        : "No completed tracker days last week";
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
   const wellbeingObjectiveItems = useMemo(
     () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
@@ -2388,6 +2378,7 @@ export default function LatestAssessmentPanel({
   const refreshSummary = useCallback(async ({
     skipQuoteGeneration = false,
   }: { skipQuoteGeneration?: boolean } = {}) => {
+    const requestId = ++summaryRequestRef.current;
     const params = new URLSearchParams({ userId });
     // Home scores always use the reporting week, even after editing another date.
     params.set("skipQuoteGeneration", skipQuoteGeneration ? "true" : "false");
@@ -2400,9 +2391,19 @@ export default function LatestAssessmentPanel({
       throw new Error(normalizeError(text, "Failed to refresh the pillar tracker summary."));
     }
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
-    setSummary(payload);
-    dispatchPillarTrackerOverallScore(payload);
-    return payload;
+    const resolved = await resolveMondayCueScores(payload, async (pillarKey, anchorDate) => {
+      const detailParams = new URLSearchParams({ userId, anchorDate, skipQuoteGeneration: "true" });
+      const response = await fetch(`/api/pillar-tracker/${encodeURIComponent(pillarKey)}?${detailParams}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Unable to load last week's score");
+      return await response.json() as PillarTrackerDetailResponse;
+    });
+    if (requestId === summaryRequestRef.current) {
+      setSummary(resolved);
+      dispatchPillarTrackerOverallScore(resolved);
+    }
+    return resolved;
   }, [userId]);
 
   const saveAppSetup = useCallback(async () => {
@@ -4932,24 +4933,10 @@ export default function LatestAssessmentPanel({
               {detail ? (
                 <div className="space-y-4">
                   {!viewingCurrentWeek ? (
-                    <>
-                      <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
-                        <div>
-                          <p className="text-lg font-semibold text-[var(--text-primary)]">{detail.pillar?.label}</p>
-                          <p className="text-sm text-[var(--text-secondary)]">{trackerScoreLabel}</p>
-                        </div>
-                        <WeeklyScoreRing value={detail.pillar?.tracker_score} tone="var(--accent)" />
-                      </div>
-                      <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
-                        <div>
-                          <p className="text-lg font-semibold text-[var(--text-primary)]">Last week overall</p>
-                          <p className="text-sm text-[var(--text-secondary)]">
-                            {detail.overall_score == null ? "No check-ins recorded" : "Across your pillars"}
-                          </p>
-                        </div>
-                        <WeeklyScoreRing value={detail.overall_score} tone="var(--accent)" />
-                      </div>
-                    </>
+                    <div className="flex items-center justify-between gap-4 rounded-3xl bg-[var(--surface-muted)] px-6 py-4">
+                      <p className="text-lg font-semibold text-[var(--text-primary)]">{detail.pillar?.label}</p>
+                      <WeeklyScoreRing value={detail.pillar?.tracker_score} tone="var(--accent)" />
+                    </div>
                   ) : null}
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
