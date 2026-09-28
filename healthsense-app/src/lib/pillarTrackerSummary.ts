@@ -3,12 +3,15 @@ import type { PillarTrackerSummaryResponse } from "@/lib/api";
 export const PILLAR_TRACKER_OVERALL_SCORE_EVENT = "healthsense-overall-score-updated";
 
 export function resolvePillarTrackerOverallScore(summary?: PillarTrackerSummaryResponse | null): number | null {
-  const explicitScore = Number((summary as { overall_score?: number | null } | null | undefined)?.overall_score);
+  if (summary && "overall_score" in summary && summary.overall_score == null) return null;
+  const explicitScore = Number(summary?.overall_score);
   if (Number.isFinite(explicitScore)) {
     return Math.max(0, Math.min(100, Math.round(explicitScore)));
   }
   const scores = (Array.isArray(summary?.pillars) ? summary.pillars : [])
-    .map((pillar) => Number(pillar?.score))
+    .map((pillar) => pillar.tracker_score ?? pillar.score)
+    .filter((score): score is number => score != null)
+    .map(Number)
     .filter((score) => Number.isFinite(score));
   if (!scores.length) return null;
   const average = scores.reduce((total, score) => total + score, 0) / scores.length;
@@ -18,10 +21,20 @@ export function resolvePillarTrackerOverallScore(summary?: PillarTrackerSummaryR
 export function dispatchPillarTrackerOverallScore(summary?: PillarTrackerSummaryResponse | null): void {
   if (typeof window === "undefined") return;
   const overallScore = resolvePillarTrackerOverallScore(summary);
-  if (overallScore === null) return;
   window.dispatchEvent(
     new CustomEvent(PILLAR_TRACKER_OVERALL_SCORE_EVENT, {
-      detail: { overallScore },
+      detail: { overallScore, weekLabel: trackerWeekLabel(summary) },
     }),
   );
+}
+
+export function trackerWeekLabel(summary?: PillarTrackerSummaryResponse | null): string {
+  const start = summary?.week?.start;
+  const end = summary?.week?.end;
+  if (!start || !end) return "";
+  const format = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", timeZone: "UTC",
+  });
+  const period = summary?.today && end < summary.today ? "Last week" : "This week so far";
+  return `${period} · ${format(start)}–${format(end)}`;
 }

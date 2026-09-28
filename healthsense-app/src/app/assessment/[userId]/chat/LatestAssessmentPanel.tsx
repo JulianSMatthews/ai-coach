@@ -24,7 +24,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
-import { dispatchPillarTrackerOverallScore } from "@/lib/pillarTrackerSummary";
+import { dispatchPillarTrackerOverallScore, trackerWeekLabel } from "@/lib/pillarTrackerSummary";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -1164,6 +1164,7 @@ function normalizeError(text: string, fallback: string): string {
 }
 
 function resolveScore(value?: number | null): number | null {
+  if (value == null) return null;
   const resolved = Number(value);
   if (!Number.isFinite(resolved)) return null;
   return Math.max(0, Math.min(100, Math.round(resolved)));
@@ -2385,14 +2386,10 @@ export default function LatestAssessmentPanel({
           : null;
 
   const refreshSummary = useCallback(async ({
-    anchorDate,
     skipQuoteGeneration = false,
-  }: { anchorDate?: string | null; skipQuoteGeneration?: boolean } = {}) => {
+  }: { skipQuoteGeneration?: boolean } = {}) => {
     const params = new URLSearchParams({ userId });
-    const resolvedAnchorDate = String(anchorDate || "").trim();
-    if (resolvedAnchorDate) {
-      params.set("anchorDate", resolvedAnchorDate);
-    }
+    // Home scores always use the reporting week, even after editing another date.
     params.set("skipQuoteGeneration", skipQuoteGeneration ? "true" : "false");
     const res = await fetch(`/api/pillar-tracker/summary?${params.toString()}`, {
       method: "GET",
@@ -2516,17 +2513,16 @@ export default function LatestAssessmentPanel({
     });
   }, []);
 
-  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null, options?: { anchorDate?: string | null; waitForFresh?: boolean }) => {
+  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null, options?: { waitForFresh?: boolean }) => {
     if (typeof window === "undefined") return;
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
-    const anchorDate = String(options?.anchorDate || "").trim();
     const waitForFresh = Boolean(options?.waitForFresh && normalizedPillarKey);
     const delays = [1400, 2400, 3600, 5200, 7600, 10400, 14000, 18000];
     let resolved = false;
     delays.forEach((delay) => {
       window.setTimeout(() => {
         if (resolved) return;
-        void refreshSummary({ anchorDate, skipQuoteGeneration: true })
+        void refreshSummary({ skipQuoteGeneration: true })
           .then((payload) => {
             const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
             const targetPillar = normalizedPillarKey
@@ -3364,10 +3360,10 @@ export default function LatestAssessmentPanel({
       setReturnToPillarKey(completedPillarKey || null);
       closeTracker();
       setSaving(false);
-      void refreshSummary({ anchorDate: savedScoreDate, skipQuoteGeneration: false })
+      void refreshSummary({ skipQuoteGeneration: false })
         .then(() => scrollToPillarCueCard(completedPillarKey))
         .catch(() => undefined);
-      refreshSummaryFromWorkerCache(completedPillarKey, { anchorDate: savedScoreDate, waitForFresh: true });
+      refreshSummaryFromWorkerCache(completedPillarKey, { waitForFresh: true });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
       setSaving(false);
@@ -3626,6 +3622,9 @@ export default function LatestAssessmentPanel({
                           {pillar.label}
                         </p>
                       </div>
+                      <p className="mt-3 text-xs text-[var(--text-secondary)]">
+                        {trackerWeekLabel(summary)}{score === null ? " · No check-ins yet" : ""}
+                      </p>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
                         <div className="relative min-h-[11.75rem] w-full flex-1 sm:min-h-[13rem]">
                           <div

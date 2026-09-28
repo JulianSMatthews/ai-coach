@@ -11,6 +11,7 @@ type AppNavProps = {
   userId?: string;
   promptBadge?: string;
   overallScore?: number | null;
+  scoreWeekLabel?: string;
   currentStreakDays?: number | null;
   userFirstName?: string | null;
 };
@@ -77,6 +78,7 @@ export default function AppNav({
   userId = "",
   promptBadge = "",
   overallScore = null,
+  scoreWeekLabel = "",
   currentStreakDays = null,
   userFirstName = "",
 }: AppNavProps) {
@@ -88,8 +90,10 @@ export default function AppNav({
   }, [router]);
   const [open, setOpen] = useState(false);
   const [liveOverallScore, setLiveOverallScore] = useState<number | null>(overallScore);
+  const [liveScoreWeekLabel, setLiveScoreWeekLabel] = useState(scoreWeekLabel);
+  useEffect(() => setLiveScoreWeekLabel(scoreWeekLabel), [scoreWeekLabel]);
   const resolvedUserId = String(userId || "").trim();
-  const resolvedOverallScore = Number.isFinite(Number(liveOverallScore)) ? Math.max(0, Math.min(100, Math.round(Number(liveOverallScore)))) : null;
+  const resolvedOverallScore = liveOverallScore != null && Number.isFinite(Number(liveOverallScore)) ? Math.max(0, Math.min(100, Math.round(Number(liveOverallScore)))) : null;
   const resolvedCurrentStreakDays = Number.isFinite(Number(currentStreakDays))
     ? Math.max(0, Math.round(Number(currentStreakDays)))
     : null;
@@ -117,13 +121,18 @@ export default function AppNav({
   }, [open]);
 
   useEffect(() => {
-    setLiveOverallScore(Number.isFinite(Number(overallScore)) ? Number(overallScore) : null);
+    setLiveOverallScore(overallScore != null && Number.isFinite(Number(overallScore)) ? Number(overallScore) : null);
   }, [overallScore]);
 
   useEffect(() => {
     const onOverallScoreUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ overallScore?: number | null }>).detail;
-      const nextScore = Number(detail?.overallScore);
+      const detail = (event as CustomEvent<{ overallScore?: number | null; weekLabel?: string }>).detail;
+      setLiveScoreWeekLabel(detail?.weekLabel || "");
+      if (detail?.overallScore == null) {
+        setLiveOverallScore(null);
+        return;
+      }
+      const nextScore = Number(detail.overallScore);
       if (!Number.isFinite(nextScore)) return;
       setLiveOverallScore(Math.max(0, Math.min(100, Math.round(nextScore))));
     };
@@ -156,7 +165,8 @@ export default function AppNav({
                   }
                 }}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)]"
-                aria-label="Open overall score"
+                aria-label={`Open overall score${liveScoreWeekLabel ? ` · ${liveScoreWeekLabel}` : ""}`}
+                title={liveScoreWeekLabel}
               >
                 <ScoreBadge score={resolvedOverallScore} />
               </button>
