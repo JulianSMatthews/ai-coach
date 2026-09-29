@@ -10,10 +10,10 @@ function load(file, mocks) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020 } }).outputText, { exports, process, URL, require: name => name in mocks ? mocks[name] : require(name) });
   return exports.default;
 }
-async function render(section, failActivity = false, activity = "all") {
+async function render(section, failActivity = false, activity = "all", educationOverride = null) {
   const api = {
     getAdminUserDetails: async () => ({ user: { display_name: 'Test User', password_hash: 'secret-hash', consent_given: true }, onboarding: {} }),
-    getAdminUserAppState: async () => ({ today: '2026-09-28', pillar_configuration: { setup_last_saved_at: '2026-09-20T10:00:00Z', pillars: [{key: 'nutrition', label: 'Nutrition', selected: true, source: 'saved', last_saved_at: '2026-09-20T10:00:00Z'}], objectives: [{pillar_key: 'nutrition', label: 'Nutrition', objective: 'Eat well', concepts: [{concept_key: 'alcohol', label: 'Alcohol', selected_value: 0, unit_label: 'units', target_source: 'default'}]}]}, engagement_summary: { current_streak_days: 7, best_streak_days: 12 }, journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', day_before_yesterday_complete: false, yesterday_complete: true, today_complete: false }] } }, education: { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
+    getAdminUserAppState: async () => ({ today: '2026-09-28', pillar_configuration: { setup_last_saved_at: '2026-09-20T10:00:00Z', pillars: [{key: 'nutrition', label: 'Nutrition', selected: true, source: 'saved', last_saved_at: '2026-09-20T10:00:00Z'}], objectives: [{pillar_key: 'nutrition', label: 'Nutrition', objective: 'Eat well', concepts: [{concept_key: 'alcohol', label: 'Alcohol', selected_value: 0, unit_label: 'units', target_source: 'default'}]}]}, engagement_summary: { current_streak_days: 7, best_streak_days: 12 }, journey: { daily_recording: { completed_today_count: 0, completed_yesterday_count: 1, total_pillars: 2, pillars: [{ pillar_key: 'nutrition', label: 'Nutrition', day_before_yesterday_complete: false, yesterday_complete: true, today_complete: false }] } }, education: educationOverride || { available: true, concept_label: 'Hydration', current_streak_days: 2, progress: { lesson_date: '2026-09-28', watch_pct: 50 } } }),
     getAdminUserActivity: async (_userId, category) => {
       assert.equal(category, section === "activity" ? activity : "all");
       if (failActivity) throw new Error('offline');
@@ -69,4 +69,20 @@ test('activity filters select learning and check-ins while retaining the user pr
     assert.ok(html.includes(`/admin/users/1?section=activity&amp;activity=${filter}" aria-current="page"`));
     assert.ok(html.includes(label));
   }
+});
+
+test('learning shows programme completion and saved quiz counts', async () => {
+  const quiz = {question_count: 5, answered_count: 4, correct_count: 3, incorrect_count: 2, ungraded_count: 0};
+  const html = await render('overview', false, 'all', {
+    available: true, lesson_title: 'Making time to restore', programme_name: 'Recovery',
+    lesson_number: 2, programme_lesson_count: 7, programme_completed_count: 2,
+    progress: {lesson_date: '2026-09-29', quiz_completed_at: '2026-09-29T09:00:00Z', quiz_score_pct: 60, quiz, completed_at: '2026-09-29T09:00:00Z'},
+    programme_lessons: [{programme_day_id: 12, number: 2, title: 'Making time to restore', completed: true, quiz_completed_at: '2026-09-29T09:00:00Z', quiz}],
+  });
+  assert.match(html, /Programme: Recovery/);
+  assert.match(html, /Lesson 2 of 7/);
+  assert.match(html, /2 of 7 programme lessons completed/);
+  assert.match(html, /3 of 5 questions correct/);
+  assert.match(html, /4 answered · 1 unanswered/);
+  assert.match(html, /Lessons in this programme/);
 });

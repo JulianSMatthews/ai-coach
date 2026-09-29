@@ -1054,6 +1054,10 @@ export type AdminUserSummary = {
   coaching_fast_minutes?: number | null;
 };
 
+export type AdminQuizDetails = {
+  question_count: number; answered_count: number; correct_count: number; incorrect_count: number; ungraded_count: number;
+};
+
 export type AdminUserAppState = {
   pillar_configuration?: {
     setup_last_saved_at?: string | null;
@@ -1161,6 +1165,11 @@ export type AdminUserAppState = {
   };
   education?: {
     available?: boolean;
+    lesson_title?: string | null;
+    lesson_number?: number | null;
+    programme_lesson_count?: number;
+    programme_completed_count?: number;
+    programme_lessons?: Array<{ programme_day_id: number; number: number; title: string; completed: boolean; completed_at?: string | null; lesson_date?: string | null; quiz_completed_at?: string | null; quiz?: AdminQuizDetails | null }>;
     plan_id?: number | null;
     programme_id?: number | null;
     programme_name?: string | null;
@@ -1178,6 +1187,7 @@ export type AdminUserAppState = {
       completion_status?: string | null;
       watch_pct?: number | null;
       quiz_score_pct?: number | null;
+      quiz?: AdminQuizDetails | null;
       video_completed_at?: string | null;
       quiz_completed_at?: string | null;
       completed_at?: string | null;

@@ -316,10 +316,13 @@ export default async function UserProfilePage({
                 {lesson?.available ? (
                   <div className="mt-3 space-y-2 text-sm">
                     <p className="font-medium">
-                      {lesson.concept_label ||
+                      {lesson.lesson_title || lesson.concept_label ||
                         lesson.programme_name ||
                         "Current lesson"}
                     </p>
+                    <p>Programme: {lesson.programme_name || "Not recorded"}</p>
+                    {lesson.lesson_number != null ? <p>Lesson {lesson.lesson_number} of {lesson.programme_lesson_count}</p> : null}
+                    {lesson.programme_lesson_count != null ? <p>{lesson.programme_completed_count ?? 0} of {lesson.programme_lesson_count} programme lessons completed</p> : null}
                     <p>Lesson date: {dateLabel(progress?.lesson_date)}</p>
                     <p>
                       Video progress:{" "}
@@ -335,12 +338,34 @@ export default async function UserProfilePage({
                         ? `Completed · ${progress.quiz_score_pct ?? "—"}%`
                         : "Not completed"}
                     </p>
+                    {progress?.quiz_completed_at ? (
+                      <div className={muted}>
+                        <p>Quiz submitted: {dateLabel(progress.quiz_completed_at, true)}</p>
+                        {progress.quiz ? <>
+                          <p>{progress.quiz.correct_count} of {progress.quiz.question_count} questions correct</p>
+                          <p>{progress.quiz.answered_count} answered · {progress.quiz.question_count - progress.quiz.answered_count} unanswered</p>
+                          {progress.quiz.ungraded_count > 0 ? <p>{progress.quiz.ungraded_count} questions ungraded</p> : null}
+                        </> : <p>Question breakdown not recorded.</p>}
+                      </div>
+                    ) : null}
                     <p>
                       Lesson completion:{" "}
                       {progress?.completed_at
                         ? dateLabel(progress.completed_at, true)
                         : label(progress?.completion_status || "not completed")}
                     </p>
+                    {lesson.programme_lessons?.length ? (
+                      <details className="mt-4 border-t pt-3">
+                        <summary className="cursor-pointer font-semibold">Lessons in this programme</summary>
+                        <ol className="mt-2 divide-y divide-[#efe7db]">
+                          {lesson.programme_lessons.map((item) => <li key={item.programme_day_id} className="py-3">
+                            <p className="font-medium">{item.number}. {item.title}</p>
+                            <p>{item.completed ? "Completed" : "Not completed"}{item.completed_at ? ` · ${dateLabel(item.completed_at, true)}` : ""}</p>
+                            {item.quiz_completed_at ? <p className={muted}>Quiz: {item.quiz ? `${item.quiz.correct_count}/${item.quiz.question_count} correct` : "Completed · question breakdown not recorded"}</p> : null}
+                          </li>)}
+                        </ol>
+                      </details>
+                    ) : null}
                   </div>
                 ) : (
                   <p className={`mt-3 ${muted}`}>

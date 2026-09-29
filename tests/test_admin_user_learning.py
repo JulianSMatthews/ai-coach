@@ -2,7 +2,7 @@ import unittest
 from datetime import date, datetime
 from sqlalchemy import create_engine, MetaData, JSON
 from sqlalchemy.orm import Session
-from app.models import EducationProgramme, EducationProgrammeDay, UserEducationPlan, UserEducationDayProgress
+from app.models import EducationProgramme, EducationProgrammeDay, UserEducationPlan, UserEducationDayProgress, EducationLessonVariant, UserEducationQuizAnswer
 from app.admin_user_learning import load_user_learning
 
 
@@ -13,7 +13,7 @@ class AdminLearningTests(unittest.TestCase):
         metadata = MetaData()
         for source in EducationProgramme.metadata.tables.values():
             source.to_metadata(metadata)
-        for model in (EducationProgramme, EducationProgrammeDay, UserEducationPlan, UserEducationDayProgress):
+        for model in (EducationProgramme, EducationProgrammeDay, UserEducationPlan, UserEducationDayProgress, EducationLessonVariant, UserEducationQuizAnswer):
             table = metadata.tables[model.__tablename__]
             for column in table.columns:
                 if column.type.__class__.__name__ == 'JSONB':
@@ -36,6 +36,13 @@ class AdminLearningTests(unittest.TestCase):
         self.pending = UserEducationDayProgress(id=2, user_plan_id=2, programme_day_id=2, lesson_date=self.today, completion_status='pending', updated_at=datetime(2026,9,28,9))
         other = UserEducationDayProgress(id=3, user_plan_id=3, programme_day_id=2, lesson_date=self.today, watch_pct=100, completion_status='completed', completed_at=datetime(2026,9,28,12), updated_at=datetime(2026,9,28,12))
         self.session.add_all([self.completed, self.pending, other])
+        self.session.add(EducationLessonVariant(id=1, programme_day_id=1, level='build', title='Making time to restore'))
+        self.completed.lesson_variant_id = 1
+        self.session.add_all([
+            UserEducationQuizAnswer(user_day_progress_id=1, question_id=1, answer_json=['a'], is_correct=True),
+            UserEducationQuizAnswer(user_day_progress_id=1, question_id=2, answer_json=['b'], is_correct=True),
+            UserEducationQuizAnswer(user_day_progress_id=1, question_id=3, answer_json=[], is_correct=False),
+        ])
         self.session.commit()
 
     def test_completed_lesson_is_not_hidden_by_new_pending_lesson_or_completed_plan(self):
@@ -67,3 +74,22 @@ class AdminLearningTests(unittest.TestCase):
 
     def test_missing_user_has_no_other_users_learning(self):
         self.assertIsNone(load_user_learning(self.session, 99, self.today))
+
+    def test_programme_counts_and_saved_answer_breakdown(self):
+        result = load_user_learning(self.session, 4, self.today)
+        self.assertEqual(result['lesson_title'], 'Making time to restore')
+        self.assertEqual(result['lesson_number'], 1)
+        self.assertEqual(result['programme_lesson_count'], 2)
+        self.assertEqual(result['programme_completed_count'], 1)
+        self.assertEqual([item['completed'] for item in result['programme_lessons']], [True, False])
+        self.assertEqual(result['progress']['quiz'], {
+            'question_count': 3, 'answered_count': 2, 'correct_count': 2,
+            'incorrect_count': 1, 'ungraded_count': 0,
+        })
+
+    def test_missing_answer_records_do_not_infer_counts_from_score(self):
+        self.session.query(UserEducationQuizAnswer).delete()
+        self.session.commit()
+        result = load_user_learning(self.session, 4, self.today)
+        self.assertEqual(result['progress']['quiz_score_pct'], 80)
+        self.assertIsNone(result['progress']['quiz'])
