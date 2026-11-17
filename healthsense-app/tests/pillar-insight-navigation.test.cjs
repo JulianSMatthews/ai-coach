@@ -166,28 +166,37 @@ function harness(fetchPage = async () => page([today, earlier, oldest])) {
   };
 }
 
-test('reads a long current insight before arrow navigation changes exactly one insight', async t => {
+test('arrows immediately change exactly one insight and reset reading to the top', async t => {
   const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate();
   assert.equal(h.date(), today.quote_date);
+  await h.position(120);
+  assert.equal(h.disabled('↑'), true, 'latest insight has no newer entry even while scrolled');
   await h.click('↓');
-  assert.equal(h.date(), today.quote_date); assert.ok(h.region().scrollTop > 0);
-  await h.position('bottom'); await h.click('↓');
   assert.equal(h.date(), earlier.quote_date); assert.equal(h.region().scrollTop, 0);
   assert.ok(!h.text().includes('TODAY.'));
   await h.click('↓'); assert.equal(h.date(), oldest.quote_date);
-  await h.position('bottom'); await h.click('↑');
-  assert.equal(h.date(), oldest.quote_date, 'up arrow reads long text before moving newer');
-  await h.position(0); await h.click('↑');
+  assert.equal(h.disabled('↓'), true, 'oldest insight has no older entry even with unread text');
+  await h.position(120); await h.click('↑');
   assert.equal(h.date(), earlier.quote_date); assert.equal(h.region().scrollTop, 0);
+  await h.click('↑'); assert.equal(h.date(), today.quote_date); assert.equal(h.region().scrollTop, 0);
 });
 
-test('a swipe that reaches the boundary only scrolls; a fresh edge swipe pages once', async t => {
+test('vertical swipes read the current insight without changing entries at either edge', async t => {
   const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate();
+  await h.pointer({ dy: -100 });
+  assert.equal(h.region().scrollTop, 100); assert.equal(h.date(), today.quote_date);
+  await h.pointer({ dy: 60 });
+  assert.equal(h.region().scrollTop, 40); assert.equal(h.date(), today.quote_date);
   await h.position(h.region().scrollHeight - h.region().clientHeight - 20);
   await h.pointer({ dy: -100 }); assert.equal(h.date(), today.quote_date);
-  await h.pointer({ dy: -160, moves: 4 }); assert.equal(h.date(), earlier.quote_date);
-  await h.pointer({ dy: -100 }); assert.equal(h.date(), oldest.quote_date);
+  await h.pointer({ dy: -160, moves: 4 }); assert.equal(h.date(), today.quote_date);
+  await h.click('↓'); assert.equal(h.date(), earlier.quote_date);
+  assert.equal(h.region().scrollHeight, h.region().clientHeight, 'short insight needs no scrolling');
+  await h.pointer({ dy: -100 }); assert.equal(h.date(), earlier.quote_date);
   await h.pointer({ dy: 90 }); assert.equal(h.date(), earlier.quote_date);
+  await h.click('↓'); assert.equal(h.date(), oldest.quote_date);
+  await h.pointer({ dy: 90 }); assert.equal(h.date(), oldest.quote_date);
+  assert.equal(h.calls.length, 1, 'reading swipes never request more history');
 });
 
 test('horizontal, tiny, cancelled, lost and secondary-pointer gestures do not page', async t => {
@@ -204,11 +213,25 @@ test('late older-page response cannot override navigation back to a newer insigh
   const h = harness(async url => new URL(url, 'https://app.test').searchParams.has('before')
     ? new Promise(resolve => { resolveOlder = resolve; })
     : page([today, earlier], true, earlier.quote_date));
-  t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.position('bottom'); await h.click('↓');
+  t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.click('↓');
   assert.equal(h.date(), earlier.quote_date);
   await h.click('↓'); assert.ok(resolveOlder); assert.equal(h.calls.length, 2);
   await h.click('↑'); assert.equal(h.date(), today.quote_date);
   resolveOlder(page([oldest])); await h.flush(); assert.equal(h.date(), today.quote_date);
+});
+
+test('reading the current insight cancels a pending move to an older entry', async t => {
+  let resolveOlder;
+  const h = harness(async url => new URL(url, 'https://app.test').searchParams.has('before')
+    ? new Promise(resolve => { resolveOlder = resolve; })
+    : page([today, oldest], true, oldest.quote_date));
+  t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.click('↓');
+  await h.click('↓'); assert.ok(resolveOlder); assert.equal(h.disabled('↓'), true);
+  await h.pointer({ dy: -100 }); assert.equal(h.region().scrollTop, 100);
+  const older = { id: 4, quote_date: '2026-11-01', quote: 'Another earlier insight.' };
+  resolveOlder(page([older])); await h.flush();
+  assert.equal(h.date(), oldest.quote_date); assert.equal(h.region().scrollTop, 100);
+  await h.click('↓'); assert.equal(h.date(), older.quote_date); assert.equal(h.region().scrollTop, 0);
 });
 
 test('changing member aborts stale requests', async t => {
@@ -221,11 +244,23 @@ test('changing member aborts stale requests', async t => {
 });
 
 
-test('holding a keyboard key or pinching cannot skip insights', async t => {
-  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.position('bottom');
-  await h.key('ArrowDown', true); assert.equal(h.date(), today.quote_date);
-  await h.pinch(); assert.equal(h.date(), today.quote_date);
-  await h.key('ArrowDown'); assert.equal(h.date(), earlier.quote_date);
+test('keyboard scrolling and pinching never change insights', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate();
+  await h.key('ArrowDown'); assert.equal(h.region().scrollTop, 80);
+  await h.key('ArrowDown', true); assert.equal(h.region().scrollTop, 160);
+  await h.key('PageUp'); assert.ok(h.region().scrollTop < 80);
+  await h.position('bottom');
+  for (const key of ['ArrowDown', 'PageDown']) {
+    await h.key(key); await h.key(key, true); assert.equal(h.date(), today.quote_date);
+  }
+  await h.click('↓');
+  for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']) {
+    await h.key(key); assert.equal(h.date(), earlier.quote_date);
+  }
+  await h.click('↓');
+  await h.pinch(); assert.equal(h.date(), oldest.quote_date);
+  await h.position(0);
+  await h.key('ArrowUp'); await h.key('PageUp'); assert.equal(h.date(), oldest.quote_date);
 });
 
 test('oldest saved insight does not loop or request history again', async t => {

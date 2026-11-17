@@ -74,11 +74,6 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
     startX: number;
     startY: number;
     lastY: number;
-    atTop: boolean;
-    atBottom: boolean;
-    quote: string;
-    version: number;
-    pageDirection: "older" | "newer" | null;
   } | null>(null);
   const [activated, setActivated] = useState(false);
   const [page, setPage] = useState<InsightPage>(EMPTY_PAGE);
@@ -257,21 +252,6 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
     };
   }, [currentQuote, page, selectedIndex, scroll, updateDirections]);
 
-  const readDown = useCallback((repeat = false, amount = 80) => {
-    const node = scrollerRef.current;
-    if (!node) return;
-    if (node.scrollTop + node.clientHeight < node.scrollHeight - 2) scroll(amount);
-    else if (!repeat) void showOlder();
-  }, [scroll, showOlder]);
-
-  const readUp = useCallback((repeat = false, amount = 80) => {
-    const node = scrollerRef.current;
-    if (!node) return;
-    navigationVersionRef.current += 1;
-    if (node.scrollTop > 2) scroll(-amount);
-    else if (!repeat) showNewer();
-  }, [scroll, showNewer]);
-
   const cancelGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
@@ -286,20 +266,14 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
     gestureRef.current = null;
     if (previous && event.currentTarget.hasPointerCapture(previous.pointerId)) event.currentTarget.releasePointerCapture(previous.pointerId);
     if (event.pointerType === "mouse" || !event.isPrimary || previous) return;
-    const node = event.currentTarget;
     gestureRef.current = {
       pointerId: event.pointerId,
       axis: null,
       startX: event.clientX,
       startY: event.clientY,
       lastY: event.clientY,
-      atTop: node.scrollTop <= 2,
-      atBottom: node.scrollTop + node.clientHeight >= node.scrollHeight - 2,
-      quote: pageRef.current.insights[selectedIndexRef.current]?.quote || currentQuote,
-      version: navigationVersionRef.current,
-      pageDirection: null,
     };
-  }, [currentQuote]);
+  }, []);
 
   const moveGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
@@ -309,7 +283,6 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
     if (!gesture.axis && Math.max(Math.abs(totalX), Math.abs(totalY)) >= 6) {
       gesture.axis = Math.abs(totalX) > Math.abs(totalY) ? "horizontal" : "vertical";
       if (gesture.axis === "vertical") {
-        gesture.pageDirection = totalY < 0 && gesture.atBottom ? "older" : totalY > 0 && gesture.atTop ? "newer" : null;
         event.currentTarget.setPointerCapture(event.pointerId);
       }
     }
@@ -319,23 +292,10 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
     gesture.lastY = event.clientY;
   }, []);
 
-  const endGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    gestureRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (gesture.version !== navigationVersionRef.current || gesture.quote !== (pageRef.current.insights[selectedIndexRef.current]?.quote || currentQuote)) return;
-    const totalX = event.clientX - gesture.startX;
-    const totalY = event.clientY - gesture.startY;
-    if (gesture.axis !== "vertical" || Math.abs(totalY) < 55 || Math.abs(totalY) < Math.abs(totalX) * 1.25) return;
-    if (gesture.pageDirection === "older" && totalY < 0) void showOlder();
-    else if (gesture.pageDirection === "newer" && totalY > 0) showNewer();
-  }, [currentQuote, showNewer, showOlder]);
-
   const selected = page.insights[selectedIndex] || null;
-  const upAvailable = directions.up || selectedIndex > 0;
+  const upAvailable = selectedIndex > 0;
   const olderLoaded = selectedIndex + 1 < page.insights.length;
-  const downAvailable = directions.down || olderLoaded || !page.loaded || page.hasMore;
+  const downAvailable = olderLoaded || !page.loaded || page.hasMore;
 
   return (
     <div ref={wrapperRef} className="relative flex min-h-[13.5rem] w-full flex-1 flex-col sm:min-h-[14.75rem]">
@@ -352,12 +312,12 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
             maskImage: directions.down ? "linear-gradient(to bottom, black calc(100% - 20px), transparent)" : undefined,
           }}
           role="region"
-          aria-label={`${pillarLabel} insight. Scroll to read. At the end, swipe up or use the down arrow for an earlier insight.`}
+          aria-label={`${pillarLabel} insight. Swipe up or down to read. Use the arrow buttons to change insights.`}
           aria-busy={loading}
           tabIndex={0}
           onPointerDown={beginGesture}
           onPointerMove={moveGesture}
-          onPointerUp={endGesture}
+          onPointerUp={cancelGesture}
           onPointerCancel={cancelGesture}
           onLostPointerCapture={cancelGesture}
           onScroll={updateDirections}
@@ -367,10 +327,12 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
           onKeyDown={(event) => {
             if (["ArrowDown", "PageDown"].includes(event.key)) {
               event.preventDefault();
-              readDown(event.repeat, event.key === "PageDown" ? Math.max(80, event.currentTarget.clientHeight * 0.8) : 80);
+              navigationVersionRef.current += 1;
+              scroll(event.key === "PageDown" ? Math.max(80, event.currentTarget.clientHeight * 0.8) : 80);
             } else if (["ArrowUp", "PageUp"].includes(event.key)) {
               event.preventDefault();
-              readUp(event.repeat, event.key === "PageUp" ? Math.max(80, event.currentTarget.clientHeight * 0.8) : 80);
+              navigationVersionRef.current += 1;
+              scroll(event.key === "PageUp" ? -Math.max(80, event.currentTarget.clientHeight * 0.8) : -80);
             }
           }}
         >
@@ -383,18 +345,18 @@ function InsightHistoryPanel({ userId, pillarKey, pillarLabel, currentQuote, cur
             <button
               type="button"
               disabled={!upAvailable}
-              onClick={() => readUp()}
+              onClick={showNewer}
               className="flex h-7 w-7 items-center justify-center text-sm leading-none text-[var(--text-primary)] disabled:opacity-25"
-              aria-label={`Scroll ${pillarLabel} insights up towards the latest insight`}
+              aria-label={`Newer ${pillarLabel} insight`}
             >
               ↑
             </button>
             <button
               type="button"
-              disabled={!downAvailable || (loading && !directions.down && !olderLoaded)}
-              onClick={() => readDown()}
+              disabled={!downAvailable || (loading && !olderLoaded)}
+              onClick={() => void showOlder()}
               className="flex h-7 w-7 items-center justify-center border-t border-[var(--border)] text-sm leading-none text-[var(--text-primary)] disabled:opacity-25"
-              aria-label={`Scroll ${pillarLabel} insights down for earlier insights`}
+              aria-label={`Older ${pillarLabel} insight`}
             >
               ↓
             </button>
