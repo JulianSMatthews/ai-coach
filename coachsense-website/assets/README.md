@@ -2,7 +2,9 @@
 
 `winding-road.webp` is the text-free background for the homepage hero animation, shared by `index.html` and `coachsense.html`. Generated with the built-in image generation tool from the CoachSense Google Play feature artwork, then resized to 1120 × 1120 and encoded as WebP (quality 85). Labels, the brand icon, closing message and pause control are HTML/SVG, not embedded in the image.
 
-The road stays still. The four pillars fade in sequentially during the first 20 seconds of a 30-second cycle; the closing message follows. Reduced-motion preferences show the static closing message. The pause control stops and resumes the cycle.
+The road stays still. The six pillars fade in sequentially during the first 21 seconds of a 30-second cycle; the closing message follows. All six pillar names also appear in the static introductory copy and pillar grid. Reduced-motion preferences show the static closing message. The pause control stops and resumes the cycle.
+
+`pillar-nutrition.svg` and `pillar-training.svg` reuse the app's existing pillar artwork and colours. Keep the copies in `healthsense-app/public/assets/` in sync.
 
 ## Generation prompt
 
