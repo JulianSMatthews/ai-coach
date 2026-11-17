@@ -946,41 +946,9 @@
         display: none;
       }
 
-      .demo-pillar-options {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 10px;
-        margin: 0 0 18px;
-      }
-
-      .demo-pillar-option {
-        min-height: 44px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: var(--white);
-        padding: 10px 18px;
-        color: var(--ink);
-        font: 500 15px var(--font-body);
-        cursor: pointer;
-      }
-
-      .demo-pillar-option[aria-pressed="true"] {
-        border-color: var(--accent-dark);
-        background: var(--accent-dark);
-        color: var(--white);
-      }
-
-      .demo-pillar-option:focus-visible,
       .app-pill:focus-visible {
         outline: 2px solid var(--accent-dark);
         outline-offset: 3px;
-      }
-
-      .demo-pillar-note {
-        margin: 0 0 24px;
-        text-align: center;
-        font-size: 14px;
       }
 
       .mock-surface {
@@ -1292,7 +1260,7 @@
         border: 0;
         background:
           radial-gradient(circle at center, #ffffff 0 57%, transparent 58%),
-          conic-gradient(var(--demo-pillar-color, #44abc3) 0 var(--score-deg, 0deg), #eadfce var(--score-deg, 0deg) 360deg);
+          conic-gradient(#44abc3 0 var(--score-deg, 0deg), #eadfce var(--score-deg, 0deg) 360deg);
         color: var(--ink);
         font-size: 16px;
       }
@@ -1457,15 +1425,6 @@
 
       .app-choice-grid {
         margin-top: 20px;
-      }
-
-      .app-question .app-choice-grid.numeric {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .app-choice-grid.numeric .app-pill {
-        padding: 0 8px;
-        font-size: 14px;
       }
 
       .app-question-list {
@@ -2531,19 +2490,13 @@
         <section id="try-it">
           <div class="section-heading">
             <h2>How it works.</h2>
-            <p>Try a Nutrition, Training or Resilience check-in, then explore a short lesson. These previews need no account and do not save your entries.</p>
+            <p>These website demos show the feel of CoachSense without saving data or creating an account.</p>
           </div>
-          <div class="demo-pillar-options" role="group" aria-label="Choose a check-in preview">
-            <button class="demo-pillar-option" type="button" data-demo-pillar="nutrition" aria-pressed="false" aria-controls="resilience-checkin-demo">Nutrition</button>
-            <button class="demo-pillar-option" type="button" data-demo-pillar="training" aria-pressed="false" aria-controls="resilience-checkin-demo">Training</button>
-            <button class="demo-pillar-option" type="button" data-demo-pillar="resilience" aria-pressed="true" aria-controls="resilience-checkin-demo">Resilience</button>
-          </div>
-          <p class="demo-pillar-note" data-demo-pillar-note aria-live="polite">Resilience preview · notice how you feel and respond to daily life.</p>
           <div class="demo-grid">
             <div class="mock-guide">
               <aside class="mock-guide-note left" aria-label="Check-in interaction tip">
                 <strong>Check in</strong>
-                <span>Choose a pillar above, then press Today, Yesterday or Last week to try its check-in.</span>
+                <span>Press Today, Yesterday or Last week, then answer the Yes / No questions.</span>
               </aside>
             <div class="app-sample app-sample-single" id="resilience-checkin-demo" data-app-shell>
               <div class="phone-status" aria-hidden="true">
@@ -2569,10 +2522,10 @@
               <div class="mock-screen" data-mock-screen="checkin">
                 <div class="mock-surface" data-checkin-home>
                   <article class="app-card">
-                    <span class="app-score app-checkin-score" data-checkin-score style="--score-deg: 0deg;" aria-label="Preview check-in: 0 of 3 answered">0/3</span>
-                    <h3 data-checkin-pillar-title>Resilience</h3>
-                    <p class="app-eyebrow app-date-label">Check-in preview</p>
-                    <p class="app-quote" data-checkin-intro>
+                    <span class="app-score app-checkin-score" data-checkin-score style="--score-deg: 0deg;">0</span>
+                    <h3>Resilience</h3>
+                    <p class="app-eyebrow app-date-label">Journal Mon 29 Jun</p>
+                    <p class="app-quote">
                       "He who has a why to live can bear almost any how."
                       <span class="app-quote-author">Friedrich Nietzsche</span>
                     </p>
@@ -2581,13 +2534,12 @@
                       <button class="app-pill" type="button" data-checkin-date="Yesterday">Yesterday</button>
                       <button class="app-pill is-selected" type="button" data-checkin-date="Today">Today</button>
                     </div>
-                    <p class="app-checkin-status" data-checkin-summary role="status" aria-live="polite">Choose a day to try this check-in.</p>
                   </article>
                 </div>
 
                 <div class="mock-surface" data-tracker-detail hidden>
                   <button class="mock-back" type="button" data-tracker-back aria-label="Back">‹</button>
-                  <div class="app-question-list" data-checkin-questions>
+                  <div class="app-question-list">
                     <section class="app-question" data-checkin-question="Calm & Control">
                       <p class="app-eyebrow" data-checkin-heading>Today · 1 of 3</p>
                       <h5>Calm &amp; Control</h5>
@@ -2649,7 +2601,7 @@
                       </div>
                     </section>
                   </div>
-                  <p class="app-checkin-status" data-checkin-status role="status" aria-live="polite">Today: 0 of 3 answered</p>
+                  <p class="app-checkin-status" data-checkin-status>Selected: 2 of 3 marked Yes</p>
                   <button class="button app-complete" type="button" data-checkin-complete>Complete check-in</button>
                 </div>
               </div>
@@ -3218,10 +3170,7 @@
       });
 
       document.querySelectorAll("[data-tracker-back]").forEach((button) => {
-        button.addEventListener("click", () => {
-          showTrackerDetail(false);
-          document.querySelector("[data-checkin-date].is-selected")?.focus({ preventScroll: true });
-        });
+        button.addEventListener("click", () => showTrackerDetail(false));
       });
 
       document.querySelectorAll("[data-open-lesson]").forEach((button) => {
@@ -3232,186 +3181,89 @@
         button.addEventListener("click", () => showLessonDetail(false));
       });
 
-      // Preview entries live only in this page and are kept separate by pillar and period.
-      const previewPillars = {
-        nutrition: {
-          label: "Nutrition",
-          color: "#f59f21",
-          note: "Nutrition preview · notice your food and hydration habits.",
-          intro: "Notice how you nourish yourself, one day at a time. Record your food and hydration habits to try this preview.",
-          questions: [
-            { key: "protein_intake", label: "Protein", copy: "How many portions of protein did you have today?", options: [[0, "0"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]] },
-            { key: "fruit_veg", label: "Fruit & Veg", copy: "How many portions of fruit and vegetables did you have today?", options: [[0, "0"], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5+"]] },
-            { key: "hydration", label: "Hydration", copy: "How much water did you drink today?", options: [[0, "0L"], [0.5, "0.5L"], [1, "1L"], [1.5, "1.5L"], [2, "2L"], [2.5, "2.5L"], [3, "3L+"]] },
-            { key: "processed_food", label: "Ultra-processed Food", copy: "How many portions of ultra-processed food did you have today?", options: [[0, "0"], [1, "1"], [2, "2"], [3, "3+"]] },
-          ],
-        },
-        training: {
-          label: "Training",
-          color: "#68b32e",
-          note: "Training preview · explore cardio, strength and mobility habits.",
-          intro: "Notice how you move. Use a short check-in to reflect on your cardio, strength and mobility habits.",
-          questions: [
-            { key: "cardio_frequency", label: "Cardio", copy: "Did you do 20 or more minutes of cardio today?" },
-            { key: "strength_training", label: "Strength", copy: "Did you do a strength training session today?" },
-            { key: "flexibility_mobility", label: "Mobility", copy: "Did you do 10 or more minutes of mobility today?" },
-          ],
-        },
-        resilience: {
-          label: "Resilience",
-          color: "#44abc3",
-          note: "Resilience preview · notice how you feel and respond to daily life.",
-          intro: "Notice how you feel, make space to reset and reflect on what helps you stay steady.",
-          questions: [
-            { key: "calm_control", label: "Calm & Control", copy: "Did you feel calm and in control for most of today?" },
-            { key: "enjoyment_restoration", label: "Enjoyment / Restoration", copy: "Did you make time for something enjoyable or restorative today?" },
-            { key: "stress_recovery", label: "Stress Recovery", copy: "Did you use a reset or recovery strategy today?" },
-          ],
-        },
-      };
-      const previewAnswers = new Map();
-      const completedPreviews = new Set();
-      const questionList = document.querySelector("[data-checkin-questions]");
+      const checkinQuestions = Array.from(document.querySelectorAll("[data-checkin-question]"));
       const checkinStatus = document.querySelector("[data-checkin-status]");
-      const checkinSummary = document.querySelector("[data-checkin-summary]");
-      let selectedDemoPillar = "resilience";
       let selectedCheckinDate = "Today";
 
-      function previewKey() {
-        return `${selectedDemoPillar}:${selectedCheckinDate}`;
-      }
-
-      function currentPreviewAnswers() {
-        const key = previewKey();
-        if (!previewAnswers.has(key)) previewAnswers.set(key, {});
-        return previewAnswers.get(key);
-      }
-
       function updateCheckinStatus(message) {
-        const pillar = previewPillars[selectedDemoPillar];
-        const answers = currentPreviewAnswers();
-        const answered = pillar.questions.filter((question) => Object.prototype.hasOwnProperty.call(answers, question.key)).length;
-        const total = pillar.questions.length;
-        if (checkinStatus) checkinStatus.textContent = message || `${selectedCheckinDate}: ${answered} of ${total} answered`;
-        if (checkinSummary) {
-          checkinSummary.textContent = completedPreviews.has(previewKey())
-            ? `${selectedCheckinDate} ${pillar.label.toLowerCase()} preview complete. Your entries stay in this demo.`
-            : `${selectedCheckinDate}: ${answered} of ${total} answered. Choose a day to continue.`;
-        }
-        // The ring shows preview completion, not a health or nutrition score.
-        document.querySelectorAll("[data-checkin-score]").forEach((badge) => {
-          badge.textContent = `${answered}/${total}`;
-          badge.setAttribute("aria-label", `Preview check-in: ${answered} of ${total} answered`);
-          badge.style.setProperty("--score-deg", `${Math.round(answered / total * 360)}deg`);
+        if (!checkinStatus) return;
+        const yesCount = checkinQuestions.filter((question) =>
+          question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
+        ).length;
+        checkinStatus.textContent = message || `${selectedCheckinDate}: ${yesCount} of ${checkinQuestions.length} marked Yes`;
+      }
+
+      function updateCheckinScore(yesCount) {
+        const total = checkinQuestions.length || 1;
+        const percentage = Math.round((yesCount / total) * 100);
+        const scoreDegrees = Math.round((percentage / 100) * 360);
+        document.querySelectorAll("[data-checkin-score]").forEach((scoreBadge) => {
+          scoreBadge.textContent = `${percentage}`;
+          scoreBadge.style.setProperty("--score-deg", `${scoreDegrees}deg`);
         });
+        return percentage;
       }
 
       function contextualizeCheckinCopy(copy) {
-        if (selectedCheckinDate === "Yesterday") return copy.replace(/today/g, "yesterday");
-        if (selectedCheckinDate === "Last week") {
-          // Numeric options describe a typical day, not a total across seven days.
-          if (selectedDemoPillar === "nutrition") {
-            return `On a typical day last week, ${copy.charAt(0).toLowerCase()}${copy.slice(1)}`.replace(/ today/g, "");
-          }
-          return copy.replace(/today/g, "last week");
+        const text = String(copy || "");
+        if (selectedCheckinDate === "Yesterday") {
+          return text
+            .replace(" today?", " yesterday?")
+            .replace(" today", " yesterday");
         }
-        return copy;
+        if (selectedCheckinDate === "Last week") {
+          return text
+            .replace(" today?", " last week?")
+            .replace(" today", " last week");
+        }
+        return text;
       }
 
-      function renderCheckinQuestions() {
-        if (!questionList) return;
-        const pillar = previewPillars[selectedDemoPillar];
-        const answers = currentPreviewAnswers();
-        // Labels and options come only from the fixed preview definitions above.
-        questionList.innerHTML = pillar.questions.map((question, index) => {
-          const options = question.options || [[0, "No"], [1, "Yes"]];
-          return `<section class="app-question" data-checkin-question="${question.key}">
-            <p class="app-eyebrow">${selectedCheckinDate} · ${index + 1} of ${pillar.questions.length}</p>
-            <h5>${question.label}</h5>
-            <p class="app-copy">${contextualizeCheckinCopy(question.copy)}</p>
-            <div class="app-choice-grid${question.options ? " numeric" : ""}" role="group" aria-label="${question.label}">
-              ${options.map(([value, label]) => {
-                const selected = Object.prototype.hasOwnProperty.call(answers, question.key) && answers[question.key] === value;
-                return `<button class="app-pill${selected ? " is-selected" : ""}" type="button" data-checkin-value="${value}" aria-pressed="${selected}">${label}</button>`;
-              }).join("")}
-            </div>
-          </section>`;
-        }).join("");
-        updateCheckinStatus();
-      }
-
-      function setDemoPillar(key) {
-        if (!Object.prototype.hasOwnProperty.call(previewPillars, key)) return;
-        selectedDemoPillar = key;
-        const pillar = previewPillars[key];
-        document.querySelectorAll("[data-demo-pillar]").forEach((button) => {
-          button.setAttribute("aria-pressed", String(button.getAttribute("data-demo-pillar") === key));
+      function updateCheckinQuestions() {
+        checkinQuestions.forEach((question, index) => {
+          const heading = question.querySelector("[data-checkin-heading]");
+          const copy = question.querySelector("[data-checkin-copy]");
+          if (heading) {
+            heading.textContent = `${selectedCheckinDate} · ${index + 1} of ${checkinQuestions.length}`;
+          }
+          if (copy) {
+            copy.textContent = contextualizeCheckinCopy(copy.getAttribute("data-checkin-copy"));
+          }
         });
-        const shell = document.querySelector("[data-app-shell]");
-        shell?.style.setProperty("--demo-pillar-color", pillar.color);
-        const title = document.querySelector("[data-checkin-pillar-title]");
-        const intro = document.querySelector("[data-checkin-intro]");
-        const note = document.querySelector("[data-demo-pillar-note]");
-        if (title) title.textContent = pillar.label;
-        if (intro) intro.textContent = pillar.intro;
-        if (note) note.textContent = pillar.note;
-        renderCheckinQuestions();
-        setMockAppScreen("checkin");
       }
-
-      document.querySelectorAll("[data-demo-pillar]").forEach((button) => {
-        button.addEventListener("click", () => setDemoPillar(button.getAttribute("data-demo-pillar")));
-      });
 
       document.querySelectorAll("[data-checkin-date]").forEach((button) => {
         button.addEventListener("click", () => {
           selectedCheckinDate = button.getAttribute("data-checkin-date") || "Today";
-          document.querySelectorAll("[data-checkin-date]").forEach((option) => {
-            const selected = option === button;
-            option.classList.toggle("is-selected", selected);
-            option.setAttribute("aria-pressed", String(selected));
-          });
-          renderCheckinQuestions();
+          document.querySelectorAll("[data-checkin-date]").forEach((option) => option.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          updateCheckinQuestions();
+          updateCheckinStatus();
           showTrackerDetail(true);
-          questionList?.querySelector("[data-checkin-value]")?.focus({ preventScroll: true });
         });
       });
 
-      questionList?.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-checkin-value]");
-        if (!button || !questionList.contains(button)) return;
-        const question = button.closest("[data-checkin-question]");
-        if (!question) return;
-        const answers = currentPreviewAnswers();
-        answers[question.getAttribute("data-checkin-question")] = Number(button.getAttribute("data-checkin-value"));
-        completedPreviews.delete(previewKey());
-        question.querySelectorAll("[data-checkin-value]").forEach((option) => {
-          const selected = option === button;
-          option.classList.toggle("is-selected", selected);
-          option.setAttribute("aria-pressed", String(selected));
+      document.querySelectorAll("[data-checkin-value]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const question = button.closest("[data-checkin-question]");
+          if (!question) return;
+          question.querySelectorAll("[data-checkin-value]").forEach((option) => option.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          updateCheckinStatus();
         });
-        updateCheckinStatus();
       });
 
-      document.querySelector("[data-checkin-complete]")?.addEventListener("click", () => {
-        const pillar = previewPillars[selectedDemoPillar];
-        const answers = currentPreviewAnswers();
-        const missing = pillar.questions.find((question) => !Object.prototype.hasOwnProperty.call(answers, question.key));
-        if (missing) {
-          updateCheckinStatus("Choose an answer for each question to complete this preview.");
-          questionList.querySelector(`[data-checkin-question="${missing.key}"] [data-checkin-value]`)?.focus();
-          return;
-        }
-        completedPreviews.add(previewKey());
-        updateCheckinStatus();
-        showTrackerDetail(false);
-        document.querySelector("[data-checkin-date].is-selected")?.focus({ preventScroll: true });
-      });
-
-      document.querySelectorAll("[data-checkin-date]").forEach((button) => {
-        button.setAttribute("aria-pressed", String(button.getAttribute("data-checkin-date") === selectedCheckinDate));
-      });
-      setDemoPillar("resilience");
+      const completeCheckinButton = document.querySelector("[data-checkin-complete]");
+      if (completeCheckinButton) {
+        completeCheckinButton.addEventListener("click", () => {
+          const yesCount = checkinQuestions.filter((question) =>
+            question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
+          ).length;
+          const percentage = updateCheckinScore(yesCount);
+          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, score ${percentage}.`);
+          showTrackerDetail(false);
+        });
+      }
 
       loadEducationProgrammeMedia();
     </script>
