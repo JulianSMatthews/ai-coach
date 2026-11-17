@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type {
   AppEngagementSummary,
   AppleHealthRestingHeartRateResponse,
@@ -28,6 +28,7 @@ import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrack
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
+import PillarInsightHistory from "@/components/PillarInsightHistory";
 
 type LatestAssessmentPanelProps = {
   userId: string;
@@ -1553,20 +1554,11 @@ export default function LatestAssessmentPanel({
   const summaryPanelRef = useRef<HTMLElement | null>(null);
   const pillarCueCarouselRef = useRef<HTMLDivElement | null>(null);
   const pillarCueCardRefs = useRef<Record<string, HTMLElement | null>>({});
-  const pillarQuoteRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const summaryRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
   const historySwipeRef = useRef<{ id: number; x: number; y: number } | null>(null);
   const [historySwipeOffset, setHistorySwipeOffset] = useState(0);
   const trackerDetailCacheRef = useRef<Map<string, PillarTrackerDetailResponse>>(new Map());
-  const pillarQuoteGestureRef = useRef<{
-    pointerId: number;
-    axis: "horizontal" | "vertical" | null;
-    startX: number;
-    startY: number;
-    lastY: number;
-  } | null>(null);
-  const [pillarQuoteDirections, setPillarQuoteDirections] = useState<Record<string, { up: boolean; down: boolean }>>({});
   const [returnToPillarKey, setReturnToPillarKey] = useState<string | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
@@ -3386,58 +3378,6 @@ export default function LatestAssessmentPanel({
     }
   };
 
-  const updatePillarQuoteDirections = useCallback((pillarKey: string, node: HTMLDivElement | null) => {
-    if (!node) return;
-    const next = {
-      up: node.scrollTop > 2,
-      down: node.scrollTop + node.clientHeight < node.scrollHeight - 2,
-    };
-    setPillarQuoteDirections((current) => {
-      const previous = current[pillarKey];
-      if (previous?.up === next.up && previous?.down === next.down) return current;
-      return { ...current, [pillarKey]: next };
-    });
-  }, []);
-
-  const beginPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse") return;
-    pillarQuoteGestureRef.current = {
-      pointerId: event.pointerId,
-      axis: null,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastY: event.clientY,
-    };
-  }, []);
-
-  const movePillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = pillarQuoteGestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const totalX = event.clientX - gesture.startX;
-    const totalY = event.clientY - gesture.startY;
-    if (!gesture.axis && Math.max(Math.abs(totalX), Math.abs(totalY)) >= 6) {
-      gesture.axis = Math.abs(totalX) > Math.abs(totalY) ? "horizontal" : "vertical";
-      if (gesture.axis === "vertical") {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
-    }
-    if (gesture.axis !== "vertical") return;
-
-    event.preventDefault();
-    const deltaY = event.clientY - gesture.lastY;
-    event.currentTarget.scrollTop -= deltaY;
-    gesture.lastY = event.clientY;
-  }, []);
-
-  const endPillarQuoteGesture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = pillarQuoteGestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    pillarQuoteGestureRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }, []);
-
   const openDailyMenuSurface = (surface: "tracking" | "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
       const bridge = window as Window & {
@@ -3610,13 +3550,6 @@ export default function LatestAssessmentPanel({
                     return rank(a) - rank(b);
                   });
                   const quote = resolveHomePillarQuote(pillar, pillarKey);
-                  const quoteLines = String(quote || "")
-                    .split(/\n+/)
-                    .map((line) => line.trim())
-                    .filter(Boolean);
-                  const quoteAuthor = quoteLines.length >= 3 ? quoteLines[quoteLines.length - 1] : "";
-                  const quoteBodyLines = quoteAuthor ? quoteLines.slice(0, -1) : quoteLines;
-                  const quoteDirections = pillarQuoteDirections[pillarKey] || { up: false, down: false };
                   return (
                     <article
                       key={pillarKey}
@@ -3639,66 +3572,13 @@ export default function LatestAssessmentPanel({
                         </p>
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
-                        <div className="relative min-h-[11.75rem] w-full flex-1 sm:min-h-[13rem]">
-                          <div
-                            ref={(node) => {
-                              pillarQuoteRefs.current[pillarKey] = node;
-                              if (node && typeof window !== "undefined") {
-                                window.requestAnimationFrame(() => updatePillarQuoteDirections(pillarKey, node));
-                              }
-                            }}
-                            className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-y-contain pr-8 [scrollbar-color:var(--border-strong)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--border-strong)] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
-                            style={{
-                              WebkitOverflowScrolling: "touch",
-                              touchAction: "pan-x",
-                              maskImage: quoteDirections.down
-                                ? "linear-gradient(to bottom, black calc(100% - 20px), transparent)"
-                                : undefined,
-                            }}
-                            onPointerDown={beginPillarQuoteGesture}
-                            onPointerMove={movePillarQuoteGesture}
-                            onPointerUp={endPillarQuoteGesture}
-                            onPointerCancel={endPillarQuoteGesture}
-                            onScroll={(event) => updatePillarQuoteDirections(pillarKey, event.currentTarget)}
-                            tabIndex={0}
-                            aria-label={`${pillar.label} quote. Scroll to read more.`}
-                          >
-                          <div className="space-y-3 text-[1.18rem] leading-8 text-current opacity-80">
-                            {(quoteBodyLines.length ? quoteBodyLines : [quote]).map((line, index) => (
-                              <p key={`${pillarKey}-quote-${index}`}>
-                                {line}
-                              </p>
-                            ))}
-                            {quoteAuthor ? (
-                              <p className="pt-1 text-right text-[0.9rem] font-semibold uppercase tracking-[0.12em] opacity-70">
-                                {quoteAuthor}
-                              </p>
-                            ) : null}
-                          </div>
-                          </div>
-                          {quoteDirections.up || quoteDirections.down ? (
-                            <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface)] shadow-sm">
-                              <button
-                                type="button"
-                                disabled={!quoteDirections.up}
-                                onClick={() => pillarQuoteRefs.current[pillarKey]?.scrollBy({ top: -80, behavior: "smooth" })}
-                                className="flex h-7 w-7 items-center justify-center text-sm leading-none text-[var(--text-primary)] disabled:opacity-25"
-                                aria-label={`Scroll ${pillar.label} quote up`}
-                              >
-                                ↑
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!quoteDirections.down}
-                                onClick={() => pillarQuoteRefs.current[pillarKey]?.scrollBy({ top: 80, behavior: "smooth" })}
-                                className="flex h-7 w-7 items-center justify-center border-t border-[var(--border)] text-sm leading-none text-[var(--text-primary)] disabled:opacity-25"
-                                aria-label={`Scroll ${pillar.label} quote down`}
-                              >
-                                ↓
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
+                        <PillarInsightHistory
+                          userId={userId}
+                          pillarKey={pillarKey}
+                          pillarLabel={pillar.label || pillarKey}
+                          currentQuote={quote}
+                          currentDate={summary.today}
+                        />
                         <div className="mt-auto grid w-full grid-flow-col auto-cols-fr gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {
                             const optionDate = String(option?.date || "").trim();

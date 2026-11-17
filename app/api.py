@@ -217,6 +217,7 @@ from .pillar_tracker import (
     ensure_pillar_tracker_schema,
     get_pillar_tracker_detail,
     get_pillar_tracker_summary,
+    get_pillar_insight_history,
     parse_tracker_anchor,
     save_pillar_tracker_day,
     tracker_concepts_for_pillar,
@@ -8146,6 +8147,26 @@ def api_user_pillar_tracker_detail(
         anchor = None
     try:
         return get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor, skip_quote_generation=bool(skip_quote_generation))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api_v1.get("/users/{user_id}/pillar-tracker/{pillar_key}/insights")
+def api_user_pillar_insight_history(
+    user_id: int,
+    pillar_key: str,
+    request: Request,
+    before: str | None = None,
+    limit: int = 10,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    before_date = parse_tracker_anchor(before) if before is not None else None
+    if before is not None and (before_date is None or before_date.isoformat() != before):
+        raise HTTPException(status_code=400, detail="before must be YYYY-MM-DD")
+    try:
+        return get_pillar_insight_history(user_id, pillar_key, before=before_date, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

@@ -2153,6 +2153,71 @@ def _latest_generated_daily_pillar_quote(
     return ""
 
 
+def get_pillar_insight_history(
+    user_id: int,
+    pillar_key: str,
+    *,
+    before: date | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Read saved daily insights without generating or carrying quotes forward."""
+    key = str(pillar_key or "").strip().lower()
+    if key not in PILLAR_TRACKER_CONFIG:
+        raise ValueError("Unknown pillar")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 30:
+        raise ValueError("limit must be between 1 and 30")
+    if before is not None and (not isinstance(before, date) or isinstance(before, datetime)):
+        raise ValueError("before must be a date")
+
+    ensure_pillar_tracker_schema()
+    today = tracker_today()
+    insights: list[dict[str, Any]] = []
+    scan_before = before
+    batch_size = max(30, limit + 1)
+    with SessionLocal() as session:
+        while len(insights) <= limit:
+            statement = select(
+                PillarCueQuote.id,
+                PillarCueQuote.quote_date,
+                PillarCueQuote.quote,
+                PillarCueQuote.generated_at,
+            ).where(
+                PillarCueQuote.user_id == int(user_id),
+                PillarCueQuote.pillar_key == key,
+                PillarCueQuote.quote_date <= today,
+            )
+            if scan_before is not None:
+                statement = statement.where(PillarCueQuote.quote_date < scan_before)
+            rows = session.execute(
+                statement.order_by(PillarCueQuote.quote_date.desc(), PillarCueQuote.id.desc()).limit(batch_size)
+            ).all()
+            for row in rows:
+                quote = _stored_generated_daily_pillar_quote(row.quote)
+                if not quote:
+                    continue
+                insights.append({
+                    "id": int(row.id),
+                    "quote_date": row.quote_date.isoformat(),
+                    "quote": quote,
+                    "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+                })
+                if len(insights) > limit:
+                    break
+            if len(insights) > limit or len(rows) < batch_size:
+                break
+            scan_before = rows[-1].quote_date
+
+    has_more = len(insights) > limit
+    insights = insights[:limit]
+    return {
+        "user_id": int(user_id),
+        "pillar_key": key,
+        "insights": insights,
+        "has_more": has_more,
+        "next_before": insights[-1]["quote_date"] if has_more else None,
+    }
+
+
 def _concept_score_context(
     required_concepts: tuple[PillarTrackerConceptDefinition, ...],
     evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
