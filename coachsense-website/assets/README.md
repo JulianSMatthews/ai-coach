@@ -4,7 +4,7 @@
 
 The road stays still. The six pillars fade in sequentially during the first 21 seconds of a 30-second cycle; the closing message follows. Reduced-motion preferences show the static closing message. The pause control stops and resumes the cycle.
 
-`pillar-nutrition.svg` and `pillar-training.svg` reuse the app's existing pillar artwork and colours. Keep the copies in `healthsense-app/public/assets/` in sync.
+`pillar-nutrition.svg` (cutlery) and `pillar-training.svg` (dumbbell) reuse the paths from the app's `SetupLineIcon` in `healthsense-app/src/app/assessment/[userId]/chat/LatestAssessmentPanel.tsx`. Their 24 × 24 viewBox, rounded 1.8-unit strokes and pillar colours match the existing website icons. Keep the copies in `healthsense-app/public/assets/` in sync.
 
 ## Generation prompt
 
