@@ -10,6 +10,7 @@ import type {
 } from "@/lib/api";
 import {
   conceptProgressAriaLabel,
+  conceptProgressShortLabel,
   progressScoreLabel,
   progressStatusColor,
   progressStatusLabel,
@@ -17,6 +18,7 @@ import {
   requestConceptGuidance,
   sortProgressPillars,
 } from "@/lib/pillarProgress";
+import { getPillarPalette } from "@/lib/pillars";
 
 type PillarProgressPanelProps = {
   userId: string;
@@ -26,15 +28,43 @@ type PillarProgressPanelProps = {
 
 type Selection = { pillar: PillarProgressPillar; concept: PillarProgressConcept };
 
-function ProgressCircle({ score, status }: { score: number | null; status: PillarProgressStatus }) {
+function ProgressCircle({ score, status, compact = false, dense = false }: { score: number | null; status: PillarProgressStatus; compact?: boolean; dense?: boolean }) {
   return (
     <span
-      className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-[4px] bg-[var(--surface)] text-xl font-semibold tabular-nums text-[var(--text-primary)]"
-      style={{ borderColor: progressStatusColor(status, score) }}
+      className={compact
+        ? `flex aspect-square shrink-0 items-center justify-center rounded-full border-2 bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)] ${dense ? "text-[10px]" : "text-[13px]"}`
+        : "flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-[4px] bg-[var(--surface)] text-xl font-semibold tabular-nums text-[var(--text-primary)]"}
+      style={{ borderColor: progressStatusColor(status, score), ...(compact ? { width: dense ? "min(26px, 100%)" : "min(32px, 100%)" } : {}) }}
       aria-hidden="true"
     >
       {progressScoreLabel(score)}
     </span>
+  );
+}
+
+function PillarScoreBreakdown({ pillar }: { pillar: PillarProgressPillar }) {
+  return (
+    <div className="text-sm leading-6 text-[var(--text-secondary)]">
+      <p>{pillar.score_explanation}</p>
+      <ul className="mt-3 space-y-2">
+        {pillar.concepts.map((concept) => (
+          <li key={concept.concept_key} className="flex justify-between gap-4">
+            <span>{concept.label}</span>
+            <span className="shrink-0 tabular-nums">{concept.contribution_points == null ? "Not scored" : `${Number(concept.contribution_points.toFixed(2))} points`}</span>
+          </li>
+        ))}
+        {pillar.rounding_adjustment != null && pillar.rounding_adjustment !== 0 ? (
+          <li className="flex justify-between gap-4">
+            <span>Rounding</span>
+            <span className="shrink-0 tabular-nums">{pillar.rounding_adjustment > 0 ? "+" : ""}{Number(pillar.rounding_adjustment.toFixed(2))} points</span>
+          </li>
+        ) : null}
+        <li className="flex justify-between gap-4 border-t border-[var(--border)] pt-2 font-semibold text-[var(--text-primary)]">
+          <span>Pillar total</span>
+          <span className="shrink-0 tabular-nums">{progressScoreLabel(pillar.score)}{pillar.score == null ? "" : " / 100"}</span>
+        </li>
+      </ul>
+    </div>
   );
 }
 
@@ -53,6 +83,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [pillarDetail, setPillarDetail] = useState<PillarProgressPillar | null>(null);
   const [guidance, setGuidance] = useState<PillarProgressGuidance | null>(null);
   const [guidanceLoading, setGuidanceLoading] = useState(false);
   const [guidanceError, setGuidanceError] = useState<string | null>(null);
@@ -68,6 +99,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
       guidanceVersionRef.current += 1;
       guidanceRequestRef.current?.abort();
       setSelection(null);
+      setPillarDetail(null);
       setGuidance(null);
       setGuidanceError(null);
       setGuidanceLoading(false);
@@ -101,13 +133,14 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
   }, []);
 
   useEffect(() => {
-    if (selection) guidanceHeadingRef.current?.focus();
-  }, [selection]);
+    if (selection || pillarDetail) guidanceHeadingRef.current?.focus();
+  }, [selection, pillarDetail]);
 
   const closeGuidance = useCallback(() => {
     guidanceVersionRef.current += 1;
     guidanceRequestRef.current?.abort();
     setSelection(null);
+    setPillarDetail(null);
     setGuidance(null);
     setGuidanceError(null);
     setGuidanceLoading(false);
@@ -124,6 +157,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
     guidanceRequestRef.current = controller;
     const version = ++guidanceVersionRef.current;
     setSelection(next);
+    setPillarDetail(null);
     setGuidance(null);
     setGuidanceError(null);
     setGuidanceLoading(next.concept.scored_days_count > 0);
@@ -147,27 +181,40 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
     }
   }, [progress, userId]);
 
+  const openPillarDetail = useCallback((pillar: PillarProgressPillar) => {
+    guidanceVersionRef.current += 1;
+    guidanceRequestRef.current?.abort();
+    setSelection(null);
+    setPillarDetail(pillar);
+    setGuidance(null);
+    setGuidanceError(null);
+    setGuidanceLoading(false);
+  }, []);
+
+  const detailOpen = Boolean(selection || pillarDetail);
+
   return (
-    <section className="flex h-full min-h-0 flex-col pb-28 pt-4 sm:pb-32 sm:pt-6" aria-label="Pillar progress">
-      <div className="shrink-0 px-4 pb-3 sm:px-5">
-        <div className="flex items-center justify-between gap-4">
+    <section className={`flex h-full min-h-0 flex-col ${detailOpen ? "pb-28 pt-4 sm:pb-32 sm:pt-6" : "pb-[calc(6rem+env(safe-area-inset-bottom))] pt-1 sm:pt-2"}`} aria-label="Pillar progress">
+      <div className={`shrink-0 ${detailOpen ? "px-4 pb-3 sm:px-5" : "px-3 pb-1 sm:px-5"}`}>
+        <div className="flex min-h-11 items-center justify-between gap-3">
           <button
             type="button"
-            onClick={selection ? closeGuidance : onBack}
-            className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)] focus-visible:outline-2 focus-visible:outline-offset-2"
-            aria-label={selection ? "Back to pillar progress" : "Back to check-ins"}
+            onClick={detailOpen ? closeGuidance : onBack}
+            className={`flex shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)] focus-visible:outline-2 focus-visible:outline-offset-2 ${detailOpen ? "h-12 w-12" : "h-10 w-10"}`}
+            aria-label={detailOpen ? "Back to pillar progress" : "Back to check-ins"}
           >
             <span className="text-3xl leading-none" aria-hidden="true">‹</span>
           </button>
-          {!selection ? (
-            <button type="button" onClick={onEditGoals} className="min-h-11 px-2 text-sm font-semibold text-[var(--text-secondary)] underline underline-offset-4">
+          {!detailOpen ? <h2 className="min-w-0 flex-1 text-[22px] font-semibold leading-7 text-[var(--text-primary)]">Pillar progress</h2> : null}
+          {!detailOpen ? (
+            <button type="button" onClick={onEditGoals} className="min-h-11 shrink-0 px-1 text-[11px] font-semibold text-[var(--text-secondary)] underline underline-offset-4">
               Edit goals
             </button>
           ) : null}
         </div>
       </div>
 
-      <div className="coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 sm:px-5">
+      <div className={`coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain ${detailOpen ? "px-4 pb-8 sm:px-5" : "px-3 pb-1 sm:px-5"}`}>
         {selection ? (
           <div className="space-y-5">
             <div className="rounded-[28px] bg-[var(--surface-muted)] p-6">
@@ -175,6 +222,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
               <div className="mt-3 flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 ref={guidanceHeadingRef} tabIndex={-1} className="text-[1.8rem] font-semibold leading-tight text-[var(--text-primary)] focus:outline-none">{selection.concept.label}</h2>
+                  {selection.concept.is_historical ? <p className="mt-2 text-xs text-[var(--text-secondary)]">Earlier question · part of this week’s score</p> : null}
                   <p className="mt-2 text-base leading-7 text-[var(--text-secondary)]">{selection.concept.helper}</p>
                 </div>
                 <ProgressCircle score={selection.concept.score} status={selection.concept.status} />
@@ -227,14 +275,33 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                 ))}
               </ul>
             </details>
+            <details className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--text-primary)]">How the {selection.pillar.label.toLowerCase()} score is made</summary>
+              <div className="mt-3"><PillarScoreBreakdown pillar={selection.pillar} /></div>
+            </details>
+            {progress?.rag_explanation ? <p className="px-1 text-xs leading-6 text-[var(--text-secondary)]">{progress.rag_explanation}</p> : null}
+          </div>
+        ) : pillarDetail ? (
+          <div className="space-y-5">
+            <div className="rounded-[28px] p-6 text-[#24201c]" style={{ backgroundColor: getPillarPalette(pillarDetail.pillar_key).bg }}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 ref={guidanceHeadingRef} tabIndex={-1} className="text-[1.8rem] font-semibold leading-tight focus:outline-none">{pillarDetail.label}</h2>
+                  <p className="mt-2 text-[14px] leading-6">{pillarDetail.completed_days_count} of {pillarDetail.elapsed_days} daily check-ins complete</p>
+                  <p className="mt-1 text-[12px] font-semibold">{progressStatusLabel(pillarDetail.status, pillarDetail.score)}</p>
+                </div>
+                <ProgressCircle score={pillarDetail.score} status={pillarDetail.status} />
+              </div>
+            </div>
+            <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
+              <h3 className="mb-3 text-base font-semibold text-[var(--text-primary)]">How this score is made</h3>
+              <PillarScoreBreakdown pillar={pillarDetail} />
+            </div>
+            {progress?.rag_explanation ? <p className="px-1 text-xs leading-6 text-[var(--text-secondary)]">{progress.rag_explanation}</p> : null}
           </div>
         ) : (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-[1.9rem] font-semibold leading-tight text-[var(--text-primary)]">Pillar progress</h2>
-              <p className="mt-2 text-base leading-7 text-[var(--text-secondary)]">Tap a question’s circle for guidance based on your check-ins so far this week.</p>
-              {progress ? <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{progressWeekLabel(progress.week.start, progress.week.through)} · Week to date</p> : null}
-            </div>
+          <div className="space-y-2">
+            {progress ? <p className="pb-1 text-[11px] leading-5 text-[var(--text-secondary)]">{progressWeekLabel(progress.week.start, progress.week.through)} · Week to date · Tap circles for guidance</p> : null}
             {loading ? <p role="status" className="text-sm text-[var(--text-secondary)]">Loading your progress…</p> : null}
             {error ? (
               <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
@@ -244,79 +311,61 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
             ) : null}
             {progress ? (
               <>
-                {sortProgressPillars(progress.pillars).map((pillar) => (
-                  <article key={pillar.pillar_key} className="overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--surface)]">
-                    <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] p-5 sm:p-6">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <h3 className="text-xl font-semibold text-[var(--text-primary)]">{pillar.label}</h3>
-                          <p className="mt-1 text-sm text-[var(--text-secondary)]">{pillar.completed_days_count} of {pillar.elapsed_days} daily check-ins complete</p>
-                          <p className="mt-1 text-xs font-semibold text-[var(--text-secondary)]">{progressStatusLabel(pillar.status, pillar.score)}</p>
-                        </div>
-                        <span role="img" aria-label={`${pillar.label} score: ${progressScoreLabel(pillar.score)} out of 100, ${progressStatusLabel(pillar.status, pillar.score)}`}><ProgressCircle score={pillar.score} status={pillar.status} /></span>
+                {sortProgressPillars(progress.pillars).map((pillar) => {
+                  const palette = getPillarPalette(pillar.pillar_key);
+                  const dense = pillar.concepts.length > 4;
+                  return (
+                    <article
+                      key={pillar.pillar_key}
+                      aria-label={`${pillar.label} progress`}
+                      className="flex min-h-[58px] items-center gap-2 rounded-[18px] border px-2 py-1 text-[#24201c] sm:min-h-[64px] sm:px-3"
+                      style={{ backgroundColor: palette.bg, borderColor: palette.border }}
+                    >
+                      <button
+                        type="button"
+                        ref={(node) => {
+                          const key = `pillar:${pillar.pillar_key}`;
+                          if (node) conceptButtonRefs.current.set(key, node);
+                          else conceptButtonRefs.current.delete(key);
+                        }}
+                        onClick={() => { lastConceptKeyRef.current = `pillar:${pillar.pillar_key}`; openPillarDetail(pillar); }}
+                        className="flex min-h-11 w-[80px] shrink-0 flex-col items-start justify-center rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-[96px]"
+                        aria-label={`${pillar.label}: ${pillar.score == null ? "not scored" : `${progressScoreLabel(pillar.score)} out of 100`}, ${progressStatusLabel(pillar.status, pillar.score)}. View score breakdown`}
+                        title={`${pillar.label} score breakdown`}
+                      >
+                        <h3 className="text-[12px] font-semibold leading-4 sm:text-[14px]">{pillar.label}</h3>
+                        <span className="mt-0.5 flex items-baseline gap-1 font-semibold tabular-nums">
+                          <span className="text-[19px] leading-5">{progressScoreLabel(pillar.score)}</span>
+                          <span className="text-[9px] font-normal opacity-65">/100</span>
+                        </span>
+                      </button>
+                      <div
+                        className="grid min-w-0 flex-1 items-start gap-0.5"
+                        style={{ gridTemplateColumns: `repeat(${Math.max(1, pillar.concepts.length)}, minmax(0, 1fr))` }}
+                      >
+                        {pillar.concepts.map((concept) => (
+                          <button
+                            key={concept.concept_key}
+                            type="button"
+                            ref={(node) => {
+                              const key = `${pillar.pillar_key}:${concept.concept_key}`;
+                              if (node) conceptButtonRefs.current.set(key, node);
+                              else conceptButtonRefs.current.delete(key);
+                            }}
+                            onClick={() => { lastConceptKeyRef.current = `${pillar.pillar_key}:${concept.concept_key}`; void loadGuidance({ pillar, concept }); }}
+                            className="flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg text-center transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1"
+                            aria-label={conceptProgressAriaLabel(concept)}
+                            title={`${concept.label}: ${progressStatusLabel(concept.status, concept.score)}`}
+                          >
+                            <ProgressCircle score={concept.score} status={concept.status} compact dense={dense} />
+                            <span className={`max-w-full whitespace-nowrap font-medium leading-3 ${dense ? "text-[8px]" : "text-[9px] sm:text-[10px]"}`}>{conceptProgressShortLabel(concept, dense)}</span>
+                          </button>
+                        ))}
                       </div>
-                      <details className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-                        <summary className="cursor-pointer">How this score is made</summary>
-                        <p className="mt-2">{pillar.score_explanation}</p>
-                        <ul className="mt-2 space-y-1">
-                          {pillar.concepts.map((concept) => (
-                            <li key={concept.concept_key} className="flex justify-between gap-4">
-                              <span>{concept.label}</span>
-                              <span className="shrink-0 tabular-nums">{concept.contribution_points == null ? "Not scored" : `${Number(concept.contribution_points.toFixed(2))} points`}</span>
-                            </li>
-                          ))}
-                          {pillar.rounding_adjustment != null && pillar.rounding_adjustment !== 0 ? (
-                            <li className="flex justify-between gap-4">
-                              <span>Rounding</span>
-                              <span className="shrink-0 tabular-nums">{pillar.rounding_adjustment > 0 ? "+" : ""}{Number(pillar.rounding_adjustment.toFixed(2))} points</span>
-                            </li>
-                          ) : null}
-                          <li className="flex justify-between gap-4 border-t border-[var(--border)] pt-2 font-semibold text-[var(--text-primary)]">
-                            <span>Pillar total</span>
-                            <span className="shrink-0 tabular-nums">{progressScoreLabel(pillar.score)}{pillar.score == null ? "" : " / 100"}</span>
-                          </li>
-                        </ul>
-                      </details>
-                    </div>
-                    <div className="divide-y divide-[var(--border)] px-5 sm:px-6">
-                      {pillar.concepts.map((concept) => {
-                        const statusLabel = progressStatusLabel(concept.status, concept.score);
-                        return (
-                          <div key={concept.concept_key} className="flex items-center justify-between gap-4 py-5">
-                            <div className="min-w-0">
-                              <h4 className="text-base font-semibold leading-6 text-[var(--text-primary)]">{concept.label}</h4>
-                              {concept.is_historical ? <p className="mt-1 text-xs text-[var(--text-secondary)]">Earlier question · part of this week’s score</p> : null}
-                              <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{concept.helper}</p>
-                              <Coverage concept={concept} />
-                              <p className="mt-1 text-xs font-semibold text-[var(--text-primary)]">{statusLabel}</p>
-                            </div>
-                            <button
-                              type="button"
-                              ref={(node) => {
-                                const key = `${pillar.pillar_key}:${concept.concept_key}`;
-                                if (node) conceptButtonRefs.current.set(key, node);
-                                else conceptButtonRefs.current.delete(key);
-                              }}
-                              onClick={() => { lastConceptKeyRef.current = `${pillar.pillar_key}:${concept.concept_key}`; void loadGuidance({ pillar, concept }); }}
-                              className="shrink-0 rounded-full transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-4"
-                              aria-label={conceptProgressAriaLabel(concept)}
-                            >
-                              <ProgressCircle score={concept.score} status={concept.status} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
                 {!progress.pillars.length ? <p className="rounded-3xl bg-[var(--surface-muted)] p-5 text-base leading-7 text-[var(--text-secondary)]">Choose your pillars in Preferences to start building your progress.</p> : null}
-                {progress.rag_explanation ? (
-                  <details className="rounded-2xl border border-[var(--border)] px-4 py-3 text-xs leading-6 text-[var(--text-secondary)]">
-                    <summary className="cursor-pointer font-semibold">What the colours mean</summary>
-                    <p className="mt-2">{progress.rag_explanation}</p>
-                  </details>
-                ) : null}
-                <p className="pb-2 text-xs leading-6 text-[var(--text-secondary)]">Scores run from 0 to 100. Grey means no scored answer yet. Missing check-ins and answers marked not applicable are not scored.</p>
               </>
             ) : null}
           </div>

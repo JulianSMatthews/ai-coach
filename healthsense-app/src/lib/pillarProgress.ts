@@ -7,6 +7,49 @@ import type {
 
 const PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
 
+const CONCEPT_SHORT_LABELS: Record<string, [string, string?]> = {
+  emotional_awareness: ["Awareness", "Aware"],
+  mindfulness_presence: ["Presence", "Here"],
+  pattern_recognition: ["Learning", "Learn"],
+  self_awareness: ["Self", "Self"],
+  meaning_fulfilment: ["Meaning", "Meaning"],
+  values_alignment: ["Values", "Values"],
+  contribution_connection: ["Contribute", "Give"],
+  direction_vision: ["Direction", "Aim"],
+  emotional_regulation: ["Balance", "Calm"],
+  positive_connection: ["Enjoy", "Enjoy"],
+  adaptability: ["Adapt", "Adapt"],
+  support_connection: ["Support", "Help"],
+  stress_recovery: ["Reset", "Reset"],
+  optimism_perspective: ["Outlook", "Hope"],
+  support_openness: ["Reach out", "Reach"],
+  sleep_duration: ["Sleep", "Sleep"],
+  sleep_quality: ["Rested", "Rest"],
+  bedtime_consistency: ["Bedtime", "Time"],
+  heat_exposure: ["Heat", "Heat"],
+  cold_exposure: ["Cold", "Cold"],
+  magnesium: ["Magnesium", "Mg"],
+  protein_intake: ["Protein", "Prot"],
+  fruit_veg: ["Fruit & veg", "F&V"],
+  hydration: ["Water", "Water"],
+  processed_food: ["Processed", "UPF"],
+  alcohol_units: ["Alcohol", "Alc"],
+  fasting_adherence: ["Fasting", "Fast"],
+  omega_3: ["Omega 3", "ω3"],
+  vitamin_d: ["Vitamin D", "D"],
+  cardio_frequency: ["Cardio", "Cardio"],
+  strength_training: ["Strength", "Lift"],
+  flexibility_mobility: ["Mobility", "Move"],
+  creatine: ["Creatine", "Cr"],
+};
+
+export function conceptProgressShortLabel(concept: Pick<PillarProgressConcept, "concept_key" | "label">, dense = false): string {
+  const labels = CONCEPT_SHORT_LABELS[concept.concept_key];
+  if (labels) return dense ? labels[1] || labels[0] : labels[0];
+  if (!dense || concept.label.length <= 5) return concept.label;
+  return concept.label.split(/\s+/).map((word) => word[0]).join("").slice(0, 4);
+}
+
 export function sortProgressPillars(pillars: PillarProgressPillar[]): PillarProgressPillar[] {
   return [...pillars].sort((left, right) => {
     const rank = (key: string) => {

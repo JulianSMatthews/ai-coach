@@ -9,7 +9,7 @@ const compiled = ts.transpileModule(fs.readFileSync('src/lib/pillarProgress.ts',
 }).outputText;
 const context = { exports: {}, fetch, Date };
 vm.runInNewContext(compiled, context);
-const { progressScoreLabel, progressStatusLabel, progressStatusColor, conceptProgressAriaLabel, sortProgressPillars, requestConceptGuidance } = context.exports;
+const { progressScoreLabel, progressStatusLabel, progressStatusColor, conceptProgressAriaLabel, conceptProgressShortLabel, sortProgressPillars, requestConceptGuidance } = context.exports;
 
 test('absent and non-finite scores stay grey while recorded zero stays scored', () => {
   assert.equal(progressScoreLabel(null), '—');
@@ -34,6 +34,15 @@ test('circles announce concept, status and score and distinguish evidence-only c
     'Contribution: Needs attention, 0 out of 100. Get guidance');
   assert.equal(conceptProgressAriaLabel({ label: 'Adaptability', score: null, status: 'grey', scored_days_count: 0 }),
     'Adaptability: Not scored. View check-ins');
+});
+
+test('dense row labels keep all eight nutrition concepts distinct and brief', () => {
+  const keys = ['protein_intake', 'fruit_veg', 'hydration', 'processed_food', 'alcohol_units', 'fasting_adherence', 'omega_3', 'vitamin_d'];
+  const labels = keys.map(concept_key => conceptProgressShortLabel({ concept_key, label: concept_key }, true));
+  assert.equal(new Set(labels).size, 8);
+  assert.ok(labels.every(label => label.length <= 5));
+  assert.equal(conceptProgressShortLabel({ concept_key: 'emotional_awareness', label: 'Self & Emotional Awareness' }), 'Awareness');
+  assert.equal(conceptProgressShortLabel({ concept_key: 'future_question', label: 'A future question' }, true), 'Afq');
 });
 
 test('pillars follow the visible app order without mutating the API response', () => {

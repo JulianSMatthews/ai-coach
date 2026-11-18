@@ -10,6 +10,7 @@ const compile = filename => ts.transpileModule(fs.readFileSync(filename, 'utf8')
 }).outputText;
 const componentCode = compile('src/components/PillarProgressPanel.tsx');
 const helperCode = compile('src/lib/pillarProgress.ts');
+const paletteCode = compile('src/lib/pillars.ts');
 
 function sample() {
   const concept = (key, label, score, extra = {}) => ({
@@ -30,7 +31,7 @@ function sample() {
   };
 }
 
-function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.pillarKey, concept_key: body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `Insight for ${body.conceptKey}`, action: 'One step.', reflection: 'A reflection?' })) {
+function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.pillarKey, concept_key: body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `Insight for ${body.conceptKey}`, action: 'One step.', reflection: 'A reflection?' }), progressData = sample()) {
   let slots = [], cursor = 0, effects = [], dirty = true, tree, unmounted = false;
   let props = { userId: '42', onBack() {}, onEditGoals() {} };
   const calls = [], frames = [], focused = [];
@@ -62,16 +63,18 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
       const result = await coachRequest(JSON.parse(options.body), options);
       return result instanceof Response ? result : Response.json(result);
     }
-    const data = sample(); data.user_id = Number(new URL(url, 'https://app.test').searchParams.get('userId'));
+    const data = JSON.parse(JSON.stringify(progressData)); data.user_id = Number(new URL(url, 'https://app.test').searchParams.get('userId'));
     return Response.json(data);
   };
   const helperExports = {};
   vm.runInNewContext(helperCode, { exports: helperExports, fetch: fetcher, Date, Error });
+  const paletteExports = {};
+  vm.runInNewContext(paletteCode, { exports: paletteExports });
   const exports = {};
   vm.runInNewContext(componentCode, {
     exports, AbortController, URLSearchParams, fetch: fetcher, Error,
     requestAnimationFrame: fn => frames.push(fn),
-    require(name) { return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : require(name); },
+    require(name) { return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : require(name); },
   });
   const text = node => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'object' ? text(node.props?.children) : String(node);
   const all = (node, predicate) => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(child => all(child, predicate)) : [...(predicate(node) ? [node] : []), ...all(node.props?.children, predicate)];
@@ -101,6 +104,11 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
   };
   return {
     calls, focused, flush, text: () => text(tree),
+    rows: () => all(tree, node => node.type === 'article').map(node => ({
+      label: node.props['aria-label'], style: node.props.style,
+      grids: all(node, child => child.props?.style?.gridTemplateColumns).map(child => child.props.style.gridTemplateColumns),
+      buttons: all(node, child => child.type === 'button').map(child => child.props['aria-label']),
+    })),
     buttons: () => all(tree, node => node.type === 'button').map(node => node.props['aria-label'] || text(node).trim()),
     async click(label) {
       const button = all(tree, node => node.type === 'button').find(node => (node.props['aria-label'] || text(node).trim()).startsWith(label));
@@ -170,4 +178,41 @@ test('AI failure shows an explicit retry state without substitute guidance', asy
   assert.doesNotMatch(h.text(), /One small step/);
   assert.ok(h.buttons().includes('Try again'));
   assert.ok(h.buttons().includes('Refresh progress'));
+});
+
+test('compact overview keeps every optional and historical concept beside its pillar in one grid row', async t => {
+  const data = sample();
+  const definitions = {
+    reflection: ['emotional_awareness', 'mindfulness_presence', 'pattern_recognition', 'self_awareness'],
+    purpose: ['meaning_fulfilment', 'values_alignment', 'contribution_connection', 'direction_vision'],
+    resilience: ['emotional_regulation', 'positive_connection', 'adaptability', 'support_connection', 'stress_recovery', 'optimism_perspective', 'support_openness'],
+    recovery: ['sleep_duration', 'sleep_quality', 'bedtime_consistency', 'heat_exposure', 'cold_exposure', 'magnesium'],
+    nutrition: ['protein_intake', 'fruit_veg', 'hydration', 'processed_food', 'alcohol_units', 'fasting_adherence', 'omega_3', 'vitamin_d'],
+    training: ['cardio_frequency', 'strength_training', 'flexibility_mobility', 'creatine'],
+  };
+  const template = data.pillars[0];
+  data.pillars = Object.entries(definitions).map(([key, concepts]) => ({ ...template, pillar_key: key, label: key,
+    concepts: concepts.map(concept_key => ({ ...template.concepts[0], concept_key, label: concept_key })) }));
+  const h = harness(undefined, data); t.after(() => h.unmount()); await h.flush();
+  assert.equal(h.rows().length, 6);
+  for (const row of h.rows()) {
+    const key = row.label.split(' ')[0];
+    assert.equal(row.buttons.length, definitions[key].length + 1);
+    assert.equal(row.grids[0], `repeat(${definitions[key].length}, minmax(0, 1fr))`);
+  }
+  assert.equal(h.rows().find(row => row.label === 'reflection progress').style.backgroundColor, '#f2efff');
+  assert.equal(h.rows().find(row => row.label === 'nutrition progress').style.backgroundColor, '#fff4e6');
+  assert.doesNotMatch(h.text(), /Question about|daily check-ins complete|Scores use your recorded/);
+  assert.equal(h.calls.length, 1);
+});
+
+test('tapping a pillar opens its score explanation without requesting AI', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush();
+  await h.click('Purpose:');
+  assert.match(h.text(), /How this score is made/);
+  assert.match(h.text(), /Pillar total/);
+  assert.match(h.text(), /An average of recorded answers/);
+  assert.equal(h.calls.length, 1);
+  await h.click('Back to pillar progress');
+  assert.match(h.focused.at(-1), /^Purpose:.*View score breakdown/);
 });
