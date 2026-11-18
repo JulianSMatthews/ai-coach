@@ -122,7 +122,7 @@ def _concept_target_options(user_id: int, pillar_key: str, concept_key: str) -> 
         return [{"value": float(value), "label": label} for value, label in ALCOHOL_GOAL_UNITS_OPTIONS]
     concept_defs = {item.concept_key: item for item in tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))}
     concept_def = concept_defs.get(concept_key)
-    if concept_def is None:
+    if concept_def is None or concept_def.score_mode == "text":
         return []
     guide = (_GUIDE.get(pillar_key, {}) or {}).get(concept_key, {}) or {}
     unit = str(guide.get("unit") or "").strip().lower()
@@ -223,7 +223,10 @@ def _objective_default_text(pillar_key: str) -> str:
 
 
 def _objective_concepts_payload(user_id: int, pillar_key: str) -> dict[str, Any]:
-    required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
+    required_concepts = tuple(
+        concept for concept in tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
+        if concept.score_mode != "text"
+    )
     resolved_targets = _resolve_pillar_targets_for_user(int(user_id), pillar_key, required_concepts)
     with SessionLocal() as s:
         objective, primary_krs, _duplicates = _primary_krs_by_concept(s, int(user_id), pillar_key)
@@ -556,7 +559,9 @@ def save_weekly_objectives_config(
     if section_key not in active_pillar_keys(user_id):
         raise ValueError("Invalid objectives section")
     target_map = concept_targets if isinstance(concept_targets, dict) else {}
-    concept_defs = tracker_concepts_for_pillar(section_key, user_id=int(user_id))
+    all_concept_defs = tracker_concepts_for_pillar(section_key, user_id=int(user_id))
+    text_concept_keys = {concept.concept_key for concept in all_concept_defs if concept.score_mode == "text"}
+    concept_defs = tuple(concept for concept in all_concept_defs if concept.score_mode != "text")
     guide = _GUIDE.get(section_key, {}) or {}
     with SessionLocal() as s:
         cycle = ensure_cycle(s, datetime.now(timezone.utc))
@@ -622,6 +627,8 @@ def save_weekly_objectives_config(
             s.flush()
 
         for duplicate in duplicates:
+            if _kr_concept_key(section_key, duplicate) in text_concept_keys:
+                continue
             duplicate.status = "archived"
             s.add(duplicate)
         s.commit()

@@ -25,6 +25,7 @@ import {
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
 import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrackerDetailDisplayScore, resolveTrackerDayStatus, formatTrackerWeekRange, trackerWeekNavigation, trackerSwipeWeek } from "@/lib/pillarTrackerSummary";
+import { isTrackerAnswerComplete, trackerDraftFromConcepts, trackerEntriesFromDraft, TRACKER_TEXT_MAX_LENGTH, type PillarTrackerDraft } from "@/lib/pillarTrackerAnswers";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -1509,7 +1510,7 @@ export default function LatestAssessmentPanel({
   const [performanceMode, setPerformanceMode] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
-  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [draft, setDraft] = useState<PillarTrackerDraft>({});
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [guidedTrackingActive, setGuidedTrackingActive] = useState(false);
@@ -1630,10 +1631,7 @@ export default function LatestAssessmentPanel({
   const canSave =
     !saving &&
     concepts.length > 0 &&
-    concepts.every((concept) => {
-      const conceptKey = String(concept.concept_key || "").trim();
-      return conceptKey && Number.isFinite(Number(draft[conceptKey]));
-    });
+    concepts.every((concept) => isTrackerAnswerComplete(concept, draft[String(concept.concept_key || "").trim()]));
   const activeDate = String(detail?.pillar?.active_date || detail?.pillar?.today || "").trim();
   const canEditActiveWeek = !performanceMode && detail?.pillar?.is_editable !== false;
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
@@ -3176,20 +3174,7 @@ export default function LatestAssessmentPanel({
     const applyDetail = (payload: PillarTrackerDetailResponse) => {
       if (requestId !== detailRequestRef.current) return;
       setDetail(payload);
-      const nextDraft: Record<string, number> = {};
-      (payload.concepts || []).forEach((concept) => {
-        const conceptKey = String(concept.concept_key || "").trim();
-        const rawValue = concept.value;
-        const hasRecordedValue =
-          rawValue !== null &&
-          rawValue !== undefined &&
-          !(typeof rawValue === "string" && String(rawValue).trim() === "");
-        const value = Number(rawValue);
-        if (conceptKey && hasRecordedValue && Number.isFinite(value)) {
-          nextDraft[conceptKey] = value;
-        }
-      });
-      setDraft(nextDraft);
+      setDraft(trackerDraftFromConcepts(payload.concepts || []));
     };
     if (cachedDetail) {
       applyDetail(cachedDetail);
@@ -3301,10 +3286,7 @@ export default function LatestAssessmentPanel({
     try {
       const completedPillarKey = String(detail.pillar.pillar_key || "").trim().toLowerCase();
       const savedScoreDate = activeDate || detail.pillar.today || "";
-      const entries = concepts.map((concept) => ({
-        concept_key: concept.concept_key,
-        value: draft[String(concept.concept_key || "").trim()],
-      }));
+      const entries = trackerEntriesFromDraft(concepts, draft);
       const res = await fetch(`/api/pillar-tracker/${encodeURIComponent(String(detail.pillar.pillar_key))}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4910,9 +4892,11 @@ export default function LatestAssessmentPanel({
                   {(detail.concepts || []).map((concept, conceptIndex) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];
-                    const targetLabel = String(concept.target_label || "").trim();
-                    const okrStatusLabel = String(concept.okr_status_label || "").trim();
-                    const okrStatusDetail = String(concept.okr_status_detail || "").trim();
+                    const isTextQuestion = concept.input_type === "text";
+                    const targetLabel = isTextQuestion ? "" : String(concept.target_label || "").trim();
+                    const okrStatusLabel = isTextQuestion ? "" : String(concept.okr_status_label || "").trim();
+                    const okrStatusDetail = isTextQuestion ? "" : String(concept.okr_status_detail || "").trim();
+                    const writtenAnswers = (concept.week || []).filter((day) => day.value_text?.trim());
                     const showInlineOkrProgress = Boolean(okrStatusDetail);
                     const okrStatusTone =
                       concept.okr_on_track === true
@@ -4935,7 +4919,7 @@ export default function LatestAssessmentPanel({
                             </h2>
                           </div>
                         </div>
-                        <p className="mt-6 text-[1.45rem] font-medium leading-8 text-[var(--text-primary)]">
+                        <p id={`tracker-question-${conceptKey}`} className="mt-6 text-[1.45rem] font-medium leading-8 text-[var(--text-primary)]">
                           {concept.helper}
                         </p>
                         {targetLabel || okrStatusLabel ? (
@@ -4961,7 +4945,24 @@ export default function LatestAssessmentPanel({
                               </div>
                             ))}
                           </div>
-                          {canEditActiveWeek ? (
+                          {isTextQuestion ? (
+                            <div>
+                              <label htmlFor={`tracker-answer-${conceptKey}`} className="mb-2 block text-sm font-semibold text-[var(--text-primary)]">
+                                Your answer
+                              </label>
+                              <textarea
+                                id={`tracker-answer-${conceptKey}`}
+                                aria-labelledby={`tracker-question-${conceptKey}`}
+                                value={typeof selectedValue === "string" ? selectedValue : ""}
+                                onChange={(event) => setDraft((current) => ({ ...current, [conceptKey]: event.target.value }))}
+                                maxLength={TRACKER_TEXT_MAX_LENGTH}
+                                readOnly={!canEditActiveWeek}
+                                rows={4}
+                                placeholder={canEditActiveWeek ? "Write a short reflection…" : "No written answer recorded for this day."}
+                                className="block w-full resize-y rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base leading-6 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                              />
+                            </div>
+                          ) : canEditActiveWeek ? (
                             <div className="grid grid-cols-2 gap-2">
                               {(concept.options || []).map((option) => {
                                 const value = Number(option.value);
@@ -4984,6 +4985,19 @@ export default function LatestAssessmentPanel({
                                   </button>
                                 );
                               })}
+                            </div>
+                          ) : null}
+                          {writtenAnswers.length > 0 ? (
+                            <div className="space-y-2">
+                              <p className="text-sm font-semibold text-[var(--text-primary)]">Written answers this week</p>
+                              {writtenAnswers.map((day) => (
+                                <details key={`${conceptKey}-answer-${day.date}`} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-primary)]">
+                                    {day.label} {day.date}
+                                  </summary>
+                                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--text-primary)]">{day.value_text}</p>
+                                </details>
+                              ))}
                             </div>
                           ) : null}
                         </div>

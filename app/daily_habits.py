@@ -541,6 +541,8 @@ def _recent_concept_focuses(
     yesterday_iso = (anchor - timedelta(days=1)).isoformat()
     focus_rows: list[dict[str, Any]] = []
     for concept in detail.get("concepts") or []:
+        if concept.get("input_type") == "text":
+            continue
         week_rows = {
             str((row or {}).get("date") or "").strip(): row
             for row in (concept.get("week") or [])
@@ -548,28 +550,42 @@ def _recent_concept_focuses(
         }
         today_row = week_rows.get(today_iso) or {}
         yesterday_row = week_rows.get(yesterday_iso) or {}
-        if today_row.get("not_applicable") or (not today_row and concept.get("not_applicable")):
+        if (
+            today_row.get("input_type") == "text"
+            or today_row.get("not_applicable")
+            or (not today_row and concept.get("not_applicable"))
+        ):
             continue
         misses = sum(
             1
             for row in (today_row, yesterday_row)
-            if isinstance(row, dict) and not row.get("not_applicable") and row.get("target_met") is False
+            if isinstance(row, dict)
+            and row.get("input_type") != "text"
+            and not row.get("not_applicable")
+            and row.get("target_met") is False
         )
         missing = sum(
             1
             for row in (today_row, yesterday_row)
-            if not isinstance(row, dict) or (not row.get("not_applicable") and row.get("target_met") is None)
+            if not isinstance(row, dict) or (
+                row.get("input_type") != "text" and not row.get("not_applicable")
+                and row.get("target_met") is None
+            )
         )
         latest_value = next(
             (str(row.get("value_label")).strip() for row in (today_row, yesterday_row)
-             if row.get("value_label") and not row.get("not_applicable")),
+             if row.get("value_label") and row.get("input_type") != "text" and not row.get("not_applicable")),
             None,
         ) or None
         current_score = _safe_int(concept.get("score"))
         signal = "on_track"
         if today_row.get("target_met") is False:
             signal = "missed_today"
-        elif not yesterday_row.get("not_applicable") and yesterday_row.get("target_met") is False:
+        elif (
+            yesterday_row.get("input_type") != "text"
+            and not yesterday_row.get("not_applicable")
+            and yesterday_row.get("target_met") is False
+        ):
             signal = "missed_yesterday"
         elif today_row.get("target_met") is None:
             signal = "not_logged_today"
@@ -631,13 +647,19 @@ def _anchored_concept_focuses(
     anchored_missing_signal = "not_logged_today" if active_day == current_day else "not_logged_yesterday"
     focus_rows: list[dict[str, Any]] = []
     for concept in detail.get("concepts") or []:
+        if concept.get("input_type") == "text":
+            continue
         week_rows = {
             str((row or {}).get("date") or "").strip(): row
             for row in (concept.get("week") or [])
             if isinstance(row, dict)
         }
         active_row = week_rows.get(active_iso) or {}
-        if active_row.get("not_applicable") or (not active_row and concept.get("not_applicable")):
+        if (
+            active_row.get("input_type") == "text"
+            or active_row.get("not_applicable")
+            or (not active_row and concept.get("not_applicable"))
+        ):
             continue
         latest_value = str(active_row.get("value_label") or "").strip() or None
         current_score = _safe_int(concept.get("score"))

@@ -58,6 +58,7 @@ def _concept_candidate(
     *,
     anchor: date,
 ) -> dict[str, Any]:
+    is_text = concept_row.get("input_type") == "text"
     week_by_date = {
         str((day or {}).get("date") or "").strip(): day
         for day in (concept_row.get("week") or [])
@@ -67,16 +68,24 @@ def _concept_candidate(
     yesterday_iso = (anchor - timedelta(days=1)).isoformat()
     today_row = week_by_date.get(today_iso) or {}
     yesterday_row = week_by_date.get(yesterday_iso) or {}
+    is_text = is_text or today_row.get("input_type") == "text"
     not_applicable = bool(today_row.get("not_applicable") or (not today_row and concept_row.get("not_applicable")))
     recent_rows = [today_row, yesterday_row]
     recent_scores = [
         _safe_int((day or {}).get("score"))
         for day in week_by_date.values()
-        if not day.get("not_applicable") and _safe_int((day or {}).get("score")) is not None
+        if not is_text
+        and day.get("input_type") != "text"
+        and not day.get("not_applicable")
+        and _safe_int((day or {}).get("score")) is not None
     ]
-    recent_misses = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is False)
-    recent_missing = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is None)
-    current_score = None if not_applicable else _safe_int(concept_row.get("score"))
+    scored_recent_rows = [
+        row for row in recent_rows
+        if not is_text and row.get("input_type") != "text" and not row.get("not_applicable")
+    ]
+    recent_misses = sum(1 for row in scored_recent_rows if row.get("target_met") is False)
+    recent_missing = sum(1 for row in scored_recent_rows if row.get("target_met") is None)
+    current_score = None if not_applicable or is_text else _safe_int(concept_row.get("score"))
     recent_average = (
         int(round(sum(recent_scores) / max(1, len(recent_scores))))
         if recent_scores
@@ -93,7 +102,7 @@ def _concept_candidate(
         "recent_misses": recent_misses,
         "recent_missing": recent_missing,
         "not_applicable": not_applicable,
-        "has_signal": not not_applicable and bool(recent_misses or current_score is not None or recent_average is not None),
+        "has_signal": not not_applicable and not is_text and bool(recent_misses or current_score is not None or recent_average is not None),
     }
 
 
