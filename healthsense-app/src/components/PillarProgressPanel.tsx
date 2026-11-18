@@ -19,6 +19,7 @@ import {
   sortProgressPillars,
 } from "@/lib/pillarProgress";
 import { getPillarPalette } from "@/lib/pillars";
+import PillarIcon from "@/components/PillarIcon";
 
 type PillarProgressPanelProps = {
   userId: string;
@@ -28,16 +29,16 @@ type PillarProgressPanelProps = {
 
 type Selection = { pillar: PillarProgressPillar; concept: PillarProgressConcept };
 
-function ProgressCircle({ score, status, compact = false, dense = false }: { score: number | null; status: PillarProgressStatus; compact?: boolean; dense?: boolean }) {
+function ProgressCircle({ score, status, compact = false }: { score: number | null; status: PillarProgressStatus; compact?: boolean }) {
   return (
     <span
       className={compact
-        ? `flex aspect-square shrink-0 items-center justify-center rounded-full border-2 bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)] ${dense ? "text-[10px]" : "text-[13px]"}`
+        ? "flex aspect-square w-8 shrink-0 items-center justify-center rounded-full border-2 bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)]"
         : "flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-[4px] bg-[var(--surface)] text-xl font-semibold tabular-nums text-[var(--text-primary)]"}
-      style={{ borderColor: progressStatusColor(status, score), ...(compact ? { width: dense ? "min(26px, 100%)" : "min(32px, 100%)" } : {}) }}
+      style={{ borderColor: progressStatusColor(status, score), ...(compact ? { width: "min(100%, clamp(24px, calc(100cqh - 20px), 84px))", containerType: "inline-size" } : {}) }}
       aria-hidden="true"
     >
-      {progressScoreLabel(score)}
+      <span className={compact ? "text-[13px] leading-none" : "leading-none"} style={compact ? { fontSize: "clamp(9px, 38cqw, 26px)" } : undefined}>{progressScoreLabel(score)}</span>
     </span>
   );
 }
@@ -195,7 +196,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
 
   return (
     <section className={`flex h-full min-h-0 flex-col ${detailOpen ? "pb-28 pt-4 sm:pb-32 sm:pt-6" : "pb-[calc(6rem+env(safe-area-inset-bottom))] pt-1 sm:pt-2"}`} aria-label="Pillar progress">
-      <div className={`shrink-0 ${detailOpen ? "px-4 pb-3 sm:px-5" : "px-3 pb-1 sm:px-5"}`}>
+      <div className={`shrink-0 ${detailOpen ? "px-4 pb-3 sm:px-5" : "px-2 pb-1 sm:px-4"}`}>
         <div className="flex min-h-11 items-center justify-between gap-3">
           <button
             type="button"
@@ -214,7 +215,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
         </div>
       </div>
 
-      <div className={`coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain ${detailOpen ? "px-4 pb-8 sm:px-5" : "px-3 pb-1 sm:px-5"}`}>
+      <div className={`coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain ${detailOpen ? "px-4 pb-8 sm:px-5" : "px-2 pb-1 sm:px-4"}`}>
         {selection ? (
           <div className="space-y-5">
             <div className="rounded-[28px] bg-[var(--surface-muted)] p-6">
@@ -300,8 +301,8 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
             {progress?.rag_explanation ? <p className="px-1 text-xs leading-6 text-[var(--text-secondary)]">{progress.rag_explanation}</p> : null}
           </div>
         ) : (
-          <div className="space-y-2">
-            {progress ? <p className="pb-1 text-[11px] leading-5 text-[var(--text-secondary)]">{progressWeekLabel(progress.week.start, progress.week.through)} · Week to date · Tap circles for guidance</p> : null}
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            {progress ? <p className="shrink-0 text-[11px] leading-5 text-[var(--text-secondary)]">{progressWeekLabel(progress.week.start, progress.week.through)} · Week to date · Tap circles for guidance</p> : null}
             {loading ? <p role="status" className="text-sm text-[var(--text-secondary)]">Loading your progress…</p> : null}
             {error ? (
               <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
@@ -310,7 +311,13 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
               </div>
             ) : null}
             {progress ? (
-              <>
+              <div
+                className="grid flex-1 gap-2"
+                style={{
+                  gridTemplateRows: `repeat(${Math.max(1, progress.pillars.length)}, minmax(58px, 1fr))`,
+                  minHeight: Math.max(0, progress.pillars.length * 58 + (progress.pillars.length - 1) * 8),
+                }}
+              >
                 {sortProgressPillars(progress.pillars).map((pillar) => {
                   const palette = getPillarPalette(pillar.pillar_key);
                   const dense = pillar.concepts.length > 4;
@@ -318,8 +325,8 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                     <article
                       key={pillar.pillar_key}
                       aria-label={`${pillar.label} progress`}
-                      className="flex min-h-[58px] items-center gap-2 rounded-[18px] border px-2 py-1 text-[#24201c] sm:min-h-[64px] sm:px-3"
-                      style={{ backgroundColor: palette.bg, borderColor: palette.border }}
+                      className="flex min-h-[58px] items-center gap-2 rounded-[18px] border px-2 py-1 text-[#24201c] sm:px-3"
+                      style={{ backgroundColor: palette.bg, borderColor: palette.border, containerType: "size" }}
                     >
                       <button
                         type="button"
@@ -329,18 +336,22 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                           else conceptButtonRefs.current.delete(key);
                         }}
                         onClick={() => { lastConceptKeyRef.current = `pillar:${pillar.pillar_key}`; openPillarDetail(pillar); }}
-                        className="flex min-h-11 w-[80px] shrink-0 flex-col items-start justify-center rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-[96px]"
+                        className="flex h-full min-h-11 w-[84px] shrink-0 flex-col items-start justify-center rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-2"
+                        style={{ width: "clamp(84px, 26cqw, 132px)" }}
                         aria-label={`${pillar.label}: ${pillar.score == null ? "not scored" : `${progressScoreLabel(pillar.score)} out of 100`}, ${progressStatusLabel(pillar.status, pillar.score)}. View score breakdown`}
                         title={`${pillar.label} score breakdown`}
                       >
-                        <h3 className="text-[12px] font-semibold leading-4 sm:text-[14px]">{pillar.label}</h3>
-                        <span className="mt-0.5 flex items-baseline gap-1 font-semibold tabular-nums">
-                          <span className="text-[19px] leading-5">{progressScoreLabel(pillar.score)}</span>
-                          <span className="text-[9px] font-normal opacity-65">/100</span>
+                        <h3 className="text-[12px] font-semibold leading-tight" style={{ fontSize: "clamp(12px, 17cqh, 17px)" }}>{pillar.label}</h3>
+                        <span className="mt-1 flex items-center gap-1.5 font-semibold tabular-nums">
+                          <span className="h-5 w-5 shrink-0" style={{ width: "clamp(18px, 29cqh, 34px)", height: "clamp(18px, 29cqh, 34px)", color: palette.accent }}><PillarIcon pillarKey={pillar.pillar_key} className="h-full w-full" /></span>
+                          <span className="flex items-baseline gap-1">
+                            <span className="text-[19px] leading-none" style={{ fontSize: "clamp(19px, 30cqh, 32px)" }}>{progressScoreLabel(pillar.score)}</span>
+                            <span className="text-[9px] font-normal opacity-65">/100</span>
+                          </span>
                         </span>
                       </button>
                       <div
-                        className="grid min-w-0 flex-1 items-start gap-0.5"
+                        className="grid h-full min-w-0 flex-1 items-center gap-0.5"
                         style={{ gridTemplateColumns: `repeat(${Math.max(1, pillar.concepts.length)}, minmax(0, 1fr))` }}
                       >
                         {pillar.concepts.map((concept) => (
@@ -353,12 +364,13 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                               else conceptButtonRefs.current.delete(key);
                             }}
                             onClick={() => { lastConceptKeyRef.current = `${pillar.pillar_key}:${concept.concept_key}`; void loadGuidance({ pillar, concept }); }}
-                            className="flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg text-center transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1"
+                            className="flex h-full min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg text-center transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1"
+                            style={{ containerType: "inline-size" }}
                             aria-label={conceptProgressAriaLabel(concept)}
                             title={`${concept.label}: ${progressStatusLabel(concept.status, concept.score)}`}
                           >
-                            <ProgressCircle score={concept.score} status={concept.status} compact dense={dense} />
-                            <span className={`max-w-full whitespace-nowrap font-medium leading-3 ${dense ? "text-[8px]" : "text-[9px] sm:text-[10px]"}`}>{conceptProgressShortLabel(concept, dense)}</span>
+                            <ProgressCircle score={concept.score} status={concept.status} compact />
+                            <span className="max-w-full whitespace-nowrap text-[9px] font-medium leading-tight" style={{ fontSize: dense ? "clamp(8px, 18cqw, 11px)" : "clamp(9px, 18cqw, 14px)" }}>{conceptProgressShortLabel(concept, dense)}</span>
                           </button>
                         ))}
                       </div>
@@ -366,7 +378,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                   );
                 })}
                 {!progress.pillars.length ? <p className="rounded-3xl bg-[var(--surface-muted)] p-5 text-base leading-7 text-[var(--text-secondary)]">Choose your pillars in Preferences to start building your progress.</p> : null}
-              </>
+              </div>
             ) : null}
           </div>
         )}

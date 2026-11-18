@@ -81,7 +81,7 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
   return (
     <PageShell
       defaultTheme={themePreference}
-      className="h-[100dvh] overflow-hidden px-0 py-0 pt-[env(safe-area-inset-top)]"
+      className="h-[100dvh] overflow-hidden px-0! pb-0! sm:px-0! sm:pb-0! pt-[env(safe-area-inset-top)]"
       contentClassName="flex h-full min-w-0 flex-col overflow-hidden"
     >
       <TextScale defaultScale={textScale} />

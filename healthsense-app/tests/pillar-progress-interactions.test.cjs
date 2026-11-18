@@ -11,6 +11,7 @@ const compile = filename => ts.transpileModule(fs.readFileSync(filename, 'utf8')
 const componentCode = compile('src/components/PillarProgressPanel.tsx');
 const helperCode = compile('src/lib/pillarProgress.ts');
 const paletteCode = compile('src/lib/pillars.ts');
+const iconCode = compile('src/components/PillarIcon.tsx');
 
 function sample() {
   const concept = (key, label, score, extra = {}) => ({
@@ -70,11 +71,13 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
   vm.runInNewContext(helperCode, { exports: helperExports, fetch: fetcher, Date, Error });
   const paletteExports = {};
   vm.runInNewContext(paletteCode, { exports: paletteExports });
+  const iconExports = {};
+  vm.runInNewContext(iconCode, { exports: iconExports, require });
   const exports = {};
   vm.runInNewContext(componentCode, {
     exports, AbortController, URLSearchParams, fetch: fetcher, Error,
     requestAnimationFrame: fn => frames.push(fn),
-    require(name) { return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : require(name); },
+    require(name) { return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : name === '@/components/PillarIcon' ? iconExports : require(name); },
   });
   const text = node => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'object' ? text(node.props?.children) : String(node);
   const all = (node, predicate) => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(child => all(child, predicate)) : [...(predicate(node) ? [node] : []), ...all(node.props?.children, predicate)];
@@ -108,7 +111,9 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
       label: node.props['aria-label'], style: node.props.style,
       grids: all(node, child => child.props?.style?.gridTemplateColumns).map(child => child.props.style.gridTemplateColumns),
       buttons: all(node, child => child.type === 'button').map(child => child.props['aria-label']),
+      icons: all(node, child => child.type === 'svg').map(child => child.props['aria-hidden']),
     })),
+    rowGrid: () => all(tree, node => node.props?.style?.gridTemplateRows)[0]?.props.style,
     buttons: () => all(tree, node => node.type === 'button').map(node => node.props['aria-label'] || text(node).trim()),
     async click(label) {
       const button = all(tree, node => node.type === 'button').find(node => (node.props['aria-label'] || text(node).trim()).startsWith(label));
@@ -195,10 +200,13 @@ test('compact overview keeps every optional and historical concept beside its pi
     concepts: concepts.map(concept_key => ({ ...template.concepts[0], concept_key, label: concept_key })) }));
   const h = harness(undefined, data); t.after(() => h.unmount()); await h.flush();
   assert.equal(h.rows().length, 6);
+  assert.equal(h.rowGrid().gridTemplateRows, 'repeat(6, minmax(58px, 1fr))');
   for (const row of h.rows()) {
     const key = row.label.split(' ')[0];
     assert.equal(row.buttons.length, definitions[key].length + 1);
     assert.equal(row.grids[0], `repeat(${definitions[key].length}, minmax(0, 1fr))`);
+    assert.equal(row.icons.length, 1);
+    assert.equal(String(row.icons[0]), 'true');
   }
   assert.equal(h.rows().find(row => row.label === 'reflection progress').style.backgroundColor, '#f2efff');
   assert.equal(h.rows().find(row => row.label === 'nutrition progress').style.backgroundColor, '#fff4e6');
