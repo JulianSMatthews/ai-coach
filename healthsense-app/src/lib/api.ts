@@ -405,6 +405,74 @@ export type PillarTrackerDetailResponse = {
   editable_dates?: PillarTrackerEditableDate[];
 };
 
+export type PillarProgressStatus = "green" | "amber" | "red" | "grey";
+
+export type PillarProgressDay = {
+  date: string;
+  label: string;
+  value_label: string | null;
+  score: number | null;
+  not_applicable: boolean;
+  status: PillarProgressStatus;
+};
+
+export type PillarProgressConcept = {
+  concept_key: string;
+  label: string;
+  helper: string;
+  is_historical: boolean;
+  score: number | null;
+  status: PillarProgressStatus;
+  answered_days_count: number;
+  scored_days_count: number;
+  not_applicable_days_count: number;
+  elapsed_days: number;
+  target_label: string | null;
+  target_period: string | null;
+  target_unit: string | null;
+  target_value: number | null;
+  contribution_points: number | null;
+  weight_percent: number | null;
+  latest_value_label: string | null;
+  days: PillarProgressDay[];
+};
+
+export type PillarProgressPillar = {
+  pillar_key: string;
+  label: string;
+  score: number | null;
+  status: PillarProgressStatus;
+  completed_days_count: number;
+  scored_days_count: number;
+  elapsed_days: number;
+  score_explanation: string;
+  rounding_adjustment: number | null;
+  concepts: PillarProgressConcept[];
+};
+
+export type PillarProgressResponse = {
+  user_id: number;
+  week: { start: string; end: string; through: string; elapsed_days: number };
+  overall_score: number | null;
+  score_explanation: string;
+  rag_explanation?: string;
+  pillars: PillarProgressPillar[];
+};
+
+export type PillarProgressGuidance = {
+  pillar_key: string;
+  concept_key: string;
+  concept_label: string;
+  week_start: string;
+  through: string;
+  generated_at: string;
+  source: "ai";
+  cached: boolean;
+  insight: string;
+  action: string;
+  reflection: string;
+};
+
 export type WeeklyObjectiveOption = {
   value?: number | string | null;
   label?: string;

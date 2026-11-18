@@ -15,8 +15,8 @@ type AppNavProps = {
   userFirstName?: string | null;
 };
 
-function ScoreBadge({ score }: { score: number }) {
-  const pct = Math.max(0, Math.min(1, score / 100));
+function ScoreBadge({ score }: { score: number | null }) {
+  const pct = score == null ? 0 : Math.max(0, Math.min(1, score / 100));
   const size = 34;
   const stroke = 4.5;
   const radius = (size - stroke) / 2;
@@ -29,7 +29,7 @@ function ScoreBadge({ score }: { score: number }) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="rgba(197,72,23,0.18)"
+          stroke={score == null ? "rgba(133,128,120,0.4)" : "rgba(197,72,23,0.18)"}
           strokeWidth={stroke}
           fill="none"
         />
@@ -45,7 +45,7 @@ function ScoreBadge({ score }: { score: number }) {
           strokeLinecap="round"
           />
         </svg>
-      <span className="absolute text-[10px] font-semibold leading-none text-[var(--chrome-text)]">{score}</span>
+      <span className="absolute text-[10px] font-semibold leading-none text-[var(--chrome-text)]">{score ?? "—"}</span>
     </span>
   );
 }
@@ -151,7 +151,7 @@ export default function AppNav({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {resolvedOverallScore !== null ? (
+            {resolvedUserId || resolvedOverallScore !== null ? (
               <button
                 type="button"
                 onClick={() => {
@@ -160,7 +160,7 @@ export default function AppNav({
                   }
                 }}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--chrome-border)] bg-[var(--chrome)]"
-                aria-label="Open overall score"
+                aria-label="Open pillar progress"
               >
                 <ScoreBadge score={resolvedOverallScore} />
               </button>

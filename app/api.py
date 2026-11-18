@@ -230,6 +230,7 @@ from .daily_habits import (
 )
 from .coach_home_refresh import queue_coach_home_tracker_refresh
 from .coach_insight import get_or_generate_cached_coach_insight
+from .pillar_progress import get_pillar_progress, get_concept_coaching, CoachingUnavailableError
 from .education_plan import (
     ensure_education_plan_schema,
     get_today_education_plan,
@@ -8106,6 +8107,37 @@ def api_user_pillar_checkin_message(
         queue_coach_home_tracker_refresh(user_id, trigger="pillar_tracker_update", pillar_key="recovery",
                                         score_date=result.get("saved_date"), background_tasks=background_tasks)
     return result
+
+
+@api_v1.get("/users/{user_id}/pillar-progress")
+def api_user_pillar_progress(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    return get_pillar_progress(user_id)
+
+
+@api_v1.post("/users/{user_id}/pillar-progress/coaching")
+def api_user_pillar_progress_coaching(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(request, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    payload = body or {}
+    try:
+        return get_concept_coaching(user_id, payload.get("pillar_key"), payload.get("concept_key"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except CoachingUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @api_v1.get("/users/{user_id}/pillar-tracker")

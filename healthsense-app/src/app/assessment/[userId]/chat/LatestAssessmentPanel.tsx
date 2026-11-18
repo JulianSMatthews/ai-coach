@@ -29,6 +29,7 @@ import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
 import PillarInsightHistory from "@/components/PillarInsightHistory";
+import PillarProgressPanel from "@/components/PillarProgressPanel";
 
 type LatestAssessmentPanelProps = {
   userId: string;
@@ -92,8 +93,8 @@ const SETUP_GUIDE_CARDS = [
   },
   {
     icon: "targets",
-    title: "Weekly targets",
-    body: "Targets set the weekly context for each question. They can stay simple at first and be adjusted as your routine becomes clearer.",
+    title: "Pillar progress",
+    body: "See your week build with each check-in. Tap a question’s score for guidance, or edit your goals as your routine becomes clearer.",
   },
   {
     icon: "scoring",
@@ -1519,6 +1520,8 @@ export default function LatestAssessmentPanel({
   const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
   const [assessmentReviewSyncStarted, setAssessmentReviewSyncStarted] = useState(initialAssessmentReviewed);
   const [objectivesModalOpen, setObjectivesModalOpen] = useState(false);
+  const [editingObjectives, setEditingObjectives] = useState(false);
+  const [progressOpenVersion, setProgressOpenVersion] = useState(0);
   const [streakSectionOpen, setStreakSectionOpen] = useState(false);
   const [streakCalendarMonth, setStreakCalendarMonth] = useState(() => {
     const baseDate = parseIsoLocalDay(initialSummary.today) || new Date();
@@ -2777,7 +2780,7 @@ export default function LatestAssessmentPanel({
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
-        throw new Error(normalizeError(text, "Failed to load weekly objectives."));
+        throw new Error(normalizeError(text, "Failed to load weekly goals."));
       }
       const payload = (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
       applyWeeklyObjectivesPayload(payload);
@@ -2861,19 +2864,31 @@ export default function LatestAssessmentPanel({
     [userId],
   );
 
-  const openObjectivesModal = useCallback(async () => {
+  const openObjectivesModal = useCallback(() => {
     setStreakSectionOpen(false);
+    setActiveDockKey("checkin");
+    setSummaryPanelVisible(true);
     setSelectedPillarKey(null);
     setBiometricsModalOpen(false);
     setObjectivesModalOpen(true);
+    setEditingObjectives(false);
+    setProgressOpenVersion((version) => version + 1);
     setSelectedObjectivesSection(null);
     setBiometricsActionError(null);
-    logUserAppEvent("weekly_objectives_open", { source: "weekly_targets_card" });
+    window.dispatchEvent(new CustomEvent("healthsense-home-surface", { detail: { surface: "blank", source: "summary" } }));
+    logUserAppEvent("pillar_progress_open", { source: "overall_score" });
+  }, [logUserAppEvent]);
+
+  const editWeeklyGoals = useCallback(async () => {
+    setEditingObjectives(true);
+    setSelectedObjectivesSection(null);
+    logUserAppEvent("weekly_objectives_open", { source: "pillar_progress" });
     await loadWeeklyObjectives();
   }, [loadWeeklyObjectives, logUserAppEvent]);
 
   const closeObjectivesModal = useCallback(() => {
     setObjectivesModalOpen(false);
+    setEditingObjectives(false);
     setSelectedObjectivesSection(null);
     setWeeklyObjectivesError(null);
     setWeeklyObjectivesSaving(false);
@@ -2916,7 +2931,7 @@ export default function LatestAssessmentPanel({
         });
         const text = await res.text().catch(() => "");
         if (!res.ok) {
-          throw new Error(normalizeError(text, "Failed to save weekly objectives."));
+          throw new Error(normalizeError(text, "Failed to save weekly goals."));
         }
         return (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
       };
@@ -3435,7 +3450,7 @@ export default function LatestAssessmentPanel({
                   Set up your CoachSense
                 </p>
                 <p className="mt-6 pr-4 text-[1.55rem] font-medium leading-[1.18] text-[var(--text-secondary)]">
-                  Choose the pillars you want to work with first. They shape your check-in cards, weekly objectives, and learning units, and you can change them later in Preferences.
+                  Choose the pillars you want to work with first. They shape your check-in cards, pillar progress, and learning units, and you can change them later in Preferences.
                 </p>
               </article>
 
@@ -4489,7 +4504,16 @@ export default function LatestAssessmentPanel({
         </div>
       ) : null}
 
-      {objectivesModalOpen ? (
+      {objectivesModalOpen && !editingObjectives ? (
+        <PillarProgressPanel
+          key={progressOpenVersion}
+          userId={userId}
+          onBack={closeObjectivesModal}
+          onEditGoals={() => void editWeeklyGoals()}
+        />
+      ) : null}
+
+      {objectivesModalOpen && editingObjectives ? (
         <section className="flex h-full min-h-0 flex-col pb-28 pt-4 sm:pb-32 sm:pt-6">
           <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
             <div className="shrink-0 px-4 pb-3 sm:px-5">
@@ -4500,11 +4524,11 @@ export default function LatestAssessmentPanel({
                     setSelectedObjectivesSection(null);
                     setWeeklyObjectivesError(null);
                   } else {
-                    closeObjectivesModal();
+                    setEditingObjectives(false);
                   }
                 }}
                 className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-[0_10px_26px_-22px_rgba(30,27,22,0.45)]"
-                aria-label={selectedObjectivesSection ? "Back to objectives" : "Close objectives"}
+                aria-label={selectedObjectivesSection ? "Back to goals" : "Back to pillar progress"}
               >
                 <span className="text-3xl leading-none">‹</span>
               </button>
@@ -4516,8 +4540,8 @@ export default function LatestAssessmentPanel({
                   {selectedObjectivesSection
                     ? selectedObjectivesSection === "wellbeing"
                       ? "General options"
-                      : selectedObjectivesPillar?.label || "Weekly objectives"
-                    : "Weekly objectives"}
+                      : selectedObjectivesPillar?.label || "Weekly goals"
+                    : "Weekly goals"}
                 </h2>
                 <p className="text-base leading-snug text-[var(--text-secondary)]">
                   {selectedObjectivesSection
@@ -4528,7 +4552,7 @@ export default function LatestAssessmentPanel({
                 </p>
               </div>
 
-              {weeklyObjectivesLoading ? <p className="text-sm text-[var(--text-secondary)]">Loading weekly objectives…</p> : null}
+              {weeklyObjectivesLoading ? <p className="text-sm text-[var(--text-secondary)]">Loading weekly goals…</p> : null}
               {weeklyObjectivesError ? <p className="text-sm text-[#8a3e1a]">{weeklyObjectivesError}</p> : null}
 
               {!weeklyObjectivesLoading && !selectedObjectivesSection ? (
