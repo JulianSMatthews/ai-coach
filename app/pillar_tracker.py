@@ -256,7 +256,6 @@ _SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE = (
 )
 
 _BINARY_OPTIONS = (PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes"))
-_TEXT_ANSWER_MAX_LENGTH = 2000
 _HOW_WELL_OPTIONS = tuple(
     PillarTrackerOption(value, label)
     for value, label in ((0, "Not well"), (1 / 3, "Somewhat well"), (2 / 3, "Well"), (1, "Very well"))
@@ -393,11 +392,11 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="contribution_connection",
             label="Contribution",
-            helper="How did you positively contribute to someone else's day?",
-            options=(),
+            helper="Did you positively contribute to someone else's day today?",
+            options=_BINARY_OPTIONS,
             target_value=1,
             target_direction="gte",
-            score_mode="text",
+            score_mode="binary",
         ),
     ),
     "resilience": (
@@ -540,17 +539,6 @@ _LEGACY_PURPOSE_TRACKER_CONFIG = (
     replace(
         PILLAR_TRACKER_CONFIG["purpose"][2],
         helper="Did you positively contribute to or connect with someone today?",
-        options=_BINARY_OPTIONS,
-        score_mode="binary",
-    ),
-)
-_PREVIOUS_PURPOSE_TRACKER_CONFIG = (
-    *PILLAR_TRACKER_CONFIG["purpose"][:2],
-    replace(
-        PILLAR_TRACKER_CONFIG["purpose"][2],
-        helper="Did you positively contribute to someone else's day today?",
-        options=_BINARY_OPTIONS,
-        score_mode="binary",
     ),
 )
 _LEGACY_TRACKER_CONFIGS = {
@@ -559,7 +547,6 @@ _LEGACY_TRACKER_CONFIGS = {
     "purpose": _LEGACY_PURPOSE_TRACKER_CONFIG,
 }
 _QUESTION_SET_VERSION = 2
-_QUESTION_SET_VERSIONS = {"purpose": 3}
 
 
 def _versioned_pillar_for_concepts(required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> str | None:
@@ -584,22 +571,17 @@ def _recorded_day_concepts(
     }
     for concept_key in sorted(shared_keys):
         meta = getattr(day_rows.get(concept_key), "meta", None)
-        if not isinstance(meta, dict):
-            continue
-        version = str(meta.get("question_set_version"))
-        if version == str(_QUESTION_SET_VERSIONS.get(pillar_key, _QUESTION_SET_VERSION)):
+        if isinstance(meta, dict) and str(meta.get("question_set_version")) == str(_QUESTION_SET_VERSION):
             return PILLAR_TRACKER_CONFIG[pillar_key]
-        if pillar_key == "purpose" and version == "2":
-            return _PREVIOUS_PURPOSE_TRACKER_CONFIG
+        if pillar_key == "purpose" and isinstance(meta, dict) and str(meta.get("question_set_version")) == "3":
+            # Previously saved written answers used this same three-question shape.
+            return PILLAR_TRACKER_CONFIG[pillar_key]
     return _LEGACY_TRACKER_CONFIGS[pillar_key]
 
 
-def _recorded_text_answer(row: DailyPillarTrackerEntry | None) -> str | None:
+def _is_historical_written_contribution(row: DailyPillarTrackerEntry | None) -> bool:
     meta = getattr(row, "meta", None)
-    answer = meta.get("answer_text") if isinstance(meta, dict) else None
-    if isinstance(answer, str):
-        return answer.strip() or None
-    return None
+    return isinstance(meta, dict) and str(meta.get("question_set_version")) == "3" and "answer_text" in meta
 
 
 def _week_evaluation_concepts(
@@ -1106,7 +1088,7 @@ def _is_not_applicable(defn: PillarTrackerConceptDefinition, value: float | None
 
 
 def _score_value(defn: PillarTrackerConceptDefinition, value: float) -> int | None:
-    if defn.score_mode == "text" or _is_not_applicable(defn, value):
+    if _is_not_applicable(defn, value):
         return None
     if defn.score_mode == "binary":
         return 100 if value >= 1 else 0
@@ -1223,7 +1205,6 @@ def _concept_okr_actual_achieved(
         for day in week_days
         if effective_start <= day <= anchor
         and not (evaluations_for_concept.get(day) or {}).get("not_applicable")
-        and (evaluations_for_concept.get(day) or {}).get("input_type") != "text"
     ]
     logged_days = len([value for value in logged_values if value is not None])
     return _okr_actual_achieved_from_logged_values(
@@ -1392,11 +1373,11 @@ def _sync_pillar_tracker_actuals_to_okrs(
         concept_def = concept_defs.get(concept_key)
         if resolved_target is None or concept_def is None:
             continue
-        if concept_def.score_mode == "text":
-            continue
         effective_start = _effective_okr_window_start(resolved_target, week_days, anchor_date)
         logged_values: list[float | None] = []
         for row in rows_by_concept.get(concept_key, []):
+            if _is_historical_written_contribution(row):
+                continue
             row_date = getattr(row, "score_date", None)
             if not isinstance(row_date, date):
                 continue
@@ -1450,7 +1431,7 @@ def _score_against_daily_target(
     target_value: float | None,
     target_direction: str,
 ) -> int | None:
-    if defn.score_mode == "text" or _is_not_applicable(defn, value):
+    if _is_not_applicable(defn, value):
         return None
     target = _safe_float(target_value)
     if target is None or target <= 0:
@@ -1726,7 +1707,7 @@ def _target_met_for_value(
     value: float,
     resolved_target: PillarTrackerResolvedTarget,
 ) -> bool | None:
-    if defn.score_mode == "text" or _is_not_applicable(defn, value):
+    if _is_not_applicable(defn, value):
         return None
     if resolved_target.target_period == "day" and resolved_target.target_value is not None:
         return _value_meets_threshold(resolved_target.target_direction, resolved_target.target_value, value)
@@ -1738,7 +1719,7 @@ def _score_for_value(
     value: float,
     resolved_target: PillarTrackerResolvedTarget,
 ) -> int | None:
-    if defn.score_mode == "text" or _is_not_applicable(defn, value):
+    if _is_not_applicable(defn, value):
         return None
     if resolved_target.target_period == "day" and resolved_target.target_value is not None:
         return _score_against_daily_target(
@@ -1755,7 +1736,7 @@ def _daily_display_status_for_value(
     value: float,
     resolved_target: PillarTrackerResolvedTarget,
 ) -> str | None:
-    if defn.score_mode == "text" or _is_not_applicable(defn, value):
+    if _is_not_applicable(defn, value):
         return None
     if defn.score_mode == "binary":
         return "success" if value >= 1 else "danger"
@@ -1801,21 +1782,20 @@ def _build_concept_week_evaluations(
             day_concepts = _recorded_day_concepts(day_rows, required_concepts)
             day_definition = next((item for item in day_concepts if item.concept_key == concept_key), None)
             row = day_rows.get(concept_key) if day_definition is not None else None
+            historical_written = _is_historical_written_contribution(row)
+            if historical_written:
+                row = None
             active_definition = day_definition or concept_def
-            is_text = active_definition.score_mode == "text"
-            value_text = _recorded_text_answer(row) if is_text else None
             value = None
             value_label = None
             target_reached = None
             daily_status = None
             daily_positive = None
-            if row is not None and not is_text and getattr(row, "value_num", None) is not None:
+            if row is not None and getattr(row, "value_num", None) is not None:
                 value = _normalize_option_value(active_definition, getattr(row, "value_num", 0))
-            not_applicable = _is_not_applicable(active_definition, value)
+            not_applicable = historical_written or _is_not_applicable(active_definition, value)
             if value is not None:
                 value_label = _to_value_label(active_definition, value) or str(getattr(row, "value_label", "") or "").strip() or None
-            if value_text:
-                value_label = "Recorded"
             if value is not None and not not_applicable:
                 target_reached = _value_meets_threshold(
                     resolved_target.success_direction,
@@ -1830,7 +1810,7 @@ def _build_concept_week_evaluations(
             # Subjective Likert inputs keep their displayed score on the raw 0-100
             # mapping instead of being converted into weekly progress when an OKR
             # target exists.
-            if is_text or not_applicable:
+            if not_applicable:
                 score = None
                 target_met = None
             elif (
@@ -1860,8 +1840,6 @@ def _build_concept_week_evaluations(
             concept_rows[day] = {
                 "row": row,
                 "value": value,
-                "input_type": "text" if is_text else "choice",
-                "value_text": value_text,
                 "value_label": value_label,
                 "not_applicable": not_applicable,
                 "score": score,
@@ -1976,10 +1954,7 @@ def _resolve_tracker_detail_context(
 def _day_complete(day_rows: dict[str, DailyPillarTrackerEntry], required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> bool:
     day_concepts = _recorded_day_concepts(day_rows, required_concepts)
     required_keys = {item.concept_key for item in day_concepts}
-    return required_keys.issubset(set(day_rows.keys())) and all(
-        item.score_mode != "text" or _recorded_text_answer(day_rows.get(item.concept_key)) is not None
-        for item in day_concepts
-    )
+    return required_keys.issubset(set(day_rows.keys()))
 
 
 def _day_score(
@@ -2798,8 +2773,6 @@ def get_pillar_tracker_detail(
                 "concept_key": concept_def.concept_key,
                 "label": concept_def.label,
                 "helper": _contextualize_helper_text(concept_def.helper, key, resolved_anchor, current_day),
-                "input_type": "text" if concept_def.score_mode == "text" else "choice",
-                "value_text": today_eval.get("value_text"),
                 "not_applicable": bool(today_eval.get("not_applicable")),
                 "target_label": resolved_target.target_label,
                 "target_source": resolved_target.source,
@@ -2812,7 +2785,14 @@ def get_pillar_tracker_detail(
                     if current_row and current_row.value_num is not None
                     else None
                 ),
-                "value_label": today_eval.get("value_label"),
+                "value_label": (
+                    _to_value_label(
+                        concept_def,
+                        _normalize_option_value(concept_def, current_row.value_num),
+                    )
+                    if current_row and current_row.value_num is not None
+                    else None
+                ),
                 "score": int(today_eval.get("score")) if today_eval.get("score") is not None else None,
                 "target_met": bool(today_eval.get("target_met")) if today_eval.get("target_met") is not None else None,
                 "target_reached": (
@@ -2837,8 +2817,6 @@ def get_pillar_tracker_detail(
                         "is_today": day == current_day,
                         "is_active": day == resolved_anchor,
                         "value_label": evaluations_for_concept.get(day, {}).get("value_label"),
-                        "input_type": evaluations_for_concept.get(day, {}).get("input_type", "choice"),
-                        "value_text": evaluations_for_concept.get(day, {}).get("value_text"),
                         "not_applicable": bool(evaluations_for_concept.get(day, {}).get("not_applicable")),
                         "score": (
                             int(evaluations_for_concept.get(day, {}).get("score"))
@@ -2948,7 +2926,7 @@ def save_pillar_tracker_day(
         raise ValueError("This pillar can only be saved for today.")
     required_concepts = tracker_concepts_for_pillar(key, user_id=int(user_id))
     entries = entries or []
-    question_set_version = _QUESTION_SET_VERSIONS.get(key, _QUESTION_SET_VERSION)
+    question_set_version = _QUESTION_SET_VERSION
     legacy_concepts = _LEGACY_TRACKER_CONFIGS.get(key, ())
     if (
         legacy_concepts
@@ -2959,12 +2937,6 @@ def save_pillar_tracker_day(
         # A check-in opened before deployment can still submit its original set.
         required_concepts = legacy_concepts
         question_set_version = 1
-    elif key == "purpose" and len(entries) == len(_PREVIOUS_PURPOSE_TRACKER_CONFIG):
-        contribution = next((item for item in entries if
-                             str((item or {}).get("concept_key") or "").strip().lower() == "contribution_connection"), {})
-        if "text" not in contribution and contribution.get("value") is not None:
-            required_concepts = _PREVIOUS_PURPOSE_TRACKER_CONFIG
-            question_set_version = 2
     resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
     if len(entries) != len(required_concepts):
         raise ValueError("A complete pillar tracker requires all concept values for the day.")
@@ -2976,19 +2948,6 @@ def save_pillar_tracker_day(
             raise ValueError(f"Unknown concept for pillar {key}: {concept_key}")
         if concept_key in normalized_rows:
             raise ValueError(f"Duplicate concept value submitted: {concept_key}")
-        concept_def = config_by_key[concept_key]
-        if concept_def.score_mode == "text":
-            answer = (raw or {}).get("text")
-            if not isinstance(answer, str) or not answer.strip():
-                raise ValueError(f"A written response is required for {concept_def.label}.")
-            answer = answer.strip()
-            if len(answer) > _TEXT_ANSWER_MAX_LENGTH:
-                raise ValueError(f"{concept_def.label} must be {_TEXT_ANSWER_MAX_LENGTH} characters or fewer.")
-            normalized_rows[concept_key] = {
-                "value_num": None, "value_label": "Recorded", "score": None,
-                "target_met": None, "answer_text": answer,
-            }
-            continue
         value = _normalize_option_value(config_by_key[concept_key], (raw or {}).get("value"))
         if value is None:
             raise ValueError(f"Invalid value for {concept_key}")
@@ -3044,6 +3003,7 @@ def save_pillar_tracker_day(
             row.source = "self_report"
             resolved_target = resolved_targets.get(concept_key)
             row.meta = {
+                **(row.meta if isinstance(row.meta, dict) else {}),
                 "saved_at": datetime.utcnow().replace(microsecond=0).isoformat(),
                 "target_source": getattr(resolved_target, "source", None),
                 "target_value": getattr(resolved_target, "target_value", None),
@@ -3052,8 +3012,6 @@ def save_pillar_tracker_day(
             }
             if key in _LEGACY_TRACKER_CONFIGS:
                 row.meta["question_set_version"] = question_set_version
-            if "answer_text" in payload:
-                row.meta["answer_text"] = payload["answer_text"]
         _record_latest_tracker_focus(
             s,
             user_id=int(user_id),
