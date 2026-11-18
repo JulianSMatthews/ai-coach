@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type {
   PillarProgressConcept,
   PillarProgressGuidance,
@@ -30,12 +30,43 @@ type PillarProgressPanelProps = {
 
 type Selection = { pillar: PillarProgressPillar; concept: PillarProgressConcept };
 
+function GuidanceIcon({ kind }: { kind: "step" | "reflection" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-7 w-7"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {kind === "step" ? (
+        <>
+          <path d="M15.5 3C13.9 3 13 5 13 7.5c0 1.8.8 3 2.5 3s2.5-1.2 2.5-3C18 5 17.1 3 15.5 3Z" />
+          <path d="M14 13h3v1.5a1.5 1.5 0 0 1-3 0Z" />
+          <path d="M7.5 8C5.9 8 5 10 5 12.5c0 1.8.8 3 2.5 3s2.5-1.2 2.5-3C10 10 9.1 8 7.5 8Z" />
+          <path d="M6 18h3v1.5a1.5 1.5 0 0 1-3 0Z" />
+        </>
+      ) : (
+        <>
+          <ellipse cx="12" cy="9" rx="9" ry="6" />
+          <circle cx="6.5" cy="18" r="1.5" />
+          <circle cx="3.5" cy="21" r="0.75" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function ProgressCircle({ score, status, compact = false, context = false }: { score: number | null; status: PillarProgressStatus; compact?: boolean; context?: boolean }) {
   return (
     <span
-      className={compact
-        ? "flex aspect-square w-8 shrink-0 items-center justify-center rounded-full border-2 bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)]"
-        : `flex shrink-0 items-center justify-center rounded-full bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)] ${context ? "h-12 w-12 border-[3px] text-[17px]" : "h-16 w-16 border-[4px] text-xl"}`}
+      className={`${styles.scoreCircle} ${compact
+        ? "flex aspect-square w-8 shrink-0 items-center justify-center rounded-full border-2 font-semibold tabular-nums"
+        : `flex shrink-0 items-center justify-center rounded-full font-semibold tabular-nums ${context ? "h-12 w-12 border-[3px] text-[17px]" : "h-16 w-16 border-[4px] text-xl"}`}`}
       style={{ borderColor: progressStatusColor(status, score), ...(compact ? { width: "min(100%, clamp(24px, calc(100cqh - 20px), 84px))", containerType: "inline-size" } : {}) }}
       aria-hidden="true"
     >
@@ -208,7 +239,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
           >
             <span className="text-3xl leading-none" aria-hidden="true">‹</span>
           </button>
-          {!detailOpen ? <h2 className="min-w-0 flex-1 text-[22px] font-semibold leading-7 text-[var(--text-primary)]">Pillar progress</h2> : null}
+          {!detailOpen ? <h2 className="min-w-0 flex-1 text-[22px] font-semibold leading-7 tracking-[-0.02em] text-[var(--text-primary)]" style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}>Pillar progress</h2> : null}
           {!detailOpen ? (
             <button type="button" onClick={onEditGoals} className="min-h-11 shrink-0 px-1 text-[11px] font-semibold text-[var(--text-secondary)] underline underline-offset-4">
               Edit goals
@@ -220,7 +251,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
       <div className={`coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain ${detailOpen ? "px-4 pb-8 sm:px-5" : "px-2 pb-1 sm:px-4"}`}>
         {selection ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-[24px] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+            <div className={`${styles.pillarSurface} flex items-center gap-3 rounded-[24px] border px-4 py-3`}>
               <span className="h-7 w-7 shrink-0" style={{ color: getPillarPalette(selection.pillar.pillar_key).accent }}><PillarIcon pillarKey={selection.pillar.pillar_key} className="h-full w-full" /></span>
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">{selection.pillar.label}{selection.concept.is_historical ? " · Earlier question" : ""}</p>
@@ -254,11 +285,14 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
               {guidance ? (
                 <div className="space-y-4">
                   {[
-                    { title: "One small step", body: guidance.action, animation: styles.guidanceReveal },
-                    { title: "A moment to reflect", body: guidance.reflection, animation: `${styles.guidanceReveal} ${styles.reflectionReveal}` },
+                    { title: "One small step", icon: "step" as const, body: guidance.action, animation: styles.guidanceReveal },
+                    { title: "A moment to reflect", icon: "reflection" as const, body: guidance.reflection, animation: `${styles.guidanceReveal} ${styles.reflectionReveal}` },
                   ].map((item) => (
                     <div key={`${guidance.pillar_key}:${guidance.concept_key}:${item.title}`} className={`${item.animation} rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6`}>
-                      <h3 className="text-base font-semibold text-[var(--text-primary)]">{item.title}</h3>
+                      <h3 className="text-[var(--text-primary)]" title={item.title}>
+                        <span className="sr-only">{item.title}</span>
+                        <GuidanceIcon kind={item.icon} />
+                      </h3>
                       <p className="mt-2 whitespace-pre-line text-base leading-7 text-[var(--text-secondary)]">{item.body}</p>
                     </div>
                   ))}
@@ -280,7 +314,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
           </div>
         ) : pillarDetail ? (
           <div className="space-y-5">
-            <div className="rounded-[28px] p-6 text-[#24201c]" style={{ backgroundColor: getPillarPalette(pillarDetail.pillar_key).bg }}>
+            <div className={`${styles.pillarSurface} rounded-[28px] p-6`} style={{ "--pillar-background": getPillarPalette(pillarDetail.pillar_key).bg } as CSSProperties}>
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 ref={guidanceHeadingRef} tabIndex={-1} className="text-[1.8rem] font-semibold leading-tight focus:outline-none">{pillarDetail.label}</h2>
@@ -321,8 +355,8 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                     <article
                       key={pillar.pillar_key}
                       aria-label={`${pillar.label} progress`}
-                      className="flex min-h-[58px] items-center gap-2 rounded-[18px] border px-2 py-1 text-[#24201c] sm:px-3"
-                      style={{ backgroundColor: palette.bg, borderColor: palette.border, containerType: "size" }}
+                      className={`${styles.pillarSurface} flex min-h-[58px] items-center gap-2 rounded-[18px] border px-2 py-1 sm:px-3`}
+                      style={{ "--pillar-background": palette.bg, "--pillar-border": palette.border, containerType: "size" } as CSSProperties}
                     >
                       <button
                         type="button"

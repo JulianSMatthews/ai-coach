@@ -78,7 +78,7 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
     exports, AbortController, URLSearchParams, fetch: fetcher, Error,
     requestAnimationFrame: fn => frames.push(fn),
     require(name) {
-      if (name === './PillarProgressPanel.module.css') return { default: { guidanceReveal: 'guidance-reveal', reflectionReveal: 'reflection-reveal' } };
+      if (name === './PillarProgressPanel.module.css') return { default: { pillarSurface: 'pillar-surface', scoreCircle: 'score-circle', guidanceReveal: 'guidance-reveal', reflectionReveal: 'reflection-reveal' } };
       return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : name === '@/components/PillarIcon' ? iconExports : require(name);
     },
   });
@@ -232,8 +232,8 @@ test('compact overview keeps every optional and historical concept beside its pi
     assert.equal(row.icons.length, 1);
     assert.equal(String(row.icons[0]), 'true');
   }
-  assert.equal(h.rows().find(row => row.label === 'reflection progress').style.backgroundColor, '#f2efff');
-  assert.equal(h.rows().find(row => row.label === 'nutrition progress').style.backgroundColor, '#fff4e6');
+  assert.equal(h.rows().find(row => row.label === 'reflection progress').style['--pillar-background'], '#f2efff');
+  assert.equal(h.rows().find(row => row.label === 'nutrition progress').style['--pillar-background'], '#fff4e6');
   assert.doesNotMatch(h.text(), /Question about|daily check-ins complete|Scores use your recorded/);
   assert.equal(h.calls.length, 1);
 });
