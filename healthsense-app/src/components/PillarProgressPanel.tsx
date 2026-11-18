@@ -20,6 +20,7 @@ import {
 } from "@/lib/pillarProgress";
 import { getPillarPalette } from "@/lib/pillars";
 import PillarIcon from "@/components/PillarIcon";
+import styles from "./PillarProgressPanel.module.css";
 
 type PillarProgressPanelProps = {
   userId: string;
@@ -29,12 +30,12 @@ type PillarProgressPanelProps = {
 
 type Selection = { pillar: PillarProgressPillar; concept: PillarProgressConcept };
 
-function ProgressCircle({ score, status, compact = false }: { score: number | null; status: PillarProgressStatus; compact?: boolean }) {
+function ProgressCircle({ score, status, compact = false, context = false }: { score: number | null; status: PillarProgressStatus; compact?: boolean; context?: boolean }) {
   return (
     <span
       className={compact
         ? "flex aspect-square w-8 shrink-0 items-center justify-center rounded-full border-2 bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)]"
-        : "flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-[4px] bg-[var(--surface)] text-xl font-semibold tabular-nums text-[var(--text-primary)]"}
+        : `flex shrink-0 items-center justify-center rounded-full bg-[var(--surface)] font-semibold tabular-nums text-[var(--text-primary)] ${context ? "h-12 w-12 border-[3px] text-[17px]" : "h-16 w-16 border-[4px] text-xl"}`}
       style={{ borderColor: progressStatusColor(status, score), ...(compact ? { width: "min(100%, clamp(24px, calc(100cqh - 20px), 84px))", containerType: "inline-size" } : {}) }}
       aria-hidden="true"
     >
@@ -193,6 +194,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
   }, []);
 
   const detailOpen = Boolean(selection || pillarDetail);
+  const selectionHasScoredAnswers = Boolean(selection && selection.concept.scored_days_count > 0);
 
   return (
     <section className={`flex h-full min-h-0 flex-col ${detailOpen ? "pb-28 pt-4 sm:pb-32 sm:pt-6" : "pb-[calc(6rem+env(safe-area-inset-bottom))] pt-1 sm:pt-2"}`} aria-label="Pillar progress">
@@ -217,26 +219,26 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
 
       <div className={`coach-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain ${detailOpen ? "px-4 pb-8 sm:px-5" : "px-2 pb-1 sm:px-4"}`}>
         {selection ? (
-          <div className="space-y-5">
-            <div className="rounded-[28px] bg-[var(--surface-muted)] p-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">{selection.pillar.label}</p>
-              <div className="mt-3 flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 ref={guidanceHeadingRef} tabIndex={-1} className="text-[1.8rem] font-semibold leading-tight text-[var(--text-primary)] focus:outline-none">{selection.concept.label}</h2>
-                  {selection.concept.is_historical ? <p className="mt-2 text-xs text-[var(--text-secondary)]">Earlier question · part of this week’s score</p> : null}
-                  <p className="mt-2 text-base leading-7 text-[var(--text-secondary)]">{selection.concept.helper}</p>
-                </div>
-                <ProgressCircle score={selection.concept.score} status={selection.concept.status} />
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-[24px] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+              <span className="h-7 w-7 shrink-0" style={{ color: getPillarPalette(selection.pillar.pillar_key).accent }}><PillarIcon pillarKey={selection.pillar.pillar_key} className="h-full w-full" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">{selection.pillar.label}{selection.concept.is_historical ? " · Earlier question" : ""}</p>
+                <h2 ref={guidanceHeadingRef} tabIndex={-1} className="mt-1 text-[22px] font-semibold leading-tight text-[var(--text-primary)] focus:outline-none">{selection.concept.label}</h2>
               </div>
-              <p className="mt-3 text-sm font-semibold text-[var(--text-primary)]">{progressStatusLabel(selection.concept.status, selection.concept.score)}</p>
-              <Coverage concept={selection.concept} />
-              {selection.concept.scored_days_count === 0 ? (
+              <span role="img" aria-label={`${selection.concept.label}: ${selection.concept.score == null ? "not scored" : `${progressScoreLabel(selection.concept.score)} out of 100`}, ${progressStatusLabel(selection.concept.status, selection.concept.score)}`}><ProgressCircle score={selection.concept.score} status={selection.concept.status} context /></span>
+            </div>
+
+            {!selectionHasScoredAnswers ? (
+              <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
+                <p className="text-base leading-7 text-[var(--text-primary)]">{selection.concept.helper}</p>
+                <Coverage concept={selection.concept} />
                 <div className="mt-3 space-y-2 text-sm leading-6 text-[var(--text-secondary)]">
                   <p>{selection.concept.concept_key === "adaptability" && selection.concept.not_applicable_days_count > 0 ? "No challenges reported in your answered check-ins." : "No scored check-ins yet."}</p>
                   <p>{selection.concept.not_applicable_days_count > 0 ? "Answers marked not applicable do not affect your score. " : ""}Guidance will be available once you have a scored check-in for this question.</p>
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
 
             <div aria-live="polite" aria-busy={guidanceLoading}>
               {guidanceLoading ? <p className="px-1 text-base leading-7 text-[var(--text-secondary)]">Preparing guidance for {selection.concept.label.toLowerCase()}…</p> : null}
@@ -252,11 +254,10 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
               {guidance ? (
                 <div className="space-y-4">
                   {[
-                    { title: "Your insight", body: guidance.insight },
-                    { title: "One small step", body: guidance.action },
-                    { title: "A moment to reflect", body: guidance.reflection },
+                    { title: "One small step", body: guidance.action, animation: styles.guidanceReveal },
+                    { title: "A moment to reflect", body: guidance.reflection, animation: `${styles.guidanceReveal} ${styles.reflectionReveal}` },
                   ].map((item) => (
-                    <div key={item.title} className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+                    <div key={`${guidance.pillar_key}:${guidance.concept_key}:${item.title}`} className={`${item.animation} rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6`}>
                       <h3 className="text-base font-semibold text-[var(--text-primary)]">{item.title}</h3>
                       <p className="mt-2 whitespace-pre-line text-base leading-7 text-[var(--text-secondary)]">{item.body}</p>
                     </div>
@@ -265,7 +266,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
               ) : null}
             </div>
 
-            <details className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
+            {!selectionHasScoredAnswers ? <details className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
               <summary className="cursor-pointer text-sm font-semibold text-[var(--text-primary)]">Your check-ins this week</summary>
               <ul className="mt-3 divide-y divide-[var(--border)]">
                 {selection.concept.days.map((day) => (
@@ -275,12 +276,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
                   </li>
                 ))}
               </ul>
-            </details>
-            <details className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
-              <summary className="cursor-pointer text-sm font-semibold text-[var(--text-primary)]">How the {selection.pillar.label.toLowerCase()} score is made</summary>
-              <div className="mt-3"><PillarScoreBreakdown pillar={selection.pillar} /></div>
-            </details>
-            {progress?.rag_explanation ? <p className="px-1 text-xs leading-6 text-[var(--text-secondary)]">{progress.rag_explanation}</p> : null}
+            </details> : null}
           </div>
         ) : pillarDetail ? (
           <div className="space-y-5">

@@ -32,7 +32,7 @@ function sample() {
   };
 }
 
-function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.pillarKey, concept_key: body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `Insight for ${body.conceptKey}`, action: 'One step.', reflection: 'A reflection?' }), progressData = sample()) {
+function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.pillarKey, concept_key: body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `HIDDEN INSIGHT for ${body.conceptKey}`, action: `Step for ${body.conceptKey}`, reflection: `Reflect on ${body.conceptKey}?` }), progressData = sample()) {
   let slots = [], cursor = 0, effects = [], dirty = true, tree, unmounted = false;
   let props = { userId: '42', onBack() {}, onEditGoals() {} };
   const calls = [], frames = [], focused = [];
@@ -77,7 +77,10 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
   vm.runInNewContext(componentCode, {
     exports, AbortController, URLSearchParams, fetch: fetcher, Error,
     requestAnimationFrame: fn => frames.push(fn),
-    require(name) { return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : name === '@/components/PillarIcon' ? iconExports : require(name); },
+    require(name) {
+      if (name === './PillarProgressPanel.module.css') return { default: { guidanceReveal: 'guidance-reveal', reflectionReveal: 'reflection-reveal' } };
+      return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : name === '@/components/PillarIcon' ? iconExports : require(name);
+    },
   });
   const text = node => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'object' ? text(node.props?.children) : String(node);
   const all = (node, predicate) => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(child => all(child, predicate)) : [...(predicate(node) ? [node] : []), ...all(node.props?.children, predicate)];
@@ -114,6 +117,8 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
       icons: all(node, child => child.type === 'svg').map(child => child.props['aria-hidden']),
     })),
     rowGrid: () => all(tree, node => node.props?.style?.gridTemplateRows)[0]?.props.style,
+    guidanceHeadings: () => all(tree, node => node.type === 'h3').map(node => text(node).trim()),
+    reveals: () => all(tree, node => node.props?.className?.includes('guidance-reveal')).map(node => node.props.className),
     buttons: () => all(tree, node => node.type === 'button').map(node => node.props['aria-label'] || text(node).trim()),
     async click(label) {
       const button = all(tree, node => node.type === 'button').find(node => (node.props['aria-label'] || text(node).trim()).startsWith(label));
@@ -139,14 +144,16 @@ test('neutral circle opens evidence and explanation without generating AI guidan
   assert.match(h.text(), /No challenges reported/);
   assert.match(h.text(), /No challenges today/);
   assert.doesNotMatch(h.text(), /Preparing guidance/);
+  assert.deepEqual(h.guidanceHeadings(), []);
 });
 
 test('only the tapped concept generates guidance and back restores its circle focus', async t => {
   const h = harness(); t.after(() => h.unmount()); await h.flush();
   await h.click('Contribution:');
   assert.deepEqual(JSON.parse(h.calls[1].options.body), { userId: '42', pillarKey: 'purpose', conceptKey: 'contribution_connection' });
-  assert.match(h.text(), /Insight for contribution_connection/);
-  assert.doesNotMatch(h.text(), /Insight for values_alignment/);
+  assert.match(h.text(), /Step for contribution_connection/);
+  assert.match(h.text(), /Reflect on contribution_connection/);
+  assert.doesNotMatch(h.text(), /Step for values_alignment|HIDDEN INSIGHT/);
   await h.click('Back to pillar progress');
   assert.equal(h.focused.at(-1), 'Contribution: Needs attention, 0 out of 100. Get guidance');
 });
@@ -159,10 +166,27 @@ test('back aborts pending guidance and an ignored late response cannot replace a
   await h.click('Back to pillar progress');
   assert.equal(pending[0].options.signal.aborted, true);
   await h.click('Values:');
-  const payload = (item, insight) => ({ source: 'ai', pillar_key: item.body.pillarKey, concept_key: item.body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight, action: 'A step.', reflection: 'Reflect?' });
+  const payload = (item, marker) => ({ source: 'ai', pillar_key: item.body.pillarKey, concept_key: item.body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `HIDDEN INSIGHT ${marker}`, action: `${marker} step`, reflection: `${marker} reflection?` });
   pending[1].resolve(payload(pending[1], 'NEW GUIDANCE')); await h.flush();
   pending[0].resolve(payload(pending[0], 'OLD GUIDANCE')); await h.flush();
   assert.match(h.text(), /NEW GUIDANCE/); assert.doesNotMatch(h.text(), /OLD GUIDANCE/);
+});
+
+test('scored guidance shows only the step and reflection with staggered reveal classes', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.click('Contribution:');
+  assert.deepEqual(h.guidanceHeadings(), ['One small step', 'A moment to reflect']);
+  assert.doesNotMatch(h.text(), /Your insight|HIDDEN INSIGHT|Question about|days answered|Your check-ins this week|How the purpose score is made/);
+  assert.equal(h.reveals().length, 2);
+  assert.ok(!h.reveals()[0].includes('reflection-reveal'));
+  assert.ok(h.reveals()[1].includes('reflection-reveal'));
+});
+
+test('guidance reveal is finite, staggered and disabled for reduced motion', () => {
+  const css = fs.readFileSync('src/components/PillarProgressPanel.module.css', 'utf8');
+  assert.match(css, /animation:\s*guidanceReveal 420ms[^;]*both;/);
+  assert.match(css, /animation-delay:\s*150ms;/);
+  assert.doesNotMatch(css, /infinite/);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.guidanceReveal\s*\{\s*animation:\s*none;/);
 });
 
 test('unmount and member changes cancel pending guidance', async t => {
