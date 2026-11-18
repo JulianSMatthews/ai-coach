@@ -218,11 +218,11 @@ class ReflectionCheckinTests(unittest.TestCase):
             self.assertEqual(existing[concept.concept_key].meta['question_set_version'], 1)
         self.assertTrue(tracker._day_complete(existing, self.current))
 
-    def test_non_reflection_completion_and_scores_are_unchanged(self):
-        concepts = tracker.tracker_concepts_for_pillar('purpose')
+    def test_unversioned_pillar_completion_and_scores_are_unchanged(self):
+        concepts = tracker.tracker_concepts_for_pillar('training')
         rows = {concept.concept_key: SimpleNamespace(value_num=concept.options[-1].value)
                 for concept in concepts}
-        targets = self.targets(1, 'purpose', concepts)
+        targets = self.targets(1, 'training', concepts)
         evaluations = tracker._build_concept_week_evaluations(
             {self.today: rows}, concepts, targets, tracker._week_days(self.today)
         )

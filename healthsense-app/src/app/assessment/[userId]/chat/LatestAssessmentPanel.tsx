@@ -78,7 +78,7 @@ const PILLAR_PREF_KEYS: Record<string, string> = {
 };
 const PILLAR_SETUP_COPY: Record<string, string> = {
   reflection: "Developing a deeper understanding of yourself through awareness of your thoughts, emotions and behaviours, helping you learn and live more consciously.",
-  purpose: "Stay close to meaning, direction, values, and the choices that make the day feel worthwhile.",
+  purpose: "Living in connection with what matters most to you, through both what you do and how you treat yourself and others.",
   resilience: "Developing the ability to navigate life's challenges, adapt to change and maintain or restore your emotional wellbeing.",
   recovery: "Build awareness around sleep, rest, rhythm, and the conditions that help your body reset.",
   nutrition: "Track the food and hydration signals that shape energy, appetite, and consistency.",

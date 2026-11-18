@@ -371,8 +371,8 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
     "purpose": (
         PillarTrackerConceptDefinition(
             concept_key="meaning_fulfilment",
-            label="Meaning",
-            helper="How meaningful and worthwhile did today feel?",
+            label="Meaning & Direction",
+            helper="How connected did you feel to what matters most to you today?",
             options=_SUBJECTIVE_OPTIONS,
             target_value=2,
             target_direction="gte",
@@ -380,18 +380,9 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             score_ceiling=3,
         ),
         PillarTrackerConceptDefinition(
-            concept_key="direction_vision",
-            label="Direction",
-            helper="Did your actions move you closer to what matters most?",
-            options=_BINARY_OPTIONS,
-            target_value=1,
-            target_direction="gte",
-            score_mode="binary",
-        ),
-        PillarTrackerConceptDefinition(
             concept_key="values_alignment",
             label="Values",
-            helper="How closely did you act in line with your values today?",
+            helper="How closely did you live according to your values today?",
             options=_SUBJECTIVE_OPTIONS,
             target_value=2,
             target_direction="gte",
@@ -401,7 +392,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="contribution_connection",
             label="Contribution",
-            helper="Did you positively contribute to or connect with someone today?",
+            helper="Did you positively contribute to someone else's day today?",
             options=_BINARY_OPTIONS,
             target_value=1,
             target_direction="gte",
@@ -530,9 +521,30 @@ _LEGACY_RESILIENCE_TRACKER_CONFIG = (
         options=_BINARY_OPTIONS, target_value=1, target_direction="gte", score_mode="binary",
     ),
 )
+_LEGACY_PURPOSE_TRACKER_CONFIG = (
+    replace(
+        PILLAR_TRACKER_CONFIG["purpose"][0],
+        label="Meaning",
+        helper="How meaningful and worthwhile did today feel?",
+    ),
+    PillarTrackerConceptDefinition(
+        concept_key="direction_vision", label="Direction",
+        helper="Did your actions move you closer to what matters most?",
+        options=_BINARY_OPTIONS, target_value=1, target_direction="gte", score_mode="binary",
+    ),
+    replace(
+        PILLAR_TRACKER_CONFIG["purpose"][1],
+        helper="How closely did you act in line with your values today?",
+    ),
+    replace(
+        PILLAR_TRACKER_CONFIG["purpose"][2],
+        helper="Did you positively contribute to or connect with someone today?",
+    ),
+)
 _LEGACY_TRACKER_CONFIGS = {
     "reflection": _LEGACY_REFLECTION_TRACKER_CONFIG,
     "resilience": _LEGACY_RESILIENCE_TRACKER_CONFIG,
+    "purpose": _LEGACY_PURPOSE_TRACKER_CONFIG,
 }
 _QUESTION_SET_VERSION = 2
 
