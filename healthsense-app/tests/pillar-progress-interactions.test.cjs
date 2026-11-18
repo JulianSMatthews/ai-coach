@@ -116,7 +116,7 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
       buttons: all(node, child => child.type === 'button').map(child => child.props['aria-label']),
       icons: all(node, child => child.type === 'svg').map(child => child.props['aria-hidden']),
     })),
-    rowGrid: () => all(tree, node => node.props?.style?.gridTemplateRows)[0]?.props.style,
+    scoreBreakdownOpen: () => all(tree, node => node.type === 'details' && text(node).includes('How this score is made')).map(node => Boolean(node.props.open)),
     guidanceHeadings: () => all(tree, node => node.type === 'h3').map(node => text(node).trim()),
     reveals: () => all(tree, node => node.props?.className?.includes('guidance-reveal')).map(node => node.props.className),
     buttons: () => all(tree, node => node.type === 'button').map(node => node.props['aria-label'] || text(node).trim()),
@@ -129,16 +129,24 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
   };
 }
 
-test('opening progress does not generate coaching, and circles expose status with recorded zero', async t => {
+test('opening progress shows only pillars and opening concept scores does not generate coaching', async t => {
   const h = harness(); t.after(() => h.unmount()); await h.flush();
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].options.method, undefined);
+  assert.ok(h.buttons().some(label => /^Purpose:.*View concepts$/.test(label)));
+  assert.ok(h.buttons().some(label => /^Resilience:.*View concepts$/.test(label)));
+  assert.doesNotMatch(h.text(), /Values|Contribution|Adaptability/);
+  await h.click('Purpose:');
+  assert.equal(h.calls.length, 1);
   assert.ok(h.buttons().includes('Contribution: Needs attention, 0 out of 100. Get guidance'));
-  assert.ok(h.buttons().includes('Adaptability: Not scored. View check-ins'));
+  assert.match(h.text(), /Get guidance/);
 });
 
 test('neutral circle opens evidence and explanation without generating AI guidance', async t => {
   const h = harness(); t.after(() => h.unmount()); await h.flush();
+  await h.click('Resilience:');
+  assert.ok(h.buttons().includes('Adaptability: Not scored. View check-ins'));
+  assert.match(h.text(), /View check-ins/);
   await h.click('Adaptability:');
   assert.equal(h.calls.length, 1);
   assert.match(h.text(), /No challenges reported/);
@@ -147,23 +155,31 @@ test('neutral circle opens evidence and explanation without generating AI guidan
   assert.deepEqual(h.guidanceHeadings(), []);
 });
 
-test('only the tapped concept generates guidance and back restores its circle focus', async t => {
+test('only the tapped concept generates guidance and both back levels restore focus without extra requests', async t => {
   const h = harness(); t.after(() => h.unmount()); await h.flush();
+  await h.click('Purpose:');
   await h.click('Contribution:');
   assert.deepEqual(JSON.parse(h.calls[1].options.body), { userId: '42', pillarKey: 'purpose', conceptKey: 'contribution_connection' });
   assert.match(h.text(), /Step for contribution_connection/);
   assert.match(h.text(), /Reflect on contribution_connection/);
   assert.doesNotMatch(h.text(), /Step for values_alignment|HIDDEN INSIGHT/);
-  await h.click('Back to pillar progress');
+  await h.click('Back to concepts');
   assert.equal(h.focused.at(-1), 'Contribution: Needs attention, 0 out of 100. Get guidance');
+  assert.ok(h.buttons().includes('Values: On track, 100 out of 100. Get guidance'));
+  assert.equal(h.calls.length, 2);
+  await h.click('Back to pillars');
+  assert.match(h.focused.at(-1), /^Purpose:.*View concepts$/);
+  assert.doesNotMatch(h.text(), /Values|Contribution|Adaptability/);
+  assert.equal(h.calls.length, 2);
 });
 
 test('back aborts pending guidance and an ignored late response cannot replace a new selection', async t => {
   const pending = [];
   const h = harness((body, options) => new Promise(resolve => pending.push({ body, options, resolve })));
   t.after(() => h.unmount()); await h.flush();
+  await h.click('Purpose:');
   await h.click('Contribution:');
-  await h.click('Back to pillar progress');
+  await h.click('Back to concepts');
   assert.equal(pending[0].options.signal.aborted, true);
   await h.click('Values:');
   const payload = (item, marker) => ({ source: 'ai', pillar_key: item.body.pillarKey, concept_key: item.body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `HIDDEN INSIGHT ${marker}`, action: `${marker} step`, reflection: `${marker} reflection?` });
@@ -173,7 +189,7 @@ test('back aborts pending guidance and an ignored late response cannot replace a
 });
 
 test('scored guidance shows only the step and reflection with staggered reveal classes', async t => {
-  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.click('Contribution:');
+  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.click('Purpose:'); await h.click('Contribution:');
   assert.deepEqual(h.guidanceHeadings(), ['One small step', 'A moment to reflect']);
   assert.doesNotMatch(h.text(), /Your insight|HIDDEN INSIGHT|Question about|days answered|Your check-ins this week|How the purpose score is made/);
   assert.equal(h.reveals().length, 2);
@@ -192,24 +208,25 @@ test('guidance reveal is finite, staggered and disabled for reduced motion', () 
 test('unmount and member changes cancel pending guidance', async t => {
   const pending = [];
   const h = harness((_body, options) => new Promise(resolve => pending.push({ options, resolve })));
-  t.after(() => h.unmount()); await h.flush(); await h.click('Contribution:');
+  t.after(() => h.unmount()); await h.flush(); await h.click('Purpose:'); await h.click('Contribution:');
   await h.update({ userId: '43' });
   assert.equal(pending[0].options.signal.aborted, true);
   assert.match(h.text(), /Pillar progress/); assert.doesNotMatch(h.text(), /Preparing guidance/);
+  await h.click('Purpose:');
   await h.click('Values:'); h.unmount();
   assert.equal(pending[1].options.signal.aborted, true);
 });
 
 test('AI failure shows an explicit retry state without substitute guidance', async t => {
   const h = harness(async () => Response.json({ error: 'AI guidance is unavailable right now.' }, { status: 503 }));
-  t.after(() => h.unmount()); await h.flush(); await h.click('Values:');
+  t.after(() => h.unmount()); await h.flush(); await h.click('Purpose:'); await h.click('Values:');
   assert.match(h.text(), /AI guidance is unavailable/);
   assert.doesNotMatch(h.text(), /One small step/);
   assert.ok(h.buttons().includes('Try again'));
   assert.ok(h.buttons().includes('Refresh progress'));
 });
 
-test('compact overview keeps every optional and historical concept beside its pillar in one grid row', async t => {
+test('overview shows only pillars and each pillar exposes every optional and historical concept with full labels', async t => {
   const data = sample();
   const definitions = {
     reflection: ['emotional_awareness', 'mindfulness_presence', 'pattern_recognition', 'self_awareness'],
@@ -219,22 +236,35 @@ test('compact overview keeps every optional and historical concept beside its pi
     nutrition: ['protein_intake', 'fruit_veg', 'hydration', 'processed_food', 'alcohol_units', 'fasting_adherence', 'omega_3', 'vitamin_d'],
     training: ['cardio_frequency', 'strength_training', 'flexibility_mobility', 'creatine'],
   };
+  const conceptLabel = key => key.split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ');
   const template = data.pillars[0];
   data.pillars = Object.entries(definitions).map(([key, concepts]) => ({ ...template, pillar_key: key, label: key,
-    concepts: concepts.map(concept_key => ({ ...template.concepts[0], concept_key, label: concept_key })) }));
+    concepts: concepts.map(concept_key => ({ ...template.concepts[0], concept_key, label: conceptLabel(concept_key),
+      is_historical: ['self_awareness', 'direction_vision', 'support_openness'].includes(concept_key) })) }));
   const h = harness(undefined, data); t.after(() => h.unmount()); await h.flush();
   assert.equal(h.rows().length, 6);
-  assert.equal(h.rowGrid().gridTemplateRows, 'repeat(6, minmax(58px, 1fr))');
+  assert.deepEqual(h.rows().map(row => row.label), Object.keys(definitions).map(key => `${key} progress`));
   for (const row of h.rows()) {
-    const key = row.label.split(' ')[0];
-    assert.equal(row.buttons.length, definitions[key].length + 1);
-    assert.equal(row.grids[0], `repeat(${definitions[key].length}, minmax(0, 1fr))`);
-    assert.equal(row.icons.length, 1);
-    assert.equal(String(row.icons[0]), 'true');
+    assert.equal(row.buttons.length, 1);
+    assert.match(row.buttons[0], /View concepts$/);
+    assert.ok(row.icons.length >= 1);
+    assert.ok(row.icons.every(icon => String(icon) === 'true'));
   }
   assert.equal(h.rows().find(row => row.label === 'reflection progress').style['--pillar-background'], '#f2efff');
   assert.equal(h.rows().find(row => row.label === 'nutrition progress').style['--pillar-background'], '#fff4e6');
   assert.doesNotMatch(h.text(), /Question about|daily check-ins complete|Scores use your recorded/);
+  assert.equal(h.calls.length, 1);
+  for (const [key, concepts] of Object.entries(definitions)) {
+    await h.click(`${key}:`);
+    for (const concept_key of concepts) {
+      const label = conceptLabel(concept_key);
+      assert.ok(h.buttons().includes(`${label}: On track, 100 out of 100. Get guidance`), `Missing concept ${label}`);
+      assert.ok(h.text().includes(label), `Missing full visible label ${label}`);
+    }
+    assert.equal(h.calls.length, 1);
+    await h.click('Back to pillars');
+    assert.match(h.focused.at(-1), new RegExp(`^${key}:.*View concepts$`));
+  }
   assert.equal(h.calls.length, 1);
 });
 
@@ -244,7 +274,9 @@ test('tapping a pillar opens its score explanation without requesting AI', async
   assert.match(h.text(), /How this score is made/);
   assert.match(h.text(), /Pillar total/);
   assert.match(h.text(), /An average of recorded answers/);
+  assert.deepEqual(h.scoreBreakdownOpen(), [false]);
+  assert.ok(h.buttons().includes('Values: On track, 100 out of 100. Get guidance'));
   assert.equal(h.calls.length, 1);
-  await h.click('Back to pillar progress');
-  assert.match(h.focused.at(-1), /^Purpose:.*View score breakdown/);
+  await h.click('Back to pillars');
+  assert.match(h.focused.at(-1), /^Purpose:.*View concepts$/);
 });
