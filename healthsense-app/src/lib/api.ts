@@ -317,6 +317,7 @@ export type PillarTrackerConceptWeekDay = {
   is_today?: boolean;
   is_active?: boolean;
   value_label?: string | null;
+  not_applicable?: boolean;
   score?: number | null;
   target_reached?: boolean | null;
   target_met?: boolean | null;
@@ -337,6 +338,7 @@ export type PillarTrackerConcept = {
   options?: PillarTrackerOption[];
   value?: number | null;
   value_label?: string | null;
+  not_applicable?: boolean;
   score?: number | null;
   target_reached?: boolean | null;
   target_met?: boolean | null;

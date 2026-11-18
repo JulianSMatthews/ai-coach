@@ -77,9 +77,9 @@ const PILLAR_PREF_KEYS: Record<string, string> = {
   training: "home_pillar_training",
 };
 const PILLAR_SETUP_COPY: Record<string, string> = {
-  reflection: "Understand what you are noticing, feeling, and learning from the patterns in your day.",
+  reflection: "Developing a deeper understanding of yourself through awareness of your thoughts, emotions and behaviours, helping you learn and live more consciously.",
   purpose: "Stay close to meaning, direction, values, and the choices that make the day feel worthwhile.",
-  resilience: "Work with pressure, emotional steadiness, support, and the way you recover your perspective.",
+  resilience: "Developing the ability to navigate life's challenges, adapt to change and maintain or restore your emotional wellbeing.",
   recovery: "Build awareness around sleep, rest, rhythm, and the conditions that help your body reset.",
   nutrition: "Track the food and hydration signals that shape energy, appetite, and consistency.",
   training: "Use movement, strength, cardio, and mobility as part of a balanced weekly rhythm.",
@@ -4976,7 +4976,7 @@ export default function LatestAssessmentPanel({
                                         [conceptKey]: value,
                                       }))
                                     }
-                                    className={`min-h-[2.75rem] rounded-full px-3 py-2 text-center text-xs font-semibold leading-tight transition ${
+                                    className={`${value < 0 ? "col-span-2 " : ""}min-h-[2.75rem] rounded-full px-3 py-2 text-center text-xs font-semibold leading-tight transition ${
                                       active ? "bg-[var(--action-primary-bg)] text-[var(--action-primary-text)]" : "bg-[var(--surface)] text-[var(--text-primary)]"
                                     }`}
                                   >

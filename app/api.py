@@ -214,6 +214,7 @@ from .urine_tests import (
     record_urine_test_capture,
 )
 from .pillar_tracker import (
+    _day_complete,
     ensure_pillar_tracker_schema,
     get_pillar_tracker_detail,
     get_pillar_tracker_summary,
@@ -22677,14 +22678,14 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
             .scalars()
             .all()
         )
-        tracker_day_concepts: dict[date, dict[str, set[str]]] = {}
+        tracker_day_rows: dict[date, dict[str, dict[str, DailyPillarTrackerEntry]]] = {}
         for row in tracker_rows:
             score_day = getattr(row, "score_date", None)
             pillar_key = str(getattr(row, "pillar_key", "") or "").strip().lower()
             concept_key = str(getattr(row, "concept_key", "") or "").strip().lower()
             if score_day is None or not pillar_key or not concept_key:
                 continue
-            tracker_day_concepts.setdefault(score_day, {}).setdefault(pillar_key, set()).add(concept_key)
+            tracker_day_rows.setdefault(score_day, {}).setdefault(pillar_key, {}).setdefault(concept_key, row)
 
         connections = s.query(WearableConnection).filter(WearableConnection.user_id == int(user_id)).all()
         metric_rows = (
@@ -22750,19 +22751,15 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         pillar_key = str(pillar.get("pillar_key") or "").strip().lower()
         if not pillar_key:
             continue
-        required_keys = {
-            str(item.concept_key or "").strip().lower()
-            for item in tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
-            if str(getattr(item, "concept_key", "") or "").strip()
-        }
-        today_complete = bool(required_keys) and required_keys.issubset(
-            tracker_day_concepts.get(today, {}).get(pillar_key, set())
+        required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
+        today_complete = bool(required_concepts) and _day_complete(
+            tracker_day_rows.get(today, {}).get(pillar_key, {}), required_concepts
         )
-        yesterday_complete = bool(required_keys) and required_keys.issubset(
-            tracker_day_concepts.get(yesterday, {}).get(pillar_key, set())
+        yesterday_complete = bool(required_concepts) and _day_complete(
+            tracker_day_rows.get(yesterday, {}).get(pillar_key, {}), required_concepts
         )
-        day_before_yesterday_complete = bool(required_keys) and required_keys.issubset(
-            tracker_day_concepts.get(day_before_yesterday, {}).get(pillar_key, set())
+        day_before_yesterday_complete = bool(required_concepts) and _day_complete(
+            tracker_day_rows.get(day_before_yesterday, {}).get(pillar_key, {}), required_concepts
         )
         tracker_status = "today" if today_complete else "yesterday" if yesterday_complete else "open"
         tracker_journey_pillars.append(

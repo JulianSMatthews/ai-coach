@@ -347,6 +347,10 @@ def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
         if any(phrase in raw for phrase in ("contribution", "contribute", "connection", "connect")):
             return "contribution_connection"
     if pillar_slug == "resilience":
+        if any(phrase in raw for phrase in ("adaptability", "adapt to", "unexpected situation", "setback")):
+            return "adaptability"
+        if any(phrase in raw for phrase in ("support and connection", "support connection", "connected and supported", "feel supported")):
+            return "support_connection"
         if any(
             phrase in raw
             for phrase in (
@@ -844,9 +848,9 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
     },
     "reflection": {
         "self_awareness":       {"label": "self-awareness reflection", "unit": "days/week", "low": "increase", "high": "maintain"},
-        "emotional_awareness":  {"label": "emotional awareness", "unit": "days/week", "low": "increase", "high": "maintain"},
-        "mindfulness_presence": {"label": "presence and focus", "unit": "days/week", "low": "increase", "high": "maintain"},
-        "pattern_recognition":  {"label": "learning and pattern recognition", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "emotional_awareness":  {"label": "self and emotional awareness", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "mindfulness_presence": {"label": "presence and engagement", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "pattern_recognition":  {"label": "learning and growth", "unit": "days/week", "low": "increase", "high": "maintain"},
     },
     "purpose": {
         "meaning_fulfilment":      {"label": "meaning and fulfilment", "unit": "days/week", "low": "increase", "high": "maintain"},
@@ -856,6 +860,8 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
     },
     "resilience": {
         "emotional_regulation": {"label": "emotional regulation practice", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "adaptability":         {"label": "adaptability", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "support_connection":   {"label": "support and connection", "unit": "days/week", "low": "increase", "high": "maintain"},
         "optimism_perspective": {"label": "optimism/perspective drills",   "unit": "days/week", "low": "increase", "high": "maintain"},
         "stress_recovery":      {"label": "stress-recovery techniques",    "unit": "days/week", "low": "increase", "high": "maintain"},
         "positive_connection":  {"label": "enjoyment/restoration actions", "unit": "days/week", "low": "increase", "high": "maintain"},

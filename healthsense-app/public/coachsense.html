@@ -1427,6 +1427,13 @@
         margin-top: 20px;
       }
 
+      .app-choice-grid [data-checkin-value="-1"] {
+        grid-column: 1 / -1;
+        padding: 10px 14px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
       .app-question-list {
         display: grid;
         gap: 14px;
@@ -2383,7 +2390,7 @@
                 </span>
               </span>
               <h3>Resilience</h3>
-              <p>Stay steady, adapt and recover your footing when life pulls you off course.</p>
+              <p>Developing the ability to navigate life's challenges, adapt to change and maintain or restore your emotional wellbeing.</p>
             </article>
             <article class="queue-card pillar" style="--tone:#0f8b8d;--circle-bg:#e8f7f7;--circle-fg:#0f8b8d;">
               <span class="queue-ring" aria-hidden="true">
@@ -2396,7 +2403,7 @@
                 </span>
               </span>
               <h3>Purpose</h3>
-              <p>Reconnect with what matters, where you are heading and why it matters.</p>
+              <p>Living in connection with what matters most to you, through both what you do and how you treat yourself and others.</p>
             </article>
             <article class="queue-card pillar" style="--tone:#7c5cff;--circle-bg:#f2efff;--circle-fg:#7c5cff;">
               <span class="queue-ring" aria-hidden="true">
@@ -2408,7 +2415,7 @@
                 </span>
               </span>
               <h3>Reflection</h3>
-              <p>Understand your patterns, learn from experience and build self-awareness.</p>
+              <p>Developing a deeper understanding of yourself through awareness of your thoughts, emotions and behaviours, helping you learn and live more consciously.</p>
             </article>
             <article class="queue-card pillar" style="--tone:#c9764f;--circle-bg:#fff1ea;--circle-fg:#c9764f;">
               <span class="queue-ring" aria-hidden="true">
@@ -2492,7 +2499,7 @@
             <div class="mock-guide">
               <aside class="mock-guide-note left" aria-label="Check-in interaction tip">
                 <strong>Check in</strong>
-                <span>Press Today, Yesterday or Last week, then answer the Yes / No questions.</span>
+                <span>Press Today, Yesterday or Last week, then answer the four daily questions.</span>
               </aside>
             <div class="app-sample app-sample-single" id="resilience-checkin-demo" data-app-shell>
               <div class="phone-status" aria-hidden="true">
@@ -2536,68 +2543,95 @@
                 <div class="mock-surface" data-tracker-detail hidden>
                   <button class="mock-back" type="button" data-tracker-back aria-label="Back">‹</button>
                   <div class="app-question-list">
-                    <section class="app-question" data-checkin-question="Calm & Control">
-                      <p class="app-eyebrow" data-checkin-heading>Today · 1 of 3</p>
-                      <h5>Calm &amp; Control</h5>
-                      <p class="app-copy" data-checkin-copy="Did you feel calm and in control for most of today?">
-                        Did you feel calm and in control for most of today?
+                    <section class="app-question" data-checkin-question="Emotional Regulation">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 1 of 4</p>
+                      <h5>Emotional Regulation</h5>
+                      <p class="app-copy" data-checkin-copy="How well did you maintain or regain your emotional balance today?">
+                        How well did you maintain or regain your emotional balance today?
                       </p>
-                      <div class="app-week" aria-label="Weekly calm and control tracker preview">
+                      <div class="app-week" aria-label="Weekly emotional regulation tracker preview">
                         <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
-                        <div class="app-day is-complete"><strong>Tue</strong><span>Yes</span></div>
+                        <div class="app-day is-complete"><strong>Tue</strong><span title="Well">Well</span></div>
                         <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
-                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span title="Very well">Very well</span></div>
                         <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
                         <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
                         <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
                       </div>
                       <div class="app-choice-grid">
-                        <button class="app-pill" type="button" data-checkin-value="No">No</button>
-                        <button class="app-pill is-selected" type="button" data-checkin-value="Yes">Yes</button>
+                        <button class="app-pill" type="button" data-checkin-value="0">Not well</button>
+                        <button class="app-pill" type="button" data-checkin-value="0.3333333333333333">Somewhat well</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="0.6666666666666666">Well</button>
+                        <button class="app-pill" type="button" data-checkin-value="1">Very well</button>
                       </div>
                     </section>
-                    <section class="app-question" data-checkin-question="Enjoyment / Restoration">
-                      <p class="app-eyebrow" data-checkin-heading>Today · 2 of 3</p>
-                      <h5>Enjoyment / Restoration</h5>
+                    <section class="app-question" data-checkin-question="Enjoyment &amp; Restoration">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 2 of 4</p>
+                      <h5>Enjoyment &amp; Restoration</h5>
                       <p class="app-copy" data-checkin-copy="Did you make time for something enjoyable or restorative today?">
                         Did you make time for something enjoyable or restorative today?
                       </p>
-                      <div class="app-week" aria-label="Weekly enjoyment and restoration tracker preview">
+                      <div class="app-week" aria-label="Weekly enjoyment &amp; restoration tracker preview">
                         <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
-                        <div class="app-day is-partial"><strong>Tue</strong><span>No</span></div>
+                        <div class="app-day is-partial"><strong>Tue</strong><span title="No">No</span></div>
                         <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
-                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span title="Yes">Yes</span></div>
                         <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
                         <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
                         <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
                       </div>
                       <div class="app-choice-grid">
-                        <button class="app-pill is-selected" type="button" data-checkin-value="No">No</button>
-                        <button class="app-pill" type="button" data-checkin-value="Yes">Yes</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="0">No</button>
+                        <button class="app-pill" type="button" data-checkin-value="1">Yes</button>
                       </div>
                     </section>
-                    <section class="app-question" data-checkin-question="Stress Recovery">
-                      <p class="app-eyebrow" data-checkin-heading>Today · 3 of 3</p>
-                      <h5>Stress Recovery</h5>
-                      <p class="app-copy" data-checkin-copy="Did you use a reset or recovery strategy today?">
-                        Did you use a reset or recovery strategy today?
+                    <section class="app-question" data-checkin-question="Adaptability">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 3 of 4</p>
+                      <h5>Adaptability</h5>
+                      <p class="app-copy" data-checkin-copy="How well did you adapt to challenges or unexpected situations today?">
+                        How well did you adapt to challenges or unexpected situations today?
                       </p>
-                      <div class="app-week" aria-label="Weekly stress recovery tracker preview">
+                      <div class="app-week" aria-label="Weekly adaptability tracker preview">
                         <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
-                        <div class="app-day is-complete"><strong>Tue</strong><span>Yes</span></div>
+                        <div class="app-day is-empty"><strong>Tue</strong><span title="N/A">N/A</span></div>
                         <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
-                        <div class="app-day is-complete"><strong>Thu</strong><span>Yes</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span title="Well">Well</span></div>
                         <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
                         <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
                         <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
                       </div>
                       <div class="app-choice-grid">
-                        <button class="app-pill" type="button" data-checkin-value="No">No</button>
-                        <button class="app-pill is-selected" type="button" data-checkin-value="Yes">Yes</button>
+                        <button class="app-pill" type="button" data-checkin-value="0">Not well</button>
+                        <button class="app-pill" type="button" data-checkin-value="0.3333333333333333">Somewhat well</button>
+                        <button class="app-pill" type="button" data-checkin-value="0.6666666666666666">Well</button>
+                        <button class="app-pill" type="button" data-checkin-value="1">Very well</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="-1">No challenges or unexpected situations today</button>
+                      </div>
+                    </section>
+                    <section class="app-question" data-checkin-question="Support &amp; Connection">
+                      <p class="app-eyebrow" data-checkin-heading>Today · 4 of 4</p>
+                      <h5>Support &amp; Connection</h5>
+                      <p class="app-copy" data-checkin-copy="How connected and supported did you feel today?">
+                        How connected and supported did you feel today?
+                      </p>
+                      <div class="app-week" aria-label="Weekly support &amp; connection tracker preview">
+                        <div class="app-day is-empty"><strong>Mon</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Tue</strong><span title="Mostly">Mostly</span></div>
+                        <div class="app-day is-empty"><strong>Wed</strong><span>-</span></div>
+                        <div class="app-day is-complete"><strong>Thu</strong><span title="Completely">Completely</span></div>
+                        <div class="app-day is-empty"><strong>Fri</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sat</strong><span>-</span></div>
+                        <div class="app-day is-empty"><strong>Sun</strong><span>-</span></div>
+                      </div>
+                      <div class="app-choice-grid">
+                        <button class="app-pill" type="button" data-checkin-value="0">Not at all</button>
+                        <button class="app-pill" type="button" data-checkin-value="0.3333333333333333">A little</button>
+                        <button class="app-pill is-selected" type="button" data-checkin-value="0.6666666666666666">Mostly</button>
+                        <button class="app-pill" type="button" data-checkin-value="1">Completely</button>
                       </div>
                     </section>
                   </div>
-                  <p class="app-checkin-status" data-checkin-status>Selected: 2 of 3 marked Yes</p>
+                  <p class="app-checkin-status" data-checkin-status>Selected: 4 of 4 answered · 1 not scored</p>
                   <button class="button app-complete" type="button" data-checkin-complete>Complete check-in</button>
                 </div>
               </div>
@@ -3173,20 +3207,35 @@
       const checkinStatus = document.querySelector("[data-checkin-status]");
       let selectedCheckinDate = "Today";
 
-      function updateCheckinStatus(message) {
-        if (!checkinStatus) return;
-        const yesCount = checkinQuestions.filter((question) =>
-          question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
-        ).length;
-        checkinStatus.textContent = message || `${selectedCheckinDate}: ${yesCount} of ${checkinQuestions.length} marked Yes`;
+      function selectedCheckinValues() {
+        return checkinQuestions.flatMap((question) => {
+          const selected = question.querySelector("[data-checkin-value].is-selected");
+          const rawValue = selected?.getAttribute("data-checkin-value");
+          if (rawValue == null || rawValue.trim() === "") return [];
+          const value = Number(rawValue);
+          return Number.isFinite(value) && (value === -1 || (value >= 0 && value <= 1)) ? [value] : [];
+        });
       }
 
-      function updateCheckinScore(yesCount) {
-        const total = checkinQuestions.length || 1;
-        const percentage = Math.round((yesCount / total) * 100);
-        const scoreDegrees = Math.round((percentage / 100) * 360);
+      function updateCheckinStatus(message) {
+        if (!checkinStatus) return;
+        const values = selectedCheckinValues();
+        const neutralCount = values.filter((value) => value === -1).length;
+        const neutralNote = neutralCount ? ` · ${neutralCount} not scored` : "";
+        checkinStatus.textContent = message || `${selectedCheckinDate}: ${values.length} of ${checkinQuestions.length} answered${neutralNote}`;
+      }
+
+      function updateCheckinScore() {
+        const scores = selectedCheckinValues()
+          .filter((value) => value >= 0)
+          .map((value) => Math.round(value * 100));
+        const average = scores.length ? scores.reduce((total, value) => total + value, 0) / scores.length : null;
+        // Match the app's rounding of a mean of integer question scores.
+        const floor = average == null ? 0 : Math.floor(average);
+        const percentage = average == null ? null : average - floor === 0.5 ? floor + (floor % 2) : Math.round(average);
+        const scoreDegrees = Math.round(((percentage ?? 0) / 100) * 360);
         document.querySelectorAll("[data-checkin-score]").forEach((scoreBadge) => {
-          scoreBadge.textContent = `${percentage}`;
+          scoreBadge.textContent = percentage == null ? "—" : `${percentage}`;
           scoreBadge.style.setProperty("--score-deg", `${scoreDegrees}deg`);
         });
         return percentage;
@@ -3244,11 +3293,13 @@
       const completeCheckinButton = document.querySelector("[data-checkin-complete]");
       if (completeCheckinButton) {
         completeCheckinButton.addEventListener("click", () => {
-          const yesCount = checkinQuestions.filter((question) =>
-            question.querySelector("[data-checkin-value].is-selected")?.getAttribute("data-checkin-value") === "Yes"
-          ).length;
-          const percentage = updateCheckinScore(yesCount);
-          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, score ${percentage}.`);
+          if (selectedCheckinValues().length !== checkinQuestions.length) {
+            updateCheckinStatus("Answer all four questions to complete the preview.");
+            return;
+          }
+          const percentage = updateCheckinScore();
+          const scoreMessage = percentage == null ? "no scored answers" : `score ${percentage}`;
+          updateCheckinStatus(`Saved preview: ${selectedCheckinDate} resilience check-in, ${scoreMessage}.`);
           showTrackerDetail(false);
         });
       }

@@ -548,24 +548,28 @@ def _recent_concept_focuses(
         }
         today_row = week_rows.get(today_iso) or {}
         yesterday_row = week_rows.get(yesterday_iso) or {}
+        if today_row.get("not_applicable") or (not today_row and concept.get("not_applicable")):
+            continue
         misses = sum(
             1
             for row in (today_row, yesterday_row)
-            if isinstance(row, dict) and row.get("target_met") is False
+            if isinstance(row, dict) and not row.get("not_applicable") and row.get("target_met") is False
         )
         missing = sum(
             1
             for row in (today_row, yesterday_row)
-            if not isinstance(row, dict) or row.get("target_met") is None
+            if not isinstance(row, dict) or (not row.get("not_applicable") and row.get("target_met") is None)
         )
-        latest_value = str(
-            (today_row if today_row.get("value_label") else yesterday_row).get("value_label") or ""
-        ).strip() or None
+        latest_value = next(
+            (str(row.get("value_label")).strip() for row in (today_row, yesterday_row)
+             if row.get("value_label") and not row.get("not_applicable")),
+            None,
+        ) or None
         current_score = _safe_int(concept.get("score"))
         signal = "on_track"
         if today_row.get("target_met") is False:
             signal = "missed_today"
-        elif yesterday_row.get("target_met") is False:
+        elif not yesterday_row.get("not_applicable") and yesterday_row.get("target_met") is False:
             signal = "missed_yesterday"
         elif today_row.get("target_met") is None:
             signal = "not_logged_today"
@@ -633,6 +637,8 @@ def _anchored_concept_focuses(
             if isinstance(row, dict)
         }
         active_row = week_rows.get(active_iso) or {}
+        if active_row.get("not_applicable") or (not active_row and concept.get("not_applicable")):
+            continue
         latest_value = str(active_row.get("value_label") or "").strip() or None
         current_score = _safe_int(concept.get("score"))
         target_period = str(concept.get("target_period") or "").strip().lower()

@@ -4,7 +4,7 @@ import os
 import json
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
@@ -221,6 +221,7 @@ class PillarTrackerConceptDefinition:
     score_mode: str
     score_floor: float = 0.0
     score_ceiling: float = 1.0
+    not_applicable_value: float | None = None
 
 
 @dataclass(frozen=True)
@@ -255,6 +256,10 @@ _SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE = (
 )
 
 _BINARY_OPTIONS = (PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes"))
+_HOW_WELL_OPTIONS = tuple(
+    PillarTrackerOption(value, label)
+    for value, label in ((0, "Not well"), (1 / 3, "Somewhat well"), (2 / 3, "Well"), (1, "Very well"))
+)
 
 
 PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
@@ -334,18 +339,9 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
     ),
     "reflection": (
         PillarTrackerConceptDefinition(
-            concept_key="self_awareness",
-            label="Self-Awareness",
-            helper="Did you take time to reflect on your thoughts, actions or decisions today?",
-            options=_BINARY_OPTIONS,
-            target_value=1,
-            target_direction="gte",
-            score_mode="binary",
-        ),
-        PillarTrackerConceptDefinition(
             concept_key="emotional_awareness",
-            label="Emotional Awareness",
-            helper="How emotionally aware did you feel today?",
+            label="Self & Emotional Awareness",
+            helper="How aware were you of your thoughts, feelings and behaviours today?",
             options=_SUBJECTIVE_OPTIONS,
             target_value=2,
             target_direction="gte",
@@ -355,7 +351,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="mindfulness_presence",
             label="Presence",
-            helper="How present and focused were you for most of today?",
+            helper="How present and engaged did you feel throughout today?",
             options=_SUBJECTIVE_OPTIONS,
             target_value=2,
             target_direction="gte",
@@ -364,7 +360,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         ),
         PillarTrackerConceptDefinition(
             concept_key="pattern_recognition",
-            label="Learning & Patterns",
+            label="Learning & Growth",
             helper="Did you notice a pattern or learn something about yourself today?",
             options=_BINARY_OPTIONS,
             target_value=1,
@@ -415,9 +411,9 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
     "resilience": (
         PillarTrackerConceptDefinition(
             concept_key="emotional_regulation",
-            label="Calm & Control",
-            helper="How calm and in control did you feel for most of today?",
-            options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE,
+            label="Emotional Regulation",
+            helper="How well did you maintain or regain your emotional balance today?",
+            options=_HOW_WELL_OPTIONS,
             target_value=2 / 3,
             target_direction="gte",
             score_mode="likert",
@@ -425,7 +421,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         ),
         PillarTrackerConceptDefinition(
             concept_key="positive_connection",
-            label="Enjoyment / Restoration",
+            label="Enjoyment & Restoration",
             helper="Did you make time for something enjoyable or restorative today?",
             options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
             target_value=1,
@@ -433,32 +429,25 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
-            concept_key="stress_recovery",
-            label="Stress Recovery",
-            helper="Did you use a reset or recovery strategy today?",
-            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
-            target_value=1,
+            concept_key="adaptability",
+            label="Adaptability",
+            helper="How well did you adapt to challenges or unexpected situations today?",
+            options=(*_HOW_WELL_OPTIONS, PillarTrackerOption(-1, "No challenges or unexpected situations today")),
+            target_value=2 / 3,
             target_direction="gte",
-            score_mode="binary",
+            score_mode="likert",
+            score_ceiling=1,
+            not_applicable_value=-1,
         ),
         PillarTrackerConceptDefinition(
-            concept_key="optimism_perspective",
-            label="Perspective",
-            helper="How positive and balanced was your perspective today?",
+            concept_key="support_connection",
+            label="Support & Connection",
+            helper="How connected and supported did you feel today?",
             options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE,
             target_value=2 / 3,
             target_direction="gte",
             score_mode="likert",
             score_ceiling=1,
-        ),
-        PillarTrackerConceptDefinition(
-            concept_key="support_openness",
-            label="Support",
-            helper="Did you open up, ask for support, or let someone help today?",
-            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
-            target_value=1,
-            target_direction="gte",
-            score_mode="binary",
         ),
     ),
     "recovery": (
@@ -492,6 +481,101 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         ),
     ),
 }
+
+
+# Existing answers retain their original questions and four-question scoring.
+_LEGACY_REFLECTION_TRACKER_CONFIG = (
+    PillarTrackerConceptDefinition(
+        concept_key="self_awareness",
+        label="Self-Awareness",
+        helper="Did you take time to reflect on your thoughts, actions or decisions today?",
+        options=_BINARY_OPTIONS,
+        target_value=1,
+        target_direction="gte",
+        score_mode="binary",
+    ),
+    replace(
+        PILLAR_TRACKER_CONFIG["reflection"][0],
+        label="Emotional Awareness",
+        helper="How emotionally aware did you feel today?",
+    ),
+    replace(
+        PILLAR_TRACKER_CONFIG["reflection"][1],
+        helper="How present and focused were you for most of today?",
+    ),
+    replace(PILLAR_TRACKER_CONFIG["reflection"][2], label="Learning & Patterns"),
+)
+_LEGACY_RESILIENCE_TRACKER_CONFIG = (
+    replace(
+        PILLAR_TRACKER_CONFIG["resilience"][0],
+        label="Calm & Control",
+        helper="How calm and in control did you feel for most of today?",
+        options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE,
+    ),
+    replace(PILLAR_TRACKER_CONFIG["resilience"][1], label="Enjoyment / Restoration"),
+    PillarTrackerConceptDefinition(
+        concept_key="stress_recovery", label="Stress Recovery",
+        helper="Did you use a reset or recovery strategy today?",
+        options=_BINARY_OPTIONS, target_value=1, target_direction="gte", score_mode="binary",
+    ),
+    PillarTrackerConceptDefinition(
+        concept_key="optimism_perspective", label="Perspective",
+        helper="How positive and balanced was your perspective today?",
+        options=_SUBJECTIVE_OPTIONS_BINARY_COMPATIBLE, target_value=2 / 3,
+        target_direction="gte", score_mode="likert", score_ceiling=1,
+    ),
+    PillarTrackerConceptDefinition(
+        concept_key="support_openness", label="Support",
+        helper="Did you open up, ask for support, or let someone help today?",
+        options=_BINARY_OPTIONS, target_value=1, target_direction="gte", score_mode="binary",
+    ),
+)
+_LEGACY_TRACKER_CONFIGS = {
+    "reflection": _LEGACY_REFLECTION_TRACKER_CONFIG,
+    "resilience": _LEGACY_RESILIENCE_TRACKER_CONFIG,
+}
+_QUESTION_SET_VERSION = 2
+
+
+def _versioned_pillar_for_concepts(required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> str | None:
+    keys = frozenset(item.concept_key for item in required_concepts)
+    for pillar_key, legacy in _LEGACY_TRACKER_CONFIGS.items():
+        current_keys = frozenset(item.concept_key for item in PILLAR_TRACKER_CONFIG[pillar_key])
+        legacy_keys = frozenset(item.concept_key for item in legacy)
+        if keys in (current_keys, legacy_keys, current_keys | legacy_keys):
+            return pillar_key
+    return None
+
+
+def _recorded_day_concepts(
+    day_rows: dict[str, DailyPillarTrackerEntry],
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+) -> tuple[PillarTrackerConceptDefinition, ...]:
+    pillar_key = _versioned_pillar_for_concepts(required_concepts)
+    if not day_rows or pillar_key is None:
+        return required_concepts
+    shared_keys = {item.concept_key for item in PILLAR_TRACKER_CONFIG[pillar_key]} & {
+        item.concept_key for item in _LEGACY_TRACKER_CONFIGS[pillar_key]
+    }
+    for concept_key in sorted(shared_keys):
+        meta = getattr(day_rows.get(concept_key), "meta", None)
+        if isinstance(meta, dict) and str(meta.get("question_set_version")) == str(_QUESTION_SET_VERSION):
+            return PILLAR_TRACKER_CONFIG[pillar_key]
+    return _LEGACY_TRACKER_CONFIGS[pillar_key]
+
+
+def _week_evaluation_concepts(
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
+) -> tuple[PillarTrackerConceptDefinition, ...]:
+    if _versioned_pillar_for_concepts(required_concepts) is None:
+        return required_concepts
+    definitions = {item.concept_key: item for item in required_concepts}
+    for rows in entries_by_day.values():
+        if rows:
+            for item in _recorded_day_concepts(rows, required_concepts):
+                definitions.setdefault(item.concept_key, item)
+    return tuple(definitions.values())
 
 
 def ensure_pillar_tracker_schema() -> None:
@@ -881,6 +965,7 @@ def _record_latest_tracker_focus(
                 "target_met": payload.get("target_met"),
             }
             for concept_key, payload in normalized_rows.items()
+            if payload.get("score") is not None or payload.get("target_met") is not None
         ],
         key=_saved_tracker_focus_sort_key,
     )
@@ -978,7 +1063,13 @@ def _normalize_option_value(defn: PillarTrackerConceptDefinition, value: Any) ->
     return normalized
 
 
-def _score_value(defn: PillarTrackerConceptDefinition, value: float) -> int:
+def _is_not_applicable(defn: PillarTrackerConceptDefinition, value: float | None) -> bool:
+    return defn.not_applicable_value is not None and value == defn.not_applicable_value
+
+
+def _score_value(defn: PillarTrackerConceptDefinition, value: float) -> int | None:
+    if _is_not_applicable(defn, value):
+        return None
     if defn.score_mode == "binary":
         return 100 if value >= 1 else 0
     if defn.score_mode == "likert":
@@ -1093,6 +1184,7 @@ def _concept_okr_actual_achieved(
         _safe_float((evaluations_for_concept.get(day) or {}).get("value"))
         for day in week_days
         if effective_start <= day <= anchor
+        and not (evaluations_for_concept.get(day) or {}).get("not_applicable")
     ]
     logged_days = len([value for value in logged_values if value is not None])
     return _okr_actual_achieved_from_logged_values(
@@ -1246,9 +1338,13 @@ def _sync_pillar_tracker_actuals_to_okrs(
         .all()
     )
     rows_by_concept: dict[str, list[DailyPillarTrackerEntry]] = {}
+    rows_by_day: dict[date, dict[str, DailyPillarTrackerEntry]] = {}
+    for row in tracker_rows:
+        rows_by_day.setdefault(row.score_date, {})[row.concept_key] = row
     for row in tracker_rows:
         concept_key = str(getattr(row, "concept_key", "") or "").strip().lower()
-        if concept_key in best_by_concept:
+        day_concepts = _recorded_day_concepts(rows_by_day.get(row.score_date, {}), required_concepts)
+        if concept_key in best_by_concept and any(item.concept_key == concept_key for item in day_concepts):
             rows_by_concept.setdefault(concept_key, []).append(row)
     sync_time = datetime.utcnow().replace(microsecond=0)
     sync_note = f"daily_tracker_sync:{anchor_date.isoformat()}"
@@ -1268,6 +1364,8 @@ def _sync_pillar_tracker_actuals_to_okrs(
             if row_date < effective_start:
                 continue
             value = _normalize_option_value(concept_def, getattr(row, "value_num", None))
+            if _is_not_applicable(concept_def, value):
+                continue
             logged_values.append(value)
         logged_days = len([value for value in logged_values if value is not None])
         actual_progress = _okr_actual_achieved_from_logged_values(
@@ -1310,7 +1408,9 @@ def _score_against_daily_target(
     *,
     target_value: float | None,
     target_direction: str,
-) -> int:
+) -> int | None:
+    if _is_not_applicable(defn, value):
+        return None
     target = _safe_float(target_value)
     if target is None or target <= 0:
         return _score_value(defn, value)
@@ -1584,7 +1684,9 @@ def _target_met_for_value(
     defn: PillarTrackerConceptDefinition,
     value: float,
     resolved_target: PillarTrackerResolvedTarget,
-) -> bool:
+) -> bool | None:
+    if _is_not_applicable(defn, value):
+        return None
     if resolved_target.target_period == "day" and resolved_target.target_value is not None:
         return _value_meets_threshold(resolved_target.target_direction, resolved_target.target_value, value)
     return _value_meets_threshold(resolved_target.success_direction, resolved_target.success_value, value)
@@ -1594,7 +1696,9 @@ def _score_for_value(
     defn: PillarTrackerConceptDefinition,
     value: float,
     resolved_target: PillarTrackerResolvedTarget,
-) -> int:
+) -> int | None:
+    if _is_not_applicable(defn, value):
+        return None
     if resolved_target.target_period == "day" and resolved_target.target_value is not None:
         return _score_against_daily_target(
             defn,
@@ -1609,7 +1713,9 @@ def _daily_display_status_for_value(
     defn: PillarTrackerConceptDefinition,
     value: float,
     resolved_target: PillarTrackerResolvedTarget,
-) -> str:
+) -> str | None:
+    if _is_not_applicable(defn, value):
+        return None
     if defn.score_mode == "binary":
         return "success" if value >= 1 else "danger"
     score = _score_for_value(defn, value, resolved_target)
@@ -1633,7 +1739,8 @@ def _build_concept_week_evaluations(
     week_days: list[date],
 ) -> dict[str, dict[date, dict[str, Any]]]:
     evaluations: dict[str, dict[date, dict[str, Any]]] = {}
-    for concept_def in required_concepts:
+    evaluation_concepts = _week_evaluation_concepts(required_concepts, entries_by_day)
+    for concept_def in evaluation_concepts:
         concept_key = concept_def.concept_key
         resolved_target = resolved_targets.get(concept_key) or _default_resolved_target("", concept_def)
         effective_start = _effective_okr_window_start(resolved_target, week_days, week_days[-1])
@@ -1649,22 +1756,28 @@ def _build_concept_week_evaluations(
         cumulative_value = 0.0
         answered_days = 0
         for day in week_days:
-            row = (entries_by_day.get(day) or {}).get(concept_key)
+            day_rows = entries_by_day.get(day) or {}
+            day_concepts = _recorded_day_concepts(day_rows, required_concepts)
+            day_definition = next((item for item in day_concepts if item.concept_key == concept_key), None)
+            row = day_rows.get(concept_key) if day_definition is not None else None
+            active_definition = day_definition or concept_def
             value = None
             value_label = None
             target_reached = None
             daily_status = None
             daily_positive = None
             if row is not None and getattr(row, "value_num", None) is not None:
-                value = _normalize_option_value(concept_def, getattr(row, "value_num", 0))
+                value = _normalize_option_value(active_definition, getattr(row, "value_num", 0))
+            not_applicable = _is_not_applicable(active_definition, value)
             if value is not None:
-                value_label = _to_value_label(concept_def, value) or str(getattr(row, "value_label", "") or "").strip() or None
+                value_label = _to_value_label(active_definition, value) or str(getattr(row, "value_label", "") or "").strip() or None
+            if value is not None and not not_applicable:
                 target_reached = _value_meets_threshold(
                     resolved_target.success_direction,
                     resolved_target.success_value,
                     value,
                 )
-                daily_status = _daily_display_status_for_value(concept_def, value, resolved_target)
+                daily_status = _daily_display_status_for_value(active_definition, value, resolved_target)
                 daily_positive = daily_status == "success"
                 if day >= effective_start:
                     answered_days += 1
@@ -1672,7 +1785,10 @@ def _build_concept_week_evaluations(
             # Subjective Likert inputs keep their displayed score on the raw 0-100
             # mapping instead of being converted into weekly progress when an OKR
             # target exists.
-            if (
+            if not_applicable:
+                score = None
+                target_met = None
+            elif (
                 concept_def.score_mode != "likert"
                 and resolved_target.target_period == "week"
                 and resolved_target.target_value is not None
@@ -1691,8 +1807,8 @@ def _build_concept_week_evaluations(
                     score = None
                     target_met = None
             elif value is not None:
-                score = _score_for_value(concept_def, value, resolved_target)
-                target_met = _target_met_for_value(concept_def, value, resolved_target)
+                score = _score_for_value(active_definition, value, resolved_target)
+                target_met = _target_met_for_value(active_definition, value, resolved_target)
             else:
                 score = None
                 target_met = None
@@ -1700,6 +1816,7 @@ def _build_concept_week_evaluations(
                 "row": row,
                 "value": value,
                 "value_label": value_label,
+                "not_applicable": not_applicable,
                 "score": score,
                 "target_met": target_met,
                 "target_reached": target_reached,
@@ -1810,7 +1927,8 @@ def _resolve_tracker_detail_context(
 
 
 def _day_complete(day_rows: dict[str, DailyPillarTrackerEntry], required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> bool:
-    required_keys = {item.concept_key for item in required_concepts}
+    day_concepts = _recorded_day_concepts(day_rows, required_concepts)
+    required_keys = {item.concept_key for item in day_concepts}
     return required_keys.issubset(set(day_rows.keys()))
 
 
@@ -1821,7 +1939,7 @@ def _day_score(
     day: date,
 ) -> int | None:
     scores: list[int] = []
-    for item in required_concepts:
+    for item in _recorded_day_concepts(day_rows, required_concepts):
         score = (
             evaluations_by_concept.get(item.concept_key, {})
             .get(day, {})
@@ -1862,6 +1980,8 @@ def _concept_target_streak_days(evaluations_for_concept: dict[date, dict[str, An
         day = anchor - timedelta(days=offset)
         if day < start_of_week(anchor):
             break
+        if (evaluations_for_concept.get(day) or {}).get("not_applicable"):
+            continue
         if not bool((evaluations_for_concept.get(day) or {}).get("target_met")):
             break
         streak += 1
@@ -1874,6 +1994,8 @@ def _concept_positive_streak_days(evaluations_for_concept: dict[date, dict[str, 
         day = anchor - timedelta(days=offset)
         if day < start_of_week(anchor):
             break
+        if (evaluations_for_concept.get(day) or {}).get("not_applicable"):
+            continue
         if not bool((evaluations_for_concept.get(day) or {}).get("daily_positive")):
             break
         streak += 1
@@ -2478,7 +2600,8 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
             continue
         required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
         entries_by_day = _load_week_entries(user_id, pillar_key, resolved_anchor)
-        resolved_targets = _resolve_pillar_targets_for_user(user_id, pillar_key, required_concepts)
+        evaluation_concepts = _week_evaluation_concepts(required_concepts, entries_by_day)
+        resolved_targets = _resolve_pillar_targets_for_user(user_id, pillar_key, evaluation_concepts)
         evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
         pillars.append(
             _summary_pillar_payload(
@@ -2500,8 +2623,12 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None, *, skip
             previous_anchor = current_day - timedelta(days=1)
             previous_days = _week_days(previous_anchor)
             previous_entries = _load_week_entries(user_id, pillar_key, previous_anchor)
+            previous_concepts = _week_evaluation_concepts(required_concepts, previous_entries)
+            previous_targets = resolved_targets
+            if any(item.concept_key not in resolved_targets for item in previous_concepts):
+                previous_targets = _resolve_pillar_targets_for_user(user_id, pillar_key, previous_concepts)
             previous_evaluations = _build_concept_week_evaluations(
-                previous_entries, required_concepts, resolved_targets, previous_days
+                previous_entries, required_concepts, previous_targets, previous_days
             )
             previous_score = _week_score(
                 previous_entries, required_concepts, previous_evaluations, previous_days
@@ -2572,14 +2699,6 @@ def get_pillar_tracker_detail(
         entries_by_day = _load_week_entries(user_id, key, resolved_anchor)
         entries_cache[start_of_week(resolved_anchor)] = entries_by_day
     mark_stage("entries")
-    baseline_scores = _latest_assessment_scores_for_user(user_id)
-    mark_stage("assessment")
-    week_days = _week_days(resolved_anchor)
-    resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
-    mark_stage("targets")
-    evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
-    tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
-    completed_days = _completed_days(entries_by_day, required_concepts)
     editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
     historical_request = (
         anchor is not None
@@ -2587,6 +2706,19 @@ def get_pillar_tracker_detail(
         and start_of_week(anchor) < start_of_week(current_day)
     )
     is_editable = resolved_anchor in editable_dates and not historical_request
+    if key in _LEGACY_TRACKER_CONFIGS and not is_editable:
+        historical_rows = entries_by_day.get(resolved_anchor) or next(iter(entries_by_day.values()), {})
+        required_concepts = _recorded_day_concepts(historical_rows, required_concepts)
+        required_concepts = _week_evaluation_concepts(required_concepts, entries_by_day)
+    baseline_scores = _latest_assessment_scores_for_user(user_id)
+    mark_stage("assessment")
+    week_days = _week_days(resolved_anchor)
+    evaluation_concepts = _week_evaluation_concepts(required_concepts, entries_by_day)
+    resolved_targets = _resolve_pillar_targets_for_user(user_id, key, evaluation_concepts)
+    mark_stage("targets")
+    evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
+    tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
+    completed_days = _completed_days(entries_by_day, required_concepts)
     is_current_week = start_of_week(resolved_anchor) == start_of_week(current_day)
     current_summary = _summary_pillar_payload(
         user_id=int(user_id),
@@ -2602,21 +2734,21 @@ def get_pillar_tracker_detail(
     )
     mark_stage("summary")
     concepts_payload = []
-    today_rows = entries_by_day.get(resolved_anchor, {})
     for concept_def in required_concepts:
-        current_row = today_rows.get(concept_def.concept_key)
         resolved_target = (
             resolved_targets.get(concept_def.concept_key)
             or _default_resolved_target_for_user(int(user_id), key, concept_def)
         )
         evaluations_for_concept = evaluations_by_concept.get(concept_def.concept_key, {})
         today_eval = evaluations_for_concept.get(resolved_anchor, {})
+        current_row = today_eval.get("row")
         okr_status = _concept_okr_status(concept_def, evaluations_for_concept, resolved_target, resolved_anchor, week_days)
         concepts_payload.append(
             {
                 "concept_key": concept_def.concept_key,
                 "label": concept_def.label,
                 "helper": _contextualize_helper_text(concept_def.helper, key, resolved_anchor, current_day),
+                "not_applicable": bool(today_eval.get("not_applicable")),
                 "target_label": resolved_target.target_label,
                 "target_source": resolved_target.source,
                 "target_period": resolved_target.target_period,
@@ -2660,6 +2792,7 @@ def get_pillar_tracker_detail(
                         "is_today": day == current_day,
                         "is_active": day == resolved_anchor,
                         "value_label": evaluations_for_concept.get(day, {}).get("value_label"),
+                        "not_applicable": bool(evaluations_for_concept.get(day, {}).get("not_applicable")),
                         "score": (
                             int(evaluations_for_concept.get(day, {}).get("score"))
                             if evaluations_for_concept.get(day, {}).get("score") is not None
@@ -2767,8 +2900,19 @@ def save_pillar_tracker_day(
             )
         raise ValueError("This pillar can only be saved for today.")
     required_concepts = tracker_concepts_for_pillar(key, user_id=int(user_id))
-    resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
     entries = entries or []
+    question_set_version = _QUESTION_SET_VERSION
+    legacy_concepts = _LEGACY_TRACKER_CONFIGS.get(key, ())
+    if (
+        legacy_concepts
+        and len(entries) == len(legacy_concepts)
+        and {str((item or {}).get("concept_key") or "").strip().lower() for item in entries}
+        == {item.concept_key for item in legacy_concepts}
+    ):
+        # A check-in opened before deployment can still submit its original set.
+        required_concepts = legacy_concepts
+        question_set_version = 1
+    resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
     if len(entries) != len(required_concepts):
         raise ValueError("A complete pillar tracker requires all concept values for the day.")
     config_by_key = {item.concept_key: item for item in required_concepts}
@@ -2840,6 +2984,8 @@ def save_pillar_tracker_day(
                 "target_unit": getattr(resolved_target, "target_unit", None),
                 "target_period": getattr(resolved_target, "target_period", None),
             }
+            if key in _LEGACY_TRACKER_CONFIGS:
+                row.meta["question_set_version"] = question_set_version
         _record_latest_tracker_focus(
             s,
             user_id=int(user_id),
