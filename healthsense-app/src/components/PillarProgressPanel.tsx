@@ -23,6 +23,7 @@ import styles from "./PillarProgressPanel.module.css";
 
 type PillarProgressPanelProps = {
   userId: string;
+  initialPillarKey?: string | null;
   onBack: () => void;
   onEditGoals: () => void;
 };
@@ -115,7 +116,7 @@ function Coverage({ concept }: { concept: PillarProgressConcept }) {
   );
 }
 
-export default function PillarProgressPanel({ userId, onBack, onEditGoals }: PillarProgressPanelProps) {
+export default function PillarProgressPanel({ userId, initialPillarKey = null, onBack, onEditGoals }: PillarProgressPanelProps) {
   const [progress, setProgress] = useState<PillarProgressResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +154,12 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
         if (String(payload?.user_id) !== userId || !Array.isArray(payload?.pillars) || !payload?.week?.start || !payload?.week?.through) {
           throw new Error("Could not load your progress. Please try again.");
         }
-        if (!controller.signal.aborted) setProgress(payload as PillarProgressResponse);
+        if (!controller.signal.aborted) {
+          const nextProgress = payload as PillarProgressResponse;
+          const requestedPillarKey = String(initialPillarKey || "").trim().toLowerCase();
+          setProgress(nextProgress);
+          setPillarDetail(nextProgress.pillars.find((pillar) => pillar.pillar_key === requestedPillarKey) ?? null);
+        }
       } catch (loadError) {
         if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : "Could not load your progress.");
       } finally {
@@ -162,7 +168,7 @@ export default function PillarProgressPanel({ userId, onBack, onEditGoals }: Pil
     };
     void loadProgress();
     return () => controller.abort();
-  }, [reload, userId]);
+  }, [initialPillarKey, reload, userId]);
 
   useEffect(() => () => {
     guidanceVersionRef.current += 1;

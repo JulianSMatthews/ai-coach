@@ -32,9 +32,9 @@ function sample() {
   };
 }
 
-function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.pillarKey, concept_key: body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `HIDDEN INSIGHT for ${body.conceptKey}`, action: `Step for ${body.conceptKey}`, reflection: `Reflect on ${body.conceptKey}?` }), progressData = sample()) {
+function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.pillarKey, concept_key: body.conceptKey, week_start: '2026-11-16', through: '2026-11-18', insight: `HIDDEN INSIGHT for ${body.conceptKey}`, action: `Step for ${body.conceptKey}`, reflection: `Reflect on ${body.conceptKey}?` }), progressData = sample(), initialProps = {}) {
   let slots = [], cursor = 0, effects = [], dirty = true, tree, unmounted = false;
-  let props = { userId: '42', onBack() {}, onEditGoals() {} };
+  let props = { userId: '42', onBack() {}, onEditGoals() {}, ...initialProps };
   const calls = [], frames = [], focused = [];
   const equal = (left, right) => left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
   const react = {
@@ -140,6 +140,44 @@ test('opening progress shows only pillars and opening concept scores does not ge
   assert.equal(h.calls.length, 1);
   assert.ok(h.buttons().includes('Contribution: Needs attention, 0 out of 100. Get guidance'));
   assert.match(h.text(), /Get guidance/);
+});
+
+test('cue-card entry opens the requested pillar and Back returns to the overview without reopening it', async t => {
+  const h = harness(undefined, sample(), { initialPillarKey: ' Purpose ' });
+  t.after(() => h.unmount()); await h.flush();
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.rows().length, 0);
+  assert.ok(h.buttons().includes('Contribution: Needs attention, 0 out of 100. Get guidance'));
+  assert.ok(!h.buttons().some(label => label.startsWith('Adaptability:')));
+  await h.click('Back to pillars');
+  assert.equal(h.rows().length, 2);
+  assert.match(h.focused.at(-1), /^Purpose:.*View concepts$/);
+  assert.doesNotMatch(h.text(), /Values|Contribution|Adaptability/);
+  await h.click('Resilience:');
+  assert.ok(h.buttons().includes('Adaptability: Not scored. View check-ins'));
+  assert.equal(h.calls.length, 1);
+});
+
+test('an unavailable cue-card pillar falls back to the overview', async t => {
+  const h = harness(undefined, sample(), { initialPillarKey: 'nutrition' });
+  t.after(() => h.unmount()); await h.flush();
+  assert.equal(h.rows().length, 2);
+  assert.ok(h.buttons().some(label => /^Purpose:.*View concepts$/.test(label)));
+  assert.equal(h.calls.length, 1);
+});
+
+test('changing the requested pillar cancels coaching before showing the new concept scores', async t => {
+  let pending;
+  const h = harness((body, options) => new Promise(resolve => { pending = { body, options, resolve }; }), sample(), { initialPillarKey: 'purpose' });
+  t.after(() => h.unmount()); await h.flush();
+  await h.click('Contribution:');
+  await h.update({ initialPillarKey: 'resilience' });
+  assert.equal(pending.options.signal.aborted, true);
+  assert.ok(h.buttons().includes('Adaptability: Not scored. View check-ins'));
+  pending.resolve({ source: 'ai', pillar_key: 'purpose', concept_key: 'contribution_connection', week_start: '2026-11-16', through: '2026-11-18', insight: 'Old insight', action: 'OLD GUIDANCE', reflection: 'Old reflection?' });
+  await h.flush();
+  assert.doesNotMatch(h.text(), /OLD GUIDANCE|Preparing guidance/);
+  assert.equal(h.calls.filter(call => call.options.method === 'POST').length, 1);
 });
 
 test('neutral circle opens evidence and explanation without generating AI guidance', async t => {

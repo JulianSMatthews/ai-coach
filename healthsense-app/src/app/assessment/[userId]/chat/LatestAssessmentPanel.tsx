@@ -1522,6 +1522,7 @@ export default function LatestAssessmentPanel({
   const [objectivesModalOpen, setObjectivesModalOpen] = useState(false);
   const [editingObjectives, setEditingObjectives] = useState(false);
   const [progressOpenVersion, setProgressOpenVersion] = useState(0);
+  const [progressPillarKey, setProgressPillarKey] = useState<string | null>(null);
   const [streakSectionOpen, setStreakSectionOpen] = useState(false);
   const [streakCalendarMonth, setStreakCalendarMonth] = useState(() => {
     const baseDate = parseIsoLocalDay(initialSummary.today) || new Date();
@@ -2864,7 +2865,8 @@ export default function LatestAssessmentPanel({
     [userId],
   );
 
-  const openObjectivesModal = useCallback(() => {
+  const openObjectivesModal = useCallback((pillarKey: string | null = null) => {
+    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase() || null;
     setStreakSectionOpen(false);
     setActiveDockKey("checkin");
     setSummaryPanelVisible(true);
@@ -2872,11 +2874,15 @@ export default function LatestAssessmentPanel({
     setBiometricsModalOpen(false);
     setObjectivesModalOpen(true);
     setEditingObjectives(false);
+    setProgressPillarKey(normalizedPillarKey);
     setProgressOpenVersion((version) => version + 1);
     setSelectedObjectivesSection(null);
     setBiometricsActionError(null);
     window.dispatchEvent(new CustomEvent("healthsense-home-surface", { detail: { surface: "blank", source: "summary" } }));
-    logUserAppEvent("pillar_progress_open", { source: "overall_score" });
+    logUserAppEvent("pillar_progress_open", {
+      source: normalizedPillarKey ? "pillar_score" : "overall_score",
+      ...(normalizedPillarKey ? { pillarKey: normalizedPillarKey } : {}),
+    });
   }, [logUserAppEvent]);
 
   const editWeeklyGoals = useCallback(async () => {
@@ -3578,9 +3584,15 @@ export default function LatestAssessmentPanel({
                       className="relative flex min-h-[28rem] w-full max-w-[25rem] shrink-0 snap-center snap-always flex-col overflow-hidden rounded-[34px] px-7 py-7 text-left shadow-[0_20px_44px_-36px_rgba(30,27,22,0.55)] transition active:scale-[0.99] sm:min-h-[30rem] sm:px-8 sm:py-8"
                       style={pillarCueCardStyle}
                     >
-                      <div className="absolute right-5 top-5">
+                      <button
+                        type="button"
+                        onClick={() => openObjectivesModal(pillarKey)}
+                        className="absolute right-5 top-5 cursor-pointer rounded-full transition hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-4"
+                        aria-label={`Open ${pillar.label || pillarKey} progress, ${score == null ? "not scored" : `${score} out of 100`}`}
+                        title={`View ${pillar.label || pillarKey} concept scores`}
+                      >
                         <WeeklyScoreRing value={score} tone={palette.accent} />
-                      </div>
+                      </button>
                       <div className="min-h-[48px] pr-24">
                         <p className="text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-[2.65rem]">
                           {pillar.label}
@@ -4508,6 +4520,7 @@ export default function LatestAssessmentPanel({
         <PillarProgressPanel
           key={progressOpenVersion}
           userId={userId}
+          initialPillarKey={progressPillarKey}
           onBack={closeObjectivesModal}
           onEditGoals={() => void editWeeklyGoals()}
         />
