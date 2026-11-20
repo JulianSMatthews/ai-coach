@@ -28,7 +28,7 @@ import { dispatchPillarTrackerOverallScore, resolveMondayCueScores, resolveTrack
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarMeta, getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
-import PillarInsightHistory from "@/components/PillarInsightHistory";
+import PillarInsight from "@/components/PillarInsight";
 import PillarProgressPanel from "@/components/PillarProgressPanel";
 
 type LatestAssessmentPanelProps = {
@@ -3599,12 +3599,10 @@ export default function LatestAssessmentPanel({
                         </p>
                       </div>
                       <div className="mt-8 flex min-h-0 flex-1 flex-col sm:mt-9">
-                        <PillarInsightHistory
-                          userId={userId}
-                          pillarKey={pillarKey}
+                        <PillarInsight
+                          key={`${userId}:${pillarKey}`}
                           pillarLabel={pillar.label || pillarKey}
                           currentQuote={quote}
-                          currentDate={summary.today}
                         />
                         <div className="mt-auto grid w-full grid-flow-col auto-cols-fr gap-2 pt-5">
                           {orderedCheckinOptions.map((option) => {

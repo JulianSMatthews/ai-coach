@@ -7,19 +7,16 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/components/PillarInsightHistory.tsx'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../src/components/PillarInsight.tsx'), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017,
 } }).outputText;
 const today = { id: 1, quote_date: '2026-11-17', quote: 'TODAY. ' + 'A longer reflection to read carefully. '.repeat(30) };
-const earlier = { id: 2, quote_date: '2026-11-15', quote: 'A short earlier insight.' };
-const oldest = { id: 3, quote_date: '2026-11-10', quote: 'OLDEST. ' + 'An older long reflection. '.repeat(30) };
-const page = (insights, has_more = false, next_before = null, user_id = 42) => ({ user_id, pillar_key: 'resilience', insights, has_more, next_before });
 
-function harness(fetchPage = async () => page([today, earlier, oldest])) {
-  let slots = [], cursor = 0, pendingEffects = [], tree, dirty = true, wrapperKey, requestId = 0;
-  let props = { userId: '42', pillarKey: 'resilience', pillarLabel: 'Resilience', currentQuote: 'Current undated fallback.', currentDate: '2026-11-17' };
-  const frames = new Map(), observers = [], calls = [], events = [], nodes = new Map();
+function harness() {
+  let slots = [], cursor = 0, pendingEffects = [], tree, dirty = true, requestId = 0;
+  let props = { pillarLabel: 'Resilience', currentQuote: today.quote };
+  const frames = new Map(), calls = [], events = [], nodes = new Map();
   const equal = (left, right) => left && right && left.length === right.length && left.every((value, i) => Object.is(value, right[i]));
   const react = {
     useState(initial) {
@@ -48,19 +45,15 @@ function harness(fetchPage = async () => page([today, earlier, oldest])) {
     cancelAnimationFrame(id) { frames.delete(id); },
     addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: true }),
   };
-  class IntersectionObserver {
-    constructor(callback) { this.callback = callback; observers.push(this); }
-    observe() {} disconnect() {}
-  }
   class ResizeObserver { observe() {} disconnect() {} }
   const exports = {};
   vm.runInNewContext(compiled, {
     exports, window, document: { addEventListener() {}, removeEventListener() {} },
-    IntersectionObserver, ResizeObserver, AbortController, URLSearchParams, console, setTimeout, clearTimeout, queueMicrotask,
+    ResizeObserver, console, setTimeout, clearTimeout, queueMicrotask,
     requestAnimationFrame: window.requestAnimationFrame, cancelAnimationFrame: window.cancelAnimationFrame,
     fetch: async (url, options) => {
       calls.push({ url, options });
-      return { ok: true, json: async () => fetchPage(url, options) };
+      throw new Error('Current insight scrolling must not fetch history');
     },
     require: name => name === 'react' ? react : require(name),
   });
@@ -97,13 +90,8 @@ function harness(fetchPage = async () => page([today, earlier, oldest])) {
     return element;
   };
   const render = () => {
-    const wrapper = exports.default(props);
-    if (wrapperKey !== undefined && wrapper.key !== wrapperKey) {
-      slots.forEach(slot => slot?.cleanup?.()); slots = []; nodes.clear(); frames.clear(); pendingEffects = [];
-    }
-    wrapperKey = wrapper.key;
     cursor = 0; dirty = false;
-    tree = expand(wrapper.type(wrapper.props));
+    tree = expand(exports.default(props));
     const effects = pendingEffects; pendingEffects = []; effects.forEach(fn => fn());
   };
   const flush = async () => {
@@ -124,8 +112,6 @@ function harness(fetchPage = async () => page([today, earlier, oldest])) {
   const buttons = glyph => all(tree, node => node.type === 'button' && text(node).trim() === glyph);
   return {
     calls, flush,
-    async activate() { observers.at(-1).callback([{ isIntersecting: true }]); await flush(); },
-    date() { const times = all(tree, node => node.type === 'time'); assert.equal(times.length, 1, 'one insight date at a time'); return times[0].props.dateTime; },
     text: () => text(tree), region,
     async click(glyph) { const button = buttons(glyph)[0]; assert.ok(button, `Missing ${glyph}`); if (!button.props.disabled) button.props.onClick(); await flush(); },
     disabled: glyph => buttons(glyph)[0]?.props.disabled,
@@ -166,107 +152,62 @@ function harness(fetchPage = async () => page([today, earlier, oldest])) {
   };
 }
 
-test('arrows immediately change exactly one insight and reset reading to the top', async t => {
-  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate();
-  assert.equal(h.date(), today.quote_date);
-  await h.position(120);
-  assert.equal(h.disabled('↑'), true, 'latest insight has no newer entry even while scrolled');
+test('arrows scroll the current insight by 80px and stop at the reading boundaries', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush();
+  assert.equal(h.disabled('↑'), true);
+  assert.equal(h.disabled('↓'), false);
+  await h.click('↓'); assert.equal(h.region().scrollTop, 80);
+  assert.equal(h.disabled('↑'), false);
+  await h.click('↓'); assert.equal(h.region().scrollTop, 160);
+  await h.click('↑'); assert.equal(h.region().scrollTop, 80);
+  await h.position('bottom');
+  assert.equal(h.disabled('↓'), true);
   await h.click('↓');
-  assert.equal(h.date(), earlier.quote_date); assert.equal(h.region().scrollTop, 0);
-  assert.ok(!h.text().includes('TODAY.'));
-  await h.click('↓'); assert.equal(h.date(), oldest.quote_date);
-  assert.equal(h.disabled('↓'), true, 'oldest insight has no older entry even with unread text');
-  await h.position(120); await h.click('↑');
-  assert.equal(h.date(), earlier.quote_date); assert.equal(h.region().scrollTop, 0);
-  await h.click('↑'); assert.equal(h.date(), today.quote_date); assert.equal(h.region().scrollTop, 0);
+  assert.equal(h.region().scrollTop, h.region().scrollHeight - h.region().clientHeight);
+  await h.click('↑'); assert.equal(h.disabled('↓'), false);
+  assert.ok(h.text().includes(today.quote));
+  assert.equal(h.calls.length, 0);
 });
 
-test('vertical swipes read the current insight without changing entries at either edge', async t => {
-  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate();
-  await h.pointer({ dy: -100 });
-  assert.equal(h.region().scrollTop, 100); assert.equal(h.date(), today.quote_date);
-  await h.pointer({ dy: 60 });
-  assert.equal(h.region().scrollTop, 40); assert.equal(h.date(), today.quote_date);
-  await h.position(h.region().scrollHeight - h.region().clientHeight - 20);
-  await h.pointer({ dy: -100 }); assert.equal(h.date(), today.quote_date);
-  await h.pointer({ dy: -160, moves: 4 }); assert.equal(h.date(), today.quote_date);
-  await h.click('↓'); assert.equal(h.date(), earlier.quote_date);
-  assert.equal(h.region().scrollHeight, h.region().clientHeight, 'short insight needs no scrolling');
-  await h.pointer({ dy: -100 }); assert.equal(h.date(), earlier.quote_date);
-  await h.pointer({ dy: 90 }); assert.equal(h.date(), earlier.quote_date);
-  await h.click('↓'); assert.equal(h.date(), oldest.quote_date);
-  await h.pointer({ dy: 90 }); assert.equal(h.date(), oldest.quote_date);
-  assert.equal(h.calls.length, 1, 'reading swipes never request more history');
-});
-
-test('horizontal, tiny, cancelled, lost and secondary-pointer gestures do not page', async t => {
-  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.position('bottom');
+test('vertical swipes read the current insight and horizontal swipes remain available to the carousel', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush();
+  await h.pointer({ dy: -100 }); assert.equal(h.region().scrollTop, 100);
+  await h.pointer({ dy: 60 }); assert.equal(h.region().scrollTop, 40);
   const horizontal = await h.pointer({ dx: 100, dy: -8 });
   assert.equal(horizontal.prevented, undefined);
-  for (const gesture of [{ dy: -10 }, { cancel: true }, { lost: true }, { isPrimary: false }]) {
-    await h.pointer(gesture); assert.equal(h.date(), today.quote_date);
-  }
+  assert.equal(h.region().scrollTop, 40);
+  await h.position('bottom');
+  await h.pointer({ dy: -160, moves: 4 });
+  assert.equal(h.region().scrollTop, h.region().scrollHeight - h.region().clientHeight);
+  assert.ok(h.text().includes(today.quote));
+  assert.equal(h.calls.length, 0);
 });
 
-test('late older-page response cannot override navigation back to a newer insight', async t => {
-  let resolveOlder;
-  const h = harness(async url => new URL(url, 'https://app.test').searchParams.has('before')
-    ? new Promise(resolve => { resolveOlder = resolve; })
-    : page([today, earlier], true, earlier.quote_date));
-  t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.click('↓');
-  assert.equal(h.date(), earlier.quote_date);
-  await h.click('↓'); assert.ok(resolveOlder); assert.equal(h.calls.length, 2);
-  await h.click('↑'); assert.equal(h.date(), today.quote_date);
-  resolveOlder(page([oldest])); await h.flush(); assert.equal(h.date(), today.quote_date);
-});
-
-test('reading the current insight cancels a pending move to an older entry', async t => {
-  let resolveOlder;
-  const h = harness(async url => new URL(url, 'https://app.test').searchParams.has('before')
-    ? new Promise(resolve => { resolveOlder = resolve; })
-    : page([today, oldest], true, oldest.quote_date));
-  t.after(() => h.unmount()); await h.flush(); await h.activate(); await h.click('↓');
-  await h.click('↓'); assert.ok(resolveOlder); assert.equal(h.disabled('↓'), true);
-  await h.pointer({ dy: -100 }); assert.equal(h.region().scrollTop, 100);
-  const older = { id: 4, quote_date: '2026-11-01', quote: 'Another earlier insight.' };
-  resolveOlder(page([older])); await h.flush();
-  assert.equal(h.date(), oldest.quote_date); assert.equal(h.region().scrollTop, 100);
-  await h.click('↓'); assert.equal(h.date(), older.quote_date); assert.equal(h.region().scrollTop, 0);
-});
-
-test('changing member aborts stale requests', async t => {
-  let resolveOld;
-  const h = harness(async (_url, options) => options.signal.aborted ? page([]) : new Promise(resolve => { resolveOld = resolve; }));
-  t.after(() => h.unmount()); await h.flush(); await h.activate();
-  const request = h.calls[0];
-  await h.update({ userId: '43' }); assert.equal(request.options.signal.aborted, true);
-  resolveOld(page([today])); await h.flush(); assert.ok(!h.text().includes('TODAY.'));
-});
-
-
-test('keyboard scrolling and pinching never change insights', async t => {
-  const h = harness(); t.after(() => h.unmount()); await h.flush(); await h.activate();
+test('keyboard scrolling keeps the current insight, including at the reading boundaries', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush();
   await h.key('ArrowDown'); assert.equal(h.region().scrollTop, 80);
   await h.key('ArrowDown', true); assert.equal(h.region().scrollTop, 160);
   await h.key('PageUp'); assert.ok(h.region().scrollTop < 80);
-  await h.position('bottom');
-  for (const key of ['ArrowDown', 'PageDown']) {
-    await h.key(key); await h.key(key, true); assert.equal(h.date(), today.quote_date);
-  }
-  await h.click('↓');
-  for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']) {
-    await h.key(key); assert.equal(h.date(), earlier.quote_date);
-  }
-  await h.click('↓');
-  await h.pinch(); assert.equal(h.date(), oldest.quote_date);
-  await h.position(0);
-  await h.key('ArrowUp'); await h.key('PageUp'); assert.equal(h.date(), oldest.quote_date);
+  await h.position('bottom'); await h.key('ArrowDown'); await h.key('PageDown');
+  assert.equal(h.disabled('↓'), true);
+  await h.position(0); await h.key('ArrowUp'); await h.key('PageUp');
+  assert.equal(h.region().scrollTop, 0);
+  assert.ok(h.text().includes(today.quote));
+  assert.equal(h.calls.length, 0);
 });
 
-test('oldest saved insight does not loop or request history again', async t => {
-  const h = harness(async () => page([earlier])); t.after(() => h.unmount()); await h.flush(); await h.activate();
-  assert.equal(h.date(), earlier.quote_date);
-  await h.pointer({ dy: -100 }); assert.equal(h.date(), earlier.quote_date);
-  assert.equal(h.calls.length, 1);
-  assert.ok(h.disabled('↓') === true || h.disabled('↓') === undefined);
+test('short insights have no scrolling arrows and updated insights start at the top', async t => {
+  const h = harness(); t.after(() => h.unmount()); await h.flush();
+  await h.position(120);
+  const nextQuote = 'A different long insight. '.repeat(40);
+  await h.update({ currentQuote: nextQuote });
+  assert.equal(h.region().scrollTop, 0);
+  assert.equal(h.disabled('↑'), true);
+  assert.ok(h.text().includes(nextQuote));
+  assert.ok(!h.text().includes('TODAY.'));
+  await h.update({ currentQuote: 'A short current insight.' });
+  assert.equal(h.disabled('↑'), undefined);
+  assert.equal(h.disabled('↓'), undefined);
+  await h.pointer({ dy: -100 }); assert.equal(h.region().scrollTop, 0);
+  assert.equal(h.calls.length, 0);
 });

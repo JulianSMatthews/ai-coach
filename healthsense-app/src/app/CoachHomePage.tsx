@@ -85,14 +85,16 @@ export default async function CoachHomePage({ userId }: { userId: string }) {
       contentClassName="flex h-full min-w-0 flex-col overflow-hidden"
     >
       <TextScale defaultScale={textScale} />
-      <div className="mx-auto w-full max-w-4xl shrink-0">
-        <AppNav
-          userId={userId}
-          promptBadge={promptBadge}
-          overallScore={resolvePillarTrackerOverallScore(pillarTrackerSummary)}
-          currentStreakDays={status.engagement_summary?.current_streak_days ?? null}
-          userFirstName={status.user?.first_name || null}
-        />
+      <div className="shrink-0 px-4 sm:px-6">
+        <div className="mx-auto w-full max-w-4xl">
+          <AppNav
+            userId={userId}
+            promptBadge={promptBadge}
+            overallScore={resolvePillarTrackerOverallScore(pillarTrackerSummary)}
+            currentStreakDays={status.engagement_summary?.current_streak_days ?? null}
+            userFirstName={status.user?.first_name || null}
+          />
+        </div>
       </div>
 
       <section className="min-h-0 flex-1 overflow-x-hidden">
