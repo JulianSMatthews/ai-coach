@@ -2421,6 +2421,9 @@ def _daily_pillar_quote(
                 )
                 if latest_cached:
                     return latest_cached
+                if key in _QUOTE_LED_PILLARS:
+                    # Selecting an existing cue needs neither AI nor a cache write.
+                    return _quote_led_daily_pillar_quote(int(user_id), key, anchor)
                 return ""
 
             strongest = (concept_context or {}).get("strongest") if isinstance(concept_context, dict) else None

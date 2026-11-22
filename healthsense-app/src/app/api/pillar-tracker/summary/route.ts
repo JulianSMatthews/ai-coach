@@ -31,9 +31,6 @@ export async function GET(request: Request) {
     const cookieHeader = request.headers.get("cookie") || "";
     const userId = String(url.searchParams.get("userId") || getCookieValue(cookieHeader, "hs_user_id") || "").trim();
     const anchorDate = String(url.searchParams.get("anchorDate") || "").trim();
-    const skipQuoteGeneration = String(
-      url.searchParams.get("skipQuoteGeneration") || url.searchParams.get("skip_quote_generation") || "",
-    ).trim();
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
@@ -41,9 +38,7 @@ export async function GET(request: Request) {
     if (anchorDate) {
       params.set("anchor_date", anchorDate);
     }
-    if (skipQuoteGeneration) {
-      params.set("skip_quote_generation", skipQuoteGeneration);
-    }
+    params.set("skip_quote_generation", "true");
     const base = getBaseUrl();
     const upstream = `${base}/api/v1/users/${encodeURIComponent(userId)}/pillar-tracker${params.toString() ? `?${params.toString()}` : ""}`;
     const session = getCookieValue(cookieHeader, "hs_session");

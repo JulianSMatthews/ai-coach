@@ -108,6 +108,7 @@ const SETUP_GUIDE_CARDS = [
   },
 ];
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+const CHECKIN_SAVE_TIMEOUT_MS = 30_000;
 const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_RECENT_CAPTURE_WINDOW_MS = 5 * 60 * 1000;
 const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -135,9 +136,6 @@ const HOME_PILLAR_QUOTE_FALLBACKS: Record<string, string> = {
   nutrition: "Make the next meal simple, steady, and supportive of your energy.",
   training: "Move with intent today; consistency is the part that compounds.",
 };
-const HOME_PILLAR_FALLBACK_QUOTES = new Set(
-  Object.values(HOME_PILLAR_QUOTE_FALLBACKS).map((item) => item.trim().toLowerCase()),
-);
 const URINE_SCREENING_MARKERS = [
   { key: "concentration", label: "Hydration" },
   { key: "uti", label: "UTI Signs" },
@@ -2377,13 +2375,11 @@ export default function LatestAssessmentPanel({
             }
           : null;
 
-  const refreshSummary = useCallback(async ({
-    skipQuoteGeneration = false,
-  }: { skipQuoteGeneration?: boolean } = {}) => {
+  const refreshSummary = useCallback(async () => {
     const requestId = ++summaryRequestRef.current;
     const params = new URLSearchParams({ userId });
     // Home scores always use the reporting week, even after editing another date.
-    params.set("skipQuoteGeneration", skipQuoteGeneration ? "true" : "false");
+    params.set("skipQuoteGeneration", "true");
     const res = await fetch(`/api/pillar-tracker/summary?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
@@ -2436,7 +2432,7 @@ export default function LatestAssessmentPanel({
         throw new Error(normalizeError(text, "Failed to save setup."));
       }
       setSummary((current) => ({ ...current, app_setup_completed: true }));
-      await refreshSummary({ skipQuoteGeneration: false });
+      await refreshSummary();
       const objectivesRes = await fetch(`/api/weekly-objectives?userId=${encodeURIComponent(userId)}`, {
         method: "GET",
         cache: "no-store",
@@ -2489,20 +2485,6 @@ export default function LatestAssessmentPanel({
     }
   }, [refreshSummary, setupPillarSelections, setupSelectablePillarOrder, userId]);
 
-  const pillarNeedsGeneratedCue = useCallback((pillar: PillarTrackerPillar | null | undefined) => {
-    if (!pillar) return true;
-    if (pillar.daily_quote_generated === true) return false;
-    if (pillar.daily_quote_pending === true) return true;
-    if (pillar.daily_quote_generated === false) return true;
-    const quote = String(pillar.daily_quote || "").trim().toLowerCase();
-    return !quote || HOME_PILLAR_FALLBACK_QUOTES.has(quote);
-  }, []);
-
-  const summaryHasFallbackCueMessages = useCallback((payload: PillarTrackerSummaryResponse | null | undefined) => {
-    const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
-    return pillars.some((pillar) => pillarNeedsGeneratedCue(pillar));
-  }, [pillarNeedsGeneratedCue]);
-
   const scrollToPillarCueCard = useCallback((pillarKey?: string | null, behavior: ScrollBehavior = "smooth") => {
     if (typeof window === "undefined") return;
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
@@ -2516,42 +2498,8 @@ export default function LatestAssessmentPanel({
     });
   }, []);
 
-  const refreshSummaryFromWorkerCache = useCallback((pillarKey?: string | null, options?: { waitForFresh?: boolean }) => {
-    if (typeof window === "undefined") return;
-    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
-    const waitForFresh = Boolean(options?.waitForFresh && normalizedPillarKey);
-    const delays = [1400, 2400, 3600, 5200, 7600, 10400, 14000, 18000];
-    let resolved = false;
-    delays.forEach((delay) => {
-      window.setTimeout(() => {
-        if (resolved) return;
-        void refreshSummary({ skipQuoteGeneration: true })
-          .then((payload) => {
-            const pillars = Array.isArray(payload?.pillars) ? payload.pillars : [];
-            const targetPillar = normalizedPillarKey
-              ? pillars.find((pillar) => String(pillar.pillar_key || "").trim().toLowerCase() === normalizedPillarKey)
-              : null;
-            if (targetPillar && !pillarNeedsGeneratedCue(targetPillar)) {
-              resolved = true;
-              return;
-            }
-            if (waitForFresh) {
-              return;
-            }
-            if (!normalizedPillarKey && !summaryHasFallbackCueMessages(payload)) {
-              resolved = true;
-            }
-          })
-          .catch(() => undefined);
-      }, delay);
-    });
-  }, [pillarNeedsGeneratedCue, refreshSummary, summaryHasFallbackCueMessages]);
-
   useEffect(() => {
-    // Show scores promptly, without waiting for new coaching text to generate.
-    void refreshSummary({ skipQuoteGeneration: true })
-      .then(() => refreshSummary())
-      .catch(() => undefined);
+    void refreshSummary().catch(() => undefined);
   }, [refreshSummary]);
 
   const loadRestingHeartRate = useCallback(async () => {
@@ -2964,8 +2912,7 @@ export default function LatestAssessmentPanel({
       }
       applyWeeklyObjectivesPayload(payload);
       logUserAppEvent("weekly_objectives_save", { section: selectedObjectivesSection });
-      void refreshSummary({ skipQuoteGeneration: false }).catch(() => undefined);
-      refreshSummaryFromWorkerCache(selectedObjectivesSection);
+      void refreshSummary().catch(() => undefined);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-tracker-updated", {
@@ -3216,7 +3163,7 @@ export default function LatestAssessmentPanel({
       applyDetail(cachedDetail);
     }
     try {
-      const params = new URLSearchParams({ userId });
+      const params = new URLSearchParams({ userId, skipQuoteGeneration: "true" });
       if (anchorDate) {
         params.set("anchorDate", anchorDate);
       }
@@ -3319,6 +3266,8 @@ export default function LatestAssessmentPanel({
     if (!detail?.pillar?.pillar_key || !canSave || !canEditActiveWeek) return;
     setSaving(true);
     setSaveError(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), CHECKIN_SAVE_TIMEOUT_MS);
     try {
       const completedPillarKey = String(detail.pillar.pillar_key || "").trim().toLowerCase();
       const savedScoreDate = activeDate || detail.pillar.today || "";
@@ -3329,14 +3278,15 @@ export default function LatestAssessmentPanel({
       const res = await fetch(`/api/pillar-tracker/${encodeURIComponent(String(detail.pillar.pillar_key))}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           userId,
           score_date: savedScoreDate,
           entries,
-          skipQuoteGeneration: false,
+          skipQuoteGeneration: true,
         }),
       });
-      const text = await res.text().catch(() => "");
+      const text = await res.text();
       if (!res.ok) {
         throw new Error(normalizeError(text, "Failed to save the pillar tracker."));
       }
@@ -3388,13 +3338,16 @@ export default function LatestAssessmentPanel({
       }
       setReturnToPillarKey(completedPillarKey || null);
       closeTracker();
-      setSaving(false);
-      void refreshSummary({ skipQuoteGeneration: false })
+      // Refresh recorded scores; AI guidance is requested only inside an individual concept.
+      void refreshSummary()
         .then(() => scrollToPillarCueCard(completedPillarKey))
         .catch(() => undefined);
-      refreshSummaryFromWorkerCache(completedPillarKey, { waitForFresh: true });
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveError(controller.signal.aborted
+        ? "Saving took too long. Your answers are still here. Please try again."
+        : error instanceof Error ? error.message : String(error));
+    } finally {
+      window.clearTimeout(timeout);
       setSaving(false);
     }
   };

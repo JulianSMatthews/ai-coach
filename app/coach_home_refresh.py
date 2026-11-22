@@ -1,26 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
-import threading
 from datetime import datetime
 from typing import Any
 
-from .daily_habits import (
-    build_daily_tracker_generation_context_snapshot,
-    get_or_generate_cached_daily_habit_plan,
-)
 from .db import SessionLocal
-from .job_queue import enqueue_job, enqueue_job_once, should_use_worker
-from .models import User, UserPreference
-from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
+from .models import UserPreference
 
 COACH_HOME_REFRESH_STATE_KEY = "coach_home_refresh_state"
 COACH_HOME_REFRESH_JOB_KIND = "coach_home_tracker_refresh"
-
-
-def _in_worker_process() -> bool:
-    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
 def _get_json_pref(user_id: int, key: str) -> dict[str, Any] | None:
@@ -78,134 +66,30 @@ def run_coach_home_tracker_refresh(
     score_date: str | None = None,
     job_id: int | None = None,
 ) -> dict[str, Any]:
-    snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
-    context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
-    context_hash = str(snapshot.get("context_hash") or "").strip() or None
-    plan_date = str(context.get("plan_date") or "").strip() or None
-    started_at = datetime.utcnow().replace(microsecond=0).isoformat()
+    """Finish legacy queued jobs without generating automatic coaching."""
+    completed_at = datetime.utcnow().replace(microsecond=0).isoformat()
+    result = {
+        "ok": True,
+        "skipped": True,
+        "reason": "on_demand_coaching_only",
+        "user_id": int(user_id),
+        "trigger": str(trigger or "tracker_update").strip() or "tracker_update",
+        "pillar_key": str(pillar_key or "").strip().lower() or None,
+        "score_date": str(score_date or "").strip() or None,
+        "completed_at": completed_at,
+    }
     _update_refresh_state(
         int(user_id),
-        status="running",
-        trigger=str(trigger or "tracker_update").strip() or "tracker_update",
-        pillar_key=str(pillar_key or "").strip().lower() or None,
-        score_date=str(score_date or "").strip() or None,
+        status="succeeded",
+        trigger=result["trigger"],
+        pillar_key=result["pillar_key"],
+        score_date=result["score_date"],
         job_id=int(job_id) if job_id is not None else None,
-        started_at=started_at,
+        completed_at=completed_at,
         error=None,
-        context_hash=context_hash,
-        plan_date=plan_date,
+        result=result,
     )
-    try:
-        normalized_trigger = str(trigger or "tracker_update").strip() or "tracker_update"
-        normalized_pillar_key = str(pillar_key or "").strip().lower() or None
-        normalized_score_date = str(score_date or "").strip() or None
-        if normalized_trigger == "pillar_tracker_update" and normalized_pillar_key:
-            pillar_quote_result = get_pillar_tracker_detail(
-                int(user_id),
-                normalized_pillar_key,
-                anchor=tracker_today(),
-                skip_quote_generation=False,
-            )
-            pillar_payload = (pillar_quote_result or {}).get("pillar") if isinstance(pillar_quote_result, dict) else None
-            pillar_quote_generated = bool((pillar_payload or {}).get("daily_quote_generated"))
-            if not pillar_quote_generated:
-                raise RuntimeError(
-                    f"pillar cue quote was not generated user_id={int(user_id)} pillar={normalized_pillar_key}"
-                )
-            completed_at = datetime.utcnow().replace(microsecond=0).isoformat()
-            result = {
-                "ok": True,
-                "user_id": int(user_id),
-                "trigger": normalized_trigger,
-                "pillar_key": normalized_pillar_key,
-                "score_date": normalized_score_date,
-                "plan_date": plan_date,
-                "context_hash": context_hash,
-                "targeted": True,
-                "habits_ready": None,
-                "gia_ready": None,
-                "insight_ready": None,
-                "pillar_quotes_ready": pillar_quote_generated,
-                "daily_quote_generated": pillar_quote_generated,
-                "daily_quote": str((pillar_payload or {}).get("daily_quote") or "").strip() or None,
-                "completed_at": completed_at,
-            }
-            _update_refresh_state(
-                int(user_id),
-                status="succeeded",
-                trigger=normalized_trigger,
-                pillar_key=normalized_pillar_key,
-                score_date=normalized_score_date,
-                job_id=int(job_id) if job_id is not None else None,
-                completed_at=completed_at,
-                error=None,
-                context_hash=context_hash,
-                plan_date=plan_date,
-                result=result,
-            )
-            return result
-
-        with SessionLocal() as s:
-            user = s.get(User, int(user_id))
-            if not user:
-                raise ValueError(f"user not found: {user_id}")
-            s.expunge(user)
-        habit_result = get_or_generate_cached_daily_habit_plan(
-            int(user_id),
-            force=False,
-            tracker_snapshot=snapshot,
-        )
-        pillar_quote_result = get_pillar_tracker_summary(
-            int(user_id),
-            anchor=tracker_today(),
-            skip_quote_generation=False,
-        )
-        completed_at = datetime.utcnow().replace(microsecond=0).isoformat()
-        result = {
-            "ok": True,
-            "user_id": int(user_id),
-            "trigger": str(trigger or "tracker_update").strip() or "tracker_update",
-            "pillar_key": str(pillar_key or "").strip().lower() or None,
-            "score_date": str(score_date or "").strip() or None,
-            "plan_date": plan_date,
-            "context_hash": context_hash,
-            "habits_ready": isinstance(habit_result, dict) and bool(
-                (habit_result.get("habits") if isinstance(habit_result, dict) else None)
-                or (habit_result.get("options") if isinstance(habit_result, dict) else None)
-            ),
-            "habits_source": str((habit_result or {}).get("source") or "").strip() or None,
-            "pillar_quotes_ready": bool((pillar_quote_result or {}).get("pillars")),
-            "completed_at": completed_at,
-        }
-        _update_refresh_state(
-            int(user_id),
-            status="succeeded",
-            trigger=str(trigger or "tracker_update").strip() or "tracker_update",
-            pillar_key=str(pillar_key or "").strip().lower() or None,
-            score_date=str(score_date or "").strip() or None,
-            job_id=int(job_id) if job_id is not None else None,
-            completed_at=completed_at,
-            error=None,
-            context_hash=context_hash,
-            plan_date=plan_date,
-            result=result,
-        )
-        return result
-    except Exception as exc:
-        failed_at = datetime.utcnow().replace(microsecond=0).isoformat()
-        _update_refresh_state(
-            int(user_id),
-            status="failed",
-            trigger=str(trigger or "tracker_update").strip() or "tracker_update",
-            pillar_key=str(pillar_key or "").strip().lower() or None,
-            score_date=str(score_date or "").strip() or None,
-            job_id=int(job_id) if job_id is not None else None,
-            completed_at=failed_at,
-            error=str(exc),
-            context_hash=context_hash,
-            plan_date=plan_date,
-        )
-        raise
+    return result
 
 
 def queue_coach_home_tracker_refresh(
@@ -216,114 +100,10 @@ def queue_coach_home_tracker_refresh(
     score_date: str | None = None,
     background_tasks: Any | None = None,
 ) -> dict[str, Any]:
-    snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
-    context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
-    context_hash = str(snapshot.get("context_hash") or "").strip() or None
-    plan_date = str(context.get("plan_date") or "").strip() or None
-    payload = {
-        "user_id": int(user_id),
-        "trigger": str(trigger or "tracker_update").strip() or "tracker_update",
-        "pillar_key": str(pillar_key or "").strip().lower() or None,
-        "score_date": str(score_date or "").strip() or None,
-        "context_hash": context_hash,
-        "plan_date": plan_date,
-    }
-    queued_at = datetime.utcnow().replace(microsecond=0).isoformat()
-    if should_use_worker() and not _in_worker_process():
-        if payload["trigger"] == "pillar_tracker_update" and payload["pillar_key"]:
-            job_id = enqueue_job(COACH_HOME_REFRESH_JOB_KIND, payload, user_id=int(user_id))
-            created = True
-        else:
-            job_id, created = enqueue_job_once(
-                COACH_HOME_REFRESH_JOB_KIND,
-                payload,
-                user_id=int(user_id),
-                payload_match={
-                    "user_id": int(user_id),
-                    "trigger": payload["trigger"],
-                    "pillar_key": payload["pillar_key"],
-                    "score_date": payload["score_date"],
-                    "context_hash": context_hash,
-                    "plan_date": plan_date,
-                },
-            )
-        _update_refresh_state(
-            int(user_id),
-            status="queued",
-            trigger=payload["trigger"],
-            pillar_key=payload["pillar_key"],
-            score_date=payload["score_date"],
-            job_id=int(job_id),
-            queued_at=queued_at,
-            error=None,
-            execution="worker",
-            context_hash=context_hash,
-            plan_date=plan_date,
-        )
-        return {
-            "queued": True,
-            "execution": "worker",
-            "job_id": int(job_id),
-            "created": bool(created),
-        }
-    if background_tasks is not None and hasattr(background_tasks, "add_task"):
-        background_tasks.add_task(
-            run_coach_home_tracker_refresh,
-            int(user_id),
-            trigger=payload["trigger"],
-            pillar_key=payload["pillar_key"],
-            score_date=payload["score_date"],
-            job_id=None,
-        )
-        _update_refresh_state(
-            int(user_id),
-            status="queued",
-            trigger=payload["trigger"],
-            pillar_key=payload["pillar_key"],
-            score_date=payload["score_date"],
-            job_id=None,
-            queued_at=queued_at,
-            error=None,
-            execution="api_background",
-            context_hash=context_hash,
-            plan_date=plan_date,
-        )
-        return {
-            "queued": True,
-            "execution": "api_background",
-            "job_id": None,
-            "created": True,
-        }
-
-    def _runner() -> None:
-        try:
-            run_coach_home_tracker_refresh(
-                int(user_id),
-                trigger=payload["trigger"],
-                pillar_key=payload["pillar_key"],
-                score_date=payload["score_date"],
-                job_id=None,
-            )
-        except Exception as exc:
-            print(f"[coach-home-refresh] failed user_id={user_id}: {exc}")
-
-    threading.Thread(target=_runner, daemon=True).start()
-    _update_refresh_state(
-        int(user_id),
-        status="queued",
-        trigger=payload["trigger"],
-        pillar_key=payload["pillar_key"],
-        score_date=payload["score_date"],
-        job_id=None,
-        queued_at=queued_at,
-        error=None,
-        execution="thread",
-        context_hash=context_hash,
-        plan_date=plan_date,
-    )
+    """Compatibility entry point: coaching now runs only on a concept request."""
     return {
-        "queued": True,
-        "execution": "thread",
+        "queued": False,
+        "execution": "on_demand",
         "job_id": None,
-        "created": True,
+        "created": False,
     }

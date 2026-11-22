@@ -19,6 +19,7 @@ class CheckinRouteTests(unittest.TestCase):
         self.handle = Mock(return_value=({"phase": "collecting", "messages": []}, False))
         self.token = Mock(return_value=("test-token", 540))
         self.legacy_ready = Mock(return_value=False)
+        self.refresh = Mock(side_effect=AssertionError("Saving must not queue automatic coaching"))
         names = {"api_user_pillar_checkin_voice_session", "api_user_pillar_checkin_message"}
         tree = ast.parse((Path(__file__).parents[1] / "app" / "api.py").read_text())
         routes = ast.Module(body=[node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names], type_ignores=[])
@@ -28,7 +29,7 @@ class CheckinRouteTests(unittest.TestCase):
             "Any": object, "HTTPException": HTTPException, "JSONResponse": JSONResponse,
             "_resolve_user_access": self.access, "_is_readonly_admin_preview_request": self.preview,
             "_general_support_ready_for_user": self.legacy_ready,
-            "_log_app_engagement_event": Mock(), "queue_coach_home_tracker_refresh": Mock(),
+            "_log_app_engagement_event": Mock(), "queue_coach_home_tracker_refresh": self.refresh,
         }
         exec(compile(routes, "app/api.py", "exec"), namespace)
         self.modules = patch.dict(sys.modules, {
@@ -58,6 +59,13 @@ class CheckinRouteTests(unittest.TestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.access.assert_called_once()
         self.legacy_ready.assert_not_called()
+
+    def test_saved_conversation_does_not_queue_automatic_coaching(self):
+        self.handle.return_value = ({"phase": "saved", "saved_date": "2026-11-21"}, True)
+        response = self.post()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["phase"], "saved")
+        self.refresh.assert_not_called()
 
     def test_unauthenticated_and_other_account_access_still_rejected(self):
         for status in (401, 403):

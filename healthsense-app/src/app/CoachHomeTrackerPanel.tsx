@@ -36,7 +36,7 @@ export default function CoachHomeTrackerPanel({
       try {
         const params = new URLSearchParams({
           userId,
-          skipQuoteGeneration: "false",
+          skipQuoteGeneration: "true",
         });
         const res = await fetch(`/api/pillar-tracker/summary?${params.toString()}`, {
           method: "GET",

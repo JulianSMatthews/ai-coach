@@ -228,7 +228,6 @@ from .daily_habits import (
     get_or_generate_cached_daily_habit_plan,
     update_daily_habit_plan_selection,
 )
-from .coach_home_refresh import queue_coach_home_tracker_refresh
 from .coach_insight import get_or_generate_cached_coach_insight
 from .pillar_progress import get_pillar_progress, get_concept_coaching, CoachingUnavailableError
 from .education_plan import (
@@ -8104,8 +8103,6 @@ def api_user_pillar_checkin_message(
         _log_app_engagement_event(user_id=user_id, unit_type="pillar_tracker_update", meta={
             "page": "recovery_conversation", "pillar_key": "recovery", "score_date": result.get("saved_date"),
         })
-        queue_coach_home_tracker_refresh(user_id, trigger="pillar_tracker_update", pillar_key="recovery",
-                                        score_date=result.get("saved_date"), background_tasks=background_tasks)
     return result
 
 
@@ -8157,7 +8154,8 @@ def api_user_pillar_tracker_summary(
             raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
     else:
         anchor = None
-    return get_pillar_tracker_summary(user_id, anchor=anchor, skip_quote_generation=bool(skip_quote_generation))
+    # Home reads stay read-only, including requests from older app clients.
+    return get_pillar_tracker_summary(user_id, anchor=anchor, skip_quote_generation=True)
 
 
 @api_v1.get("/users/{user_id}/pillar-tracker/{pillar_key}")
@@ -8179,7 +8177,7 @@ def api_user_pillar_tracker_detail(
     else:
         anchor = None
     try:
-        return get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor, skip_quote_generation=bool(skip_quote_generation))
+        return get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor, skip_quote_generation=True)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -8227,14 +8225,14 @@ def api_user_pillar_tracker_save(
     raw_entries = payload.get("entries")
     if not isinstance(raw_entries, list):
         raise HTTPException(status_code=400, detail="entries must be a list")
-    skip_quote_generation = bool(payload.get("skip_quote_generation", True))
     try:
         result = save_pillar_tracker_day(
             user_id,
             pillar_key,
             score_date=score_date,
             entries=[item for item in raw_entries if isinstance(item, dict)],
-            skip_quote_generation=skip_quote_generation,
+            # Insights are generated only when the user opens an individual concept.
+            skip_quote_generation=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -8247,15 +8245,6 @@ def api_user_pillar_tracker_save(
             "score_date": raw_date or result.get("pillar", {}).get("today"),
         },
     )
-    refresh_job = queue_coach_home_tracker_refresh(
-        int(user_id),
-        trigger="pillar_tracker_update",
-        pillar_key=str(pillar_key or "").strip().lower() or None,
-        score_date=raw_date or result.get("pillar", {}).get("today"),
-        background_tasks=background_tasks,
-    )
-    if isinstance(result, dict):
-        result["coach_home_refresh"] = refresh_job
     return result
 
 
@@ -8298,14 +8287,6 @@ def api_user_weekly_objectives_save(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    refresh_job = queue_coach_home_tracker_refresh(
-        int(user_id),
-        trigger="weekly_objectives_update",
-        pillar_key=section_key or None,
-        background_tasks=background_tasks,
-    )
-    if isinstance(result, dict):
-        result["coach_home_refresh"] = refresh_job
     return result
 
 

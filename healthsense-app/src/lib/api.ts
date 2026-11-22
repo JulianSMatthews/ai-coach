@@ -994,7 +994,7 @@ export async function getPillarTrackerSummary(
   anchorDate?: string,
 ): Promise<PillarTrackerSummaryResponse> {
   return apiGet<PillarTrackerSummaryResponse>(`/api/v1/users/${userId}/pillar-tracker`, {
-    query: { anchor_date: anchorDate },
+    query: { anchor_date: anchorDate, skip_quote_generation: "true" },
   });
 }
 
