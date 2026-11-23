@@ -49,11 +49,21 @@ function reviewIsValid(payload: CoachInsightResponse | null, userId: string): pa
 }
 
 function evidenceDate(value?: string | null): string | null {
-  if (!value) return null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T12:00:00Z`);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString("en-GB", {
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date.toLocaleDateString("en-GB", {
     day: "numeric", month: "short", timeZone: "UTC",
   });
+}
+
+function evidenceDateRange(start?: string | null, end?: string | null): string | null {
+  const first = evidenceDate(start);
+  const last = evidenceDate(end);
+  if (!first) return last;
+  if (!last || start === end) return first;
+  return start && end && start.slice(0, 7) === end.slice(0, 7)
+    ? `${Number(start.slice(8, 10))}–${last}`
+    : `${first}–${last}`;
 }
 
 function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
@@ -81,7 +91,7 @@ function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
         {reason ? <p className="text-sm leading-6 text-[var(--text-secondary)]">{reason}</p> : null}
         {concept.latest_value || concept.target_label ? (
           <dl className="grid gap-3 rounded-2xl bg-[var(--surface-muted)] p-4 text-sm sm:grid-cols-2">
-            {concept.latest_value ? <div><dt className="text-xs text-[var(--text-secondary)]">Check-in{recordedDate ? ` · ${recordedDate}` : ""}</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.latest_value}</dd></div> : null}
+            {concept.latest_value ? <div><dt className="text-xs text-[var(--text-secondary)]">Latest check-in{recordedDate ? ` · ${recordedDate}` : ""}</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.latest_value}</dd></div> : null}
             {concept.target_label ? <div><dt className="text-xs text-[var(--text-secondary)]">Your target</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.target_label}</dd></div> : null}
           </dl>
         ) : null}
@@ -136,30 +146,35 @@ export default function CoachInsightPanel({ userId }: { userId: string }) {
 
   const review = result.review;
   const offTrack = (result.available_concepts || []).filter((concept) => concept.status === "off_track");
+  const evidenceRange = evidenceDateRange(review.evidence_start_date, review.evidence_end_date);
+  const allNotApplicable = review.not_applicable_count > 0 && review.unlogged_count === 0 && review.on_track_count === 0 && review.off_track_count === 0;
   return (
     <section aria-label="Concept insights" className="space-y-5">
       <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-5">
         <p className="text-xs font-medium uppercase tracking-[0.15em] text-[var(--text-secondary)]">{review.reviewed_count} concepts reviewed</p>
+        {evidenceRange ? <p className="mt-2 text-xs leading-5 text-[var(--text-secondary)]">Based on your latest saved answers · {evidenceRange}</p> : null}
         <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">
-          {review.status === "off_track" ? "Where to focus" : review.status === "on_track" ? "You're on track" : "More check-ins needed"}
+          {review.status === "off_track" ? "Where to focus" : review.status === "on_track" ? "You're on track" : allNotApplicable ? "No guidance needed" : "More data needed"}
         </h2>
         <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
           {review.status === "off_track"
             ? `${review.off_track_count} ${review.off_track_count === 1 ? "concept needs" : "concepts need"} attention. Here are your next steps.`
             : review.status === "on_track"
               ? "Your recorded concepts are meeting their targets. Keep your current rhythm."
-              : review.on_track_count > 0
-                ? "Your recorded concepts are on track. Complete the remaining check-ins for a fuller review."
-                : "There isn't enough scored check-in data to identify concepts that are off track yet."}
+              : allNotApplicable
+                ? "Your saved answers mark these concepts as not applicable. There are no off-track concepts to guide you on."
+                : review.on_track_count > 0
+                  ? "Your scored concepts are on track. Some concepts do not yet have scored data to assess."
+                  : "There isn't enough scored check-in data to identify concepts that are off track yet."}
         </p>
         <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)]">
           {review.on_track_count} on track · {review.off_track_count} off track
-          {review.unlogged_count > 0 ? ` · ${review.unlogged_count} awaiting check-ins` : ""}
+          {review.unlogged_count > 0 ? ` · ${review.unlogged_count} without scored data` : ""}
           {review.not_applicable_count > 0 ? ` · ${review.not_applicable_count} not applicable` : ""}
         </p>
       </div>
       {review.unlogged_count > 0 && review.status === "off_track" ? (
-        <p className="px-1 text-sm leading-6 text-[var(--text-secondary)]">Complete your remaining check-ins so these can be included in your guidance.</p>
+        <p className="px-1 text-sm leading-6 text-[var(--text-secondary)]">Guidance uses your latest saved answers. Concepts without scored data are not treated as off track.</p>
       ) : null}
       {offTrack.map((concept) => <ConceptGuidance key={`${concept.pillar_key}:${concept.concept_key}`} concept={concept} />)}
     </section>

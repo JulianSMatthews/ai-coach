@@ -6,11 +6,10 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, desc, or_, select
+from sqlalchemy import and_, desc, func, or_, select
 
 from .db import SessionLocal
-from .daily_habits import _guidance_anchor_for_pillar
-from .models import ContentLibraryItem, UserPreference
+from .models import ContentLibraryItem, DailyPillarTrackerEntry, UserPreference
 from .okr import _normalize_concept_key
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
 from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
@@ -18,7 +17,7 @@ from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 _PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
-_INSIGHT_REVIEW_VERSION = 3
+_INSIGHT_REVIEW_VERSION = 4
 _INSIGHT_WORD_LIMIT = 100
 
 
@@ -71,7 +70,7 @@ def _concept_candidate(
     yesterday_iso = (anchor - timedelta(days=1)).isoformat()
     today_row = week_by_date.get(today_iso) or {}
     yesterday_row = week_by_date.get(yesterday_iso) or {}
-    not_applicable = bool(today_row.get("not_applicable") or (not today_row and concept_row.get("not_applicable")))
+    not_applicable = bool(today_row.get("not_applicable"))
     recent_rows = [today_row, yesterday_row]
     recent_scores = [
         _safe_int((day or {}).get("score"))
@@ -81,17 +80,17 @@ def _concept_candidate(
     ]
     recent_misses = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is False)
     recent_missing = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is None)
-    current_score = None if not_applicable else _safe_int(today_row.get("score", concept_row.get("score")))
+    current_score = None if not_applicable else _safe_int(today_row.get("score"))
     recent_average = (
         int(round(sum(recent_scores) / max(1, len(recent_scores))))
         if recent_scores
         else None
     )
-    active_row = today_row or concept_row
+    active_row = today_row
     target_met = active_row.get("target_met")
     if target_met is None:
         target_met = active_row.get("okr_on_track")
-    has_record = any(active_row.get(key) is not None for key in ("value", "value_label", "score", "target_met", "okr_on_track"))
+    has_record = not_applicable or any(active_row.get(key) is not None for key in ("value", "value_label", "score", "target_met", "okr_on_track"))
     if not_applicable:
         status = "not_applicable"
     elif not has_record:
@@ -105,9 +104,12 @@ def _concept_candidate(
         status = "unlogged"
     signal = status
     if status == "off_track":
-        signal = (
-            "missed_today" if anchor == tracker_today() else "missed_yesterday"
-        ) if target_met is False else "needs_support"
+        signal = "needs_support"
+        if target_met is False:
+            if anchor == tracker_today():
+                signal = "missed_today"
+            elif anchor == tracker_today() - timedelta(days=1):
+                signal = "missed_yesterday"
     return {
         "pillar_key": str(pillar_row.get("pillar_key") or "").strip().lower(),
         "pillar_label": str(pillar_row.get("label") or "").strip(),
@@ -119,6 +121,8 @@ def _concept_candidate(
         "recent_misses": recent_misses,
         "recent_missing": recent_missing,
         "not_applicable": not_applicable,
+        "has_record": has_record,
+        "target_met": target_met,
         "has_signal": not not_applicable and bool(recent_misses or current_score is not None or recent_average is not None),
         "status": status,
         "signal": signal,
@@ -128,23 +132,75 @@ def _concept_candidate(
     }
 
 
+def _latest_recorded_concept_dates(
+    user_id: int,
+    pillar_keys: list[str],
+    *,
+    as_of: date,
+) -> dict[tuple[str, str], date]:
+    if not pillar_keys:
+        return {}
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(
+                DailyPillarTrackerEntry.pillar_key,
+                DailyPillarTrackerEntry.concept_key,
+                func.max(DailyPillarTrackerEntry.score_date),
+            )
+            .where(
+                DailyPillarTrackerEntry.user_id == int(user_id),
+                DailyPillarTrackerEntry.pillar_key.in_(pillar_keys),
+                DailyPillarTrackerEntry.score_date <= as_of,
+                DailyPillarTrackerEntry.value_num.isnot(None),
+            )
+            .group_by(DailyPillarTrackerEntry.pillar_key, DailyPillarTrackerEntry.concept_key)
+        ).all()
+    return {
+        (str(pillar_key).strip().lower(), str(concept_key).strip().lower()): recorded_date
+        for pillar_key, concept_key, recorded_date in rows
+    }
+
+
 def _review_concepts(user_id: int, anchor: date | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     current_day = tracker_today()
     summary = get_pillar_tracker_summary(user_id, anchor=anchor or current_day)
+    pillar_rows = [
+        row for row in summary.get("pillars") or []
+        if isinstance(row, dict) and str(row.get("pillar_key") or "").strip()
+    ]
+    latest_dates = (
+        _latest_recorded_concept_dates(
+            user_id,
+            [str(row["pillar_key"]).strip().lower() for row in pillar_rows],
+            as_of=current_day,
+        )
+        if anchor is None else {}
+    )
     candidates: list[dict[str, Any]] = []
-    for pillar_row in summary.get("pillars") or []:
+    for pillar_row in pillar_rows:
         pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
-        if not pillar_key:
-            continue
-        requested_anchor = anchor or _guidance_anchor_for_pillar(user_id, pillar_key, current_day)
+        requested_anchor = anchor or current_day
         detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=requested_anchor)
-        active_date = str((detail.get("pillar") or {}).get("active_date") or "").strip()
-        try:
-            resolved_anchor = date.fromisoformat(active_date) if active_date else requested_anchor
-        except ValueError:
-            resolved_anchor = requested_anchor
+        requested_week = requested_anchor - timedelta(days=requested_anchor.weekday())
+        details_by_week = {requested_week: detail}
         for concept_row in detail.get("concepts") or []:
-            candidates.append(_concept_candidate(pillar_row, concept_row, anchor=resolved_anchor))
+            concept_key = str(concept_row.get("concept_key") or "").strip().lower()
+            recorded_date = anchor or latest_dates.get((pillar_key, concept_key))
+            evidence_concept = {**concept_row, "week": []}
+            if recorded_date is not None and recorded_date <= current_day:
+                recorded_week = recorded_date - timedelta(days=recorded_date.weekday())
+                if recorded_week not in details_by_week:
+                    details_by_week[recorded_week] = get_pillar_tracker_detail(user_id, pillar_key, anchor=recorded_date)
+                evidence_concept = next(
+                    (
+                        item for item in details_by_week[recorded_week].get("concepts") or []
+                        if str(item.get("concept_key") or "").strip().lower() == concept_key
+                    ),
+                    evidence_concept,
+                )
+            # The dated week row is the scoring authority. In particular, an
+            # empty requested day must not inherit another active day's score.
+            candidates.append(_concept_candidate(pillar_row, evidence_concept, anchor=recorded_date or requested_anchor))
     return candidates, summary
 
 
@@ -357,6 +413,11 @@ def _build_insight_result(
         status = "off_track"
     elif counts["on_track"] and not counts["unlogged"]:
         status = "on_track"
+    evidence_dates = [
+        str(item["anchor_date"])
+        for item in candidates
+        if item.get("has_record") and item.get("anchor_date")
+    ]
     preferred = _normalize_concept_key(concept_key) or None
     selected = next((item for item in off_track if item.get("concept_key") == preferred), None)
     if selected is None:
@@ -373,7 +434,7 @@ def _build_insight_result(
         target = str(item.get("target_label") or "").strip()
         value = str(item.get("latest_value") or "").strip()
         reason = "Your latest check-in is outside your target."
-        if item.get("signal") == "needs_support":
+        if item.get("target_met") is None:
             reason = "Your latest check-in is below the on-track score range."
         if value:
             reason = f"{reason} Recorded: {value}."
@@ -418,6 +479,8 @@ def _build_insight_result(
             "on_track_count": counts["on_track"],
             "unlogged_count": counts["unlogged"],
             "not_applicable_count": counts["not_applicable"],
+            "evidence_start_date": min(evidence_dates) if evidence_dates else None,
+            "evidence_end_date": max(evidence_dates) if evidence_dates else None,
         },
         "available_concepts": available,
         "matched_by": selected_payload.get("matched_by"),

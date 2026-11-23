@@ -647,6 +647,8 @@ export type CoachInsightReview = {
   on_track_count: number;
   unlogged_count: number;
   not_applicable_count: number;
+  evidence_start_date?: string | null;
+  evidence_end_date?: string | null;
 };
 
 export type CoachInsightResponse = {

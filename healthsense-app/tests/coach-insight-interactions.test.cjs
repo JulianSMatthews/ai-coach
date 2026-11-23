@@ -123,7 +123,7 @@ test('opening Insight shows every off-track concept, its evidence and guidance w
   }
   assert.match(h.text(), /17 concepts reviewed/);
   assert.match(h.text(), /11 concepts need attention/);
-  assert.match(h.text(), /1 awaiting check-ins/);
+  assert.match(h.text(), /1 without scored data/);
   assert.match(h.text(), /2 not applicable/);
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].url, '/api/coach-insight?userId=42');
@@ -169,18 +169,85 @@ test('an all-on-track review confirms progress without corrective guidance or fa
   assert.doesNotMatch(h.text(), /Your next step|Where to focus|concepts need attention/);
 });
 
-test('partial and empty reviews distinguish missing check-ins from off-track progress', async t => {
+test('partial and empty reviews distinguish unscored concepts from off-track progress without requesting repeat check-ins', async t => {
   for (const [data, expected] of [
-    [sample({ offTrackCount: 0, onTrackCount: 4, unloggedCount: 3 }), /Your recorded concepts are on track.*remaining check-ins/],
+    [sample({ offTrackCount: 0, onTrackCount: 4, unloggedCount: 3 }), /Your scored concepts are on track.*do not yet have scored data/],
     [sample({ offTrackCount: 0, onTrackCount: 0, unloggedCount: 7 }), /isn't enough scored check-in data/],
     [sample({ offTrackCount: 0, onTrackCount: 0 }), /0 concepts reviewed/],
   ]) {
     const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
-    assert.match(h.text(), /More check-ins needed/);
+    assert.match(h.text(), /More data needed/);
     assert.match(h.text(), expected);
     assert.equal(h.rows().length, 0);
     assert.doesNotMatch(h.text(), /Your next step|You're on track/);
+    assert.doesNotMatch(h.text(), /remaining check-ins|awaiting check-ins|Complete your/);
   }
+});
+
+test('a complete set of yesterday\'s answers is dated as saved evidence without asking for today\'s check-ins', async t => {
+  const data = sample({ offTrackCount: 2, onTrackCount: 6, notApplicableCount: 2 });
+  data.insight_date = '2026-11-23';
+  data.review.evidence_start_date = '2026-11-22';
+  data.review.evidence_end_date = '2026-11-22';
+  data.available_concepts.forEach(concept => { concept.anchor_date = '2026-11-22'; });
+  const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+  assert.match(h.text(), /10 concepts reviewed/);
+  assert.match(h.text(), /Based on your latest saved answers · 22 Nov/);
+  assert.equal(h.rows().length, 2);
+  h.rows().forEach(row => assert.match(row.text, /Latest check-in\s+· 22 Nov/));
+  assert.doesNotMatch(h.text(), /23 Nov|without scored data|remaining check-ins|awaiting check-ins|Complete your/);
+});
+
+test('summary evidence dates include on-track and neutral answers when no off-track cards exist', async t => {
+  const data = sample({ offTrackCount: 0, onTrackCount: 5, notApplicableCount: 2 });
+  data.insight_date = '2026-11-23';
+  data.review.evidence_start_date = '2026-11-22';
+  data.review.evidence_end_date = '2026-11-22';
+  const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+  assert.match(h.text(), /Based on your latest saved answers · 22 Nov/);
+  assert.match(h.text(), /You're on track/);
+  assert.equal(h.rows().length, 0);
+  assert.doesNotMatch(h.text(), /23 Nov|without scored data|More data needed/);
+});
+
+test('mixed latest answer dates appear as the evidence range instead of the date the insight was generated', async t => {
+  for (const [first, last, expected] of [
+    ['2026-11-20', '2026-11-22', '20–22 Nov'],
+    ['2026-10-01', '2026-11-22', '1 Oct–22 Nov'],
+  ]) {
+    const data = sample({ offTrackCount: 0, onTrackCount: 8 });
+    data.insight_date = '2026-11-23';
+    data.review.evidence_start_date = first;
+    data.review.evidence_end_date = last;
+    const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+    assert.ok(h.text().includes(`Based on your latest saved answers · ${expected}`));
+    assert.doesNotMatch(h.text(), /23 Nov|last 7 days|without scored data/);
+  }
+});
+
+test('no evidence dates leave the review undated and identify missing scored data without inventing a saved answer date', async t => {
+  const data = sample({ offTrackCount: 0, onTrackCount: 0, unloggedCount: 10 });
+  data.insight_date = '2026-11-23';
+  data.review.evidence_start_date = null;
+  data.review.evidence_end_date = null;
+  const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+  assert.match(h.text(), /More data needed/);
+  assert.match(h.text(), /10 without scored data/);
+  assert.doesNotMatch(h.text(), /Based on your latest saved answers|23 Nov|remaining check-ins|awaiting check-ins/);
+  assert.equal(h.rows().length, 0);
+});
+
+test('complete neutral answers do not falsely claim missing check-ins or demand more data', async t => {
+  const data = sample({ offTrackCount: 0, onTrackCount: 0, notApplicableCount: 6 });
+  data.review.evidence_start_date = '2026-11-22';
+  data.review.evidence_end_date = '2026-11-22';
+  const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+  assert.match(h.text(), /No guidance needed/);
+  assert.match(h.text(), /Your saved answers mark these concepts as not applicable/);
+  assert.match(h.text(), /Based on your latest saved answers · 22 Nov/);
+  assert.match(h.text(), /6 not applicable/);
+  assert.doesNotMatch(h.text(), /More data needed|without scored data|remaining check-ins|awaiting check-ins|Your next step/);
+  assert.equal(h.rows().length, 0);
 });
 
 test('loading is accessible and a failed request can be retried without exposing server details', async t => {
