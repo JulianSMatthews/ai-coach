@@ -5,6 +5,25 @@ import type { CoachInsightConcept, CoachInsightResponse } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import PillarIcon from "@/components/PillarIcon";
 
+const CONCEPT_INSIGHT_MAX_WORDS = 100;
+
+function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+function limitWords(text: string, maxWords: number): string {
+  const value = text.trim();
+  if (maxWords <= 0) return "";
+  const words = [...value.matchAll(/\S+/g)];
+  if (words.length <= maxWords) return value;
+  const lastWord = words[maxWords - 1];
+  const excerpt = value.slice(0, (lastWord.index ?? 0) + lastWord[0].length);
+  const sentenceEnd = [...excerpt.matchAll(/[.!?]["'’”)\]]*(?=\s|$)/g)].pop();
+  return sentenceEnd
+    ? excerpt.slice(0, (sentenceEnd.index ?? 0) + sentenceEnd[0].length)
+    : `${excerpt.replace(/[,;:]+$/, "")}…`;
+}
+
 function reviewIsValid(payload: CoachInsightResponse | null, userId: string): payload is CoachInsightResponse {
   const review = payload?.review;
   if (
@@ -40,6 +59,12 @@ function evidenceDate(value?: string | null): string | null {
 function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
   const palette = getPillarPalette(concept.pillar_key);
   const recordedDate = evidenceDate(concept.anchor_date);
+  let reason = (concept.reason || "").trim();
+  let guidance = (concept.guidance || "").trim();
+  if (wordCount(reason) + wordCount(guidance) > CONCEPT_INSIGHT_MAX_WORDS) {
+    reason = limitWords(reason, 25);
+    guidance = limitWords(guidance, CONCEPT_INSIGHT_MAX_WORDS - wordCount(reason));
+  }
   return (
     <article className="overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--surface)]" aria-label={`${concept.label}: off track`}>
       <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-4">
@@ -53,7 +78,7 @@ function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
         <span className="shrink-0 rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]">Off track</span>
       </div>
       <div className="space-y-4 px-5 py-5">
-        {concept.reason ? <p className="text-sm leading-6 text-[var(--text-secondary)]">{concept.reason}</p> : null}
+        {reason ? <p className="text-sm leading-6 text-[var(--text-secondary)]">{reason}</p> : null}
         {concept.latest_value || concept.target_label ? (
           <dl className="grid gap-3 rounded-2xl bg-[var(--surface-muted)] p-4 text-sm sm:grid-cols-2">
             {concept.latest_value ? <div><dt className="text-xs text-[var(--text-secondary)]">Check-in{recordedDate ? ` · ${recordedDate}` : ""}</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.latest_value}</dd></div> : null}
@@ -62,7 +87,7 @@ function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
         ) : null}
         <div>
           <h4 className="text-sm font-semibold text-[var(--text-primary)]">Your next step</h4>
-          <p className="mt-2 whitespace-pre-line text-[15px] leading-7 text-[var(--text-primary)]">{concept.guidance}</p>
+          <p className="mt-2 whitespace-pre-line text-[15px] leading-7 text-[var(--text-primary)]">{guidance}</p>
         </div>
       </div>
     </article>

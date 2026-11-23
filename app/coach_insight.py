@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -17,7 +18,8 @@ from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 _PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
-_INSIGHT_REVIEW_VERSION = 2
+_INSIGHT_REVIEW_VERSION = 3
+_INSIGHT_WORD_LIMIT = 100
 
 
 def _safe_int(value: Any) -> int | None:
@@ -314,6 +316,30 @@ def _content_payload(row: ContentLibraryItem | None) -> dict[str, Any] | None:
     }
 
 
+def _limit_insight_words(value: str, limit: int) -> str:
+    text = value.strip()
+    words = list(re.finditer(r"\S+", text))
+    if len(words) <= limit:
+        return text
+    if limit <= 0:
+        return ""
+    prefix = text[:words[limit - 1].end()]
+    endings = list(re.finditer(r'''[.!?][”’"')\]]*(?=\s|$)''', prefix))
+    if endings:
+        return prefix[:endings[-1].end()]
+    return prefix.rstrip(".,;:!?…") + "…"
+
+
+def _limit_insight_narrative(reason: str, guidance: str) -> tuple[str, str]:
+    """Keep each concept's displayed narrative within one shared word budget."""
+    if len(reason.split()) + len(guidance.split()) <= _INSIGHT_WORD_LIMIT:
+        return reason, guidance
+    # Long recorded values can appear in the reason; retain room for advice.
+    reason = _limit_insight_words(reason, 25)
+    guidance = _limit_insight_words(guidance, _INSIGHT_WORD_LIMIT - len(reason.split()))
+    return reason, guidance
+
+
 def _build_insight_result(
     user_id: int,
     candidates: list[dict[str, Any]],
@@ -359,6 +385,7 @@ def _build_insight_result(
                 f"Choose one manageable change to support {label.lower()} before your next check-in. "
                 + (f"Use your target ({target}) to decide what to change." if target else "Reflect on what got in the way and choose a small step you can repeat.")
             )
+        reason, guidance = _limit_insight_narrative(reason, guidance)
         available.append({
             "pillar_key": pillar_key,
             "pillar_label": item.get("pillar_label") or pillar_label(pillar_key),

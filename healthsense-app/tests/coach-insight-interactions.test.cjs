@@ -97,7 +97,10 @@ function harness(request = async () => sample(), initialProps = {}) {
     calls, renders, flush, text: () => visibleText(tree),
     updatesAfterUnmount: () => updatesAfterUnmount,
     roles: () => all(tree, node => node.props?.role).map(node => node.props.role),
-    rows: () => all(tree, node => node.type === 'article').map(node => ({ label: node.props['aria-label'], text: text(node) })),
+    rows: () => all(tree, node => node.type === 'article').map(node => ({
+      label: node.props['aria-label'], text: text(node),
+      narrative: all(node, child => child.type === 'p' && /leading-(6|7)/.test(child.props.className || '')).map(text).join(' '),
+    })),
     buttons: () => all(tree, node => node.type === 'button').map(node => text(node).trim()),
     async click(label) {
       const button = all(tree, node => node.type === 'button' && text(node).trim() === label)[0];
@@ -136,6 +139,24 @@ test('injected on-track, unlogged and not-applicable concepts never display corr
   assert.equal(h.rows().length, 2);
   assert.doesNotMatch(h.text(), /HIDDEN|UNWANTED ADVICE/);
   assert.match(h.text(), /Personal next step 1/);
+});
+
+test('each concept keeps its own 100-word budget including its reason, even with older oversized responses', async t => {
+  const data = sample({ offTrackCount: 3 });
+  const [first, second, third] = data.available_concepts;
+  first.reason = 'Your latest result is below your target.';
+  first.guidance = 'Take one small step today. ' + 'Long guidance continues '.repeat(60);
+  second.reason = 'Oversized reason '.repeat(40);
+  second.guidance = Array.from({ length: 150 }, (_, i) => `advice${i + 1}`).join('\n');
+  third.reason = '';
+  third.guidance = Array.from({ length: 100 }, (_, i) => `step${i + 1}`).join(' ');
+  const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+  assert.equal(h.rows().length, 3);
+  for (const row of h.rows()) assert.ok(row.narrative.trim().split(/\s+/).length <= 100);
+  assert.equal(h.rows()[0].narrative, `${first.reason} Take one small step today.`);
+  assert.match(h.rows()[1].narrative, /advice75…$/);
+  assert.doesNotMatch(h.rows()[1].narrative, /advice76\b/);
+  assert.equal(h.rows()[2].narrative.trim(), third.guidance);
 });
 
 test('an all-on-track review confirms progress without corrective guidance or fabricated off-track cards', async t => {

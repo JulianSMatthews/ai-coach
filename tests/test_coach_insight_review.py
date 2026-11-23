@@ -175,6 +175,76 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertEqual(items["values_alignment"]["content"]["id"], 18)
         self.assertIsNone(items["meaning_fulfilment"]["content"])
 
+    def library_item(self, key, body):
+        return SimpleNamespace(
+            id=19, pillar_key="purpose", concept_code=key, title="Concept advice",
+            body=body, podcast_url=None, podcast_voice=None, tags={}, created_at=None,
+        )
+
+    def test_exactly_100_words_and_short_guidance_remain_unchanged(self):
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        reason = self.result()["available_concepts"][0]["reason"]
+        budget = 100 - len(reason.split())
+        for count in (8, budget):
+            with self.subTest(words=count):
+                body = " ".join(f"word{i}" for i in range(count))
+                self.library.return_value = [self.library_item("values_alignment", body)]
+                item = self.result()["available_concepts"][0]
+                self.assertEqual(item["reason"], reason)
+                self.assertEqual(item["guidance"], body)
+                self.assertEqual(len(item["reason"].split()) + len(item["guidance"].split()), len(reason.split()) + count)
+
+    def test_long_single_sentence_guidance_stops_at_word_boundary_without_changing_library_content(self):
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        body = " ".join(f"word{i}" for i in range(150)) + "."
+        row = self.library_item("values_alignment", body)
+        self.library.return_value = [row]
+        item = self.result()["available_concepts"][0]
+        self.assertEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+        self.assertTrue(item["guidance"].endswith("…"))
+        self.assertFalse(item["guidance"].endswith(" …"))
+        self.assertTrue(body.startswith(item["guidance"][:-1]))
+        self.assertEqual(item["content"]["body"], body)
+        self.assertEqual(row.body, body)
+
+    def test_long_guidance_prefers_the_last_complete_sentence_that_fits(self):
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        sentence = " ".join(f"step{i}" for i in range(35)) + "."
+        complete = f"{sentence} {sentence}"
+        body = f"{complete} " + " ".join("continue" for _ in range(100)) + "."
+        self.library.return_value = [self.library_item("values_alignment", body)]
+        item = self.result()["available_concepts"][0]
+        self.assertEqual(item["guidance"], complete)
+        self.assertLessEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+
+    def test_each_concept_has_its_own_100_word_budget(self):
+        self.add_pillar("purpose", [self.concept("values_alignment"), self.concept("meaning_fulfilment")])
+        self.library.return_value = [
+            self.library_item("values_alignment", " ".join("values" for _ in range(150))),
+            self.library_item("meaning_fulfilment", " ".join("meaning" for _ in range(150))),
+        ]
+        items = self.result()["available_concepts"]
+        self.assertEqual(len(items), 2)
+        for item in items:
+            self.assertEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+            self.assertEqual(len(item["content"]["body"].split()), 150)
+
+    def test_fallback_and_long_reason_share_the_limit_while_metadata_stays_complete(self):
+        concept = self.concept("values_alignment")
+        target = " ".join("target" for _ in range(180))
+        value = " ".join("recorded" for _ in range(180))
+        concept["target_label"] = target
+        concept["week"][0]["value_label"] = value
+        self.add_pillar("purpose", [concept])
+        item = self.result()["available_concepts"][0]
+        self.assertTrue(item["reason"])
+        self.assertTrue(item["guidance"])
+        self.assertLessEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+        self.assertLessEqual(len(item["reason"].split()), 25)
+        self.assertEqual(item["latest_value"], value)
+        self.assertEqual(item["target_label"], target)
+        self.assertIsNone(item["content"])
+
     def test_cached_review_updates_when_a_concept_beyond_the_old_limit_changes(self):
         concepts = [self.concept(f"purpose_item_{i}") for i in range(10)]
         self.add_pillar("purpose", concepts)
@@ -194,6 +264,17 @@ class CoachInsightReviewTests(unittest.TestCase):
         result = insight.get_or_generate_cached_coach_insight(1)
         self.assertNotIn("legacy", result)
         self.assertEqual(result["concept_key"], "values_alignment")
+
+    def test_cache_from_before_word_limit_is_regenerated(self):
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        insight.get_or_generate_cached_coach_insight(1)
+        pref = self.prefs[(1, insight._INSIGHT_CACHE_KEY)]
+        pref["review_version"] = insight._INSIGHT_REVIEW_VERSION - 1
+        pref["result"]["available_concepts"][0]["guidance"] = " ".join("outdated" for _ in range(150))
+        result = insight.get_or_generate_cached_coach_insight(1)
+        item = result["available_concepts"][0]
+        self.assertLessEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+        self.assertNotIn("outdated", item["guidance"])
 
 
 class CoachInsightRouteTests(unittest.TestCase):
