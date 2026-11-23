@@ -8381,17 +8381,22 @@ def api_user_coach_insight(
     else:
         anchor = None
     result = get_or_generate_cached_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
-    content = result.get("content")
-    if isinstance(content, dict):
+    contents = [result.get("content")]
+    contents.extend(
+        item.get("content")
+        for item in result.get("available_concepts") or []
+        if isinstance(item, dict)
+    )
+    for content in contents:
+        if not isinstance(content, dict):
+            continue
         content["podcast_url"] = _normalize_reports_url(content.get("podcast_url"))
         avatar = content.get("avatar")
         if isinstance(avatar, dict):
-            avatar_url = str(avatar.get("url") or "").strip()
-            poster_url = str(avatar.get("poster_url") or "").strip()
-            if avatar_url:
-                avatar["url"] = _normalize_reports_url(avatar_url)
-            if poster_url:
-                avatar["poster_url"] = _normalize_reports_url(poster_url)
+            for key in ("url", "poster_url", "summary_url"):
+                media_url = str(avatar.get(key) or "").strip()
+                if media_url:
+                    avatar[key] = _normalize_reports_url(media_url)
     _log_app_engagement_event(
         user_id=user_id,
         unit_type="coach_home_insight_view",

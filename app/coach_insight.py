@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 from sqlalchemy import and_, desc, or_, select
 
 from .db import SessionLocal
-from .daily_habits import build_daily_tracker_generation_context_snapshot
+from .daily_habits import _guidance_anchor_for_pillar
 from .models import ContentLibraryItem, UserPreference
 from .okr import _normalize_concept_key
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
@@ -16,6 +17,7 @@ from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 _PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
+_INSIGHT_REVIEW_VERSION = 2
 
 
 def _safe_int(value: Any) -> int | None:
@@ -71,17 +73,39 @@ def _concept_candidate(
     recent_rows = [today_row, yesterday_row]
     recent_scores = [
         _safe_int((day or {}).get("score"))
-        for day in week_by_date.values()
+        for day_date, day in week_by_date.items()
+        if day_date <= today_iso
         if not day.get("not_applicable") and _safe_int((day or {}).get("score")) is not None
     ]
     recent_misses = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is False)
     recent_missing = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is None)
-    current_score = None if not_applicable else _safe_int(concept_row.get("score"))
+    current_score = None if not_applicable else _safe_int(today_row.get("score", concept_row.get("score")))
     recent_average = (
         int(round(sum(recent_scores) / max(1, len(recent_scores))))
         if recent_scores
         else None
     )
+    active_row = today_row or concept_row
+    target_met = active_row.get("target_met")
+    if target_met is None:
+        target_met = active_row.get("okr_on_track")
+    has_record = any(active_row.get(key) is not None for key in ("value", "value_label", "score", "target_met", "okr_on_track"))
+    if not_applicable:
+        status = "not_applicable"
+    elif not has_record:
+        status = "unlogged"
+    elif target_met is not None:
+        # The user's actual target takes precedence over a generic score band.
+        status = "on_track" if target_met is True else "off_track"
+    elif current_score is not None:
+        status = "on_track" if current_score >= 80 else "off_track"
+    else:
+        status = "unlogged"
+    signal = status
+    if status == "off_track":
+        signal = (
+            "missed_today" if anchor == tracker_today() else "missed_yesterday"
+        ) if target_met is False else "needs_support"
     return {
         "pillar_key": str(pillar_row.get("pillar_key") or "").strip().lower(),
         "pillar_label": str(pillar_row.get("label") or "").strip(),
@@ -94,37 +118,49 @@ def _concept_candidate(
         "recent_missing": recent_missing,
         "not_applicable": not_applicable,
         "has_signal": not not_applicable and bool(recent_misses or current_score is not None or recent_average is not None),
+        "status": status,
+        "signal": signal,
+        "anchor_date": today_iso,
+        "target_label": str(concept_row.get("target_label") or "").strip() or None,
+        "latest_value": str(active_row.get("value_label") or "").strip() or None,
     }
 
 
-def _select_focus_concept(user_id: int, anchor: date) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    summary = get_pillar_tracker_summary(user_id, anchor=anchor)
+def _review_concepts(user_id: int, anchor: date | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    current_day = tracker_today()
+    summary = get_pillar_tracker_summary(user_id, anchor=anchor or current_day)
     candidates: list[dict[str, Any]] = []
     for pillar_row in summary.get("pillars") or []:
         pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
         if not pillar_key:
             continue
-        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor)
+        requested_anchor = anchor or _guidance_anchor_for_pillar(user_id, pillar_key, current_day)
+        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=requested_anchor)
+        active_date = str((detail.get("pillar") or {}).get("active_date") or "").strip()
+        try:
+            resolved_anchor = date.fromisoformat(active_date) if active_date else requested_anchor
+        except ValueError:
+            resolved_anchor = requested_anchor
         for concept_row in detail.get("concepts") or []:
-            candidates.append(_concept_candidate(pillar_row, concept_row, anchor=anchor))
-    signal_rows = [row for row in candidates if row.get("has_signal")]
-    if not signal_rows:
-        return None, summary
+            candidates.append(_concept_candidate(pillar_row, concept_row, anchor=resolved_anchor))
+    return candidates, summary
 
-    def _sort_key(row: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
-        current_score = _safe_int(row.get("current_score"))
-        recent_average = _safe_int(row.get("recent_average"))
-        pillar_score = _safe_int(row.get("pillar_score"))
-        return (
+
+def _rank_off_track_concepts(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        [row for row in candidates if row.get("status") == "off_track"],
+        key=lambda row: (
+            row.get("current_score") if row.get("current_score") is not None else 999,
             -int(row.get("recent_misses") or 0),
-            current_score if current_score is not None else 999,
-            recent_average if recent_average is not None else 999,
-            pillar_score if pillar_score is not None else 999,
             _pillar_rank(str(row.get("pillar_key") or "")),
             str(row.get("concept_label") or ""),
-        )
+        ),
+    )
 
-    return sorted(signal_rows, key=_sort_key)[0], summary
+
+def _select_focus_concept(user_id: int, anchor: date) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    _, selected, summary = _select_focus_concepts(user_id, anchor)
+    return selected, summary
 
 
 def _select_focus_concepts(
@@ -133,41 +169,13 @@ def _select_focus_concepts(
     *,
     preferred_concept_key: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
-    summary = get_pillar_tracker_summary(user_id, anchor=anchor)
-    candidates: list[dict[str, Any]] = []
-    for pillar_row in summary.get("pillars") or []:
-        pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
-        if not pillar_key:
-            continue
-        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor)
-        for concept_row in detail.get("concepts") or []:
-            candidates.append(_concept_candidate(pillar_row, concept_row, anchor=anchor))
-    signal_rows = [row for row in candidates if row.get("has_signal")]
-    if not signal_rows:
-        return [], None, summary
-
-    def _sort_key(row: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
-        current_score = _safe_int(row.get("current_score"))
-        recent_average = _safe_int(row.get("recent_average"))
-        pillar_score = _safe_int(row.get("pillar_score"))
-        return (
-            -int(row.get("recent_misses") or 0),
-            current_score if current_score is not None else 999,
-            recent_average if recent_average is not None else 999,
-            pillar_score if pillar_score is not None else 999,
-            _pillar_rank(str(row.get("pillar_key") or "")),
-            str(row.get("concept_label") or ""),
-        )
-
-    ranked_rows = sorted(signal_rows, key=_sort_key)
+    candidates, summary = _review_concepts(user_id, anchor)
+    ranked_rows = _rank_off_track_concepts(candidates)
     preferred = _normalize_concept_key(preferred_concept_key) or None
     selected = next((row for row in ranked_rows if row.get("concept_key") == preferred), None)
-    visible = ranked_rows[:8]
-    if selected and not any(str(item.get("concept_key") or "").strip().lower() == selected.get("concept_key") for item in visible):
-        visible = [selected, *visible[:7]]
     if selected is None:
-        selected = visible[0] if visible else None
-    return visible, selected, summary
+        selected = ranked_rows[0] if ranked_rows else None
+    return ranked_rows, selected, summary
 
 
 def _load_library_rows(pillar_key: str) -> list[ContentLibraryItem]:
@@ -277,6 +285,7 @@ def _select_library_item(
         )
         if exact_rows:
             return exact_rows[0], "concept"
+        return None, None
     pillar_rows = sorted(
         [row for row in rows if not _normalized_library_concept(row)],
         key=_row_priority,
@@ -289,114 +298,114 @@ def _select_library_item(
     return None, None
 
 
+def _content_payload(row: ContentLibraryItem | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(getattr(row, "id", 0) or 0),
+        "pillar_key": str(getattr(row, "pillar_key", "") or "").strip() or None,
+        "concept_code": _normalized_library_concept(row),
+        "title": str(getattr(row, "title", "") or "").strip() or None,
+        "body": str(getattr(row, "body", "") or "").strip() or None,
+        "podcast_url": str(getattr(row, "podcast_url", "") or "").strip() or None,
+        "podcast_voice": str(getattr(row, "podcast_voice", "") or "").strip() or None,
+        "avatar": _library_avatar_payload(row),
+        "created_at": getattr(row, "created_at", None),
+    }
+
+
+def _build_insight_result(
+    user_id: int,
+    candidates: list[dict[str, Any]],
+    *,
+    anchor: date | None = None,
+    concept_key: str | None = None,
+) -> dict[str, Any]:
+    off_track = _rank_off_track_concepts(candidates)
+    counts = {
+        status: sum(1 for item in candidates if item.get("status") == status)
+        for status in ("off_track", "on_track", "unlogged", "not_applicable")
+    }
+    status = "insufficient_data"
+    if counts["off_track"]:
+        status = "off_track"
+    elif counts["on_track"] and not counts["unlogged"]:
+        status = "on_track"
+    preferred = _normalize_concept_key(concept_key) or None
+    selected = next((item for item in off_track if item.get("concept_key") == preferred), None)
+    if selected is None:
+        selected = off_track[0] if off_track else None
+    library_by_pillar: dict[str, list[ContentLibraryItem]] = {}
+    available = []
+    for item in off_track:
+        pillar_key = str(item.get("pillar_key") or "")
+        if pillar_key not in library_by_pillar:
+            library_by_pillar[pillar_key] = _load_library_rows(pillar_key)
+        row, matched_by = _select_library_item(library_by_pillar[pillar_key], concept_key=item.get("concept_key"))
+        content = _content_payload(row)
+        label = str(item.get("concept_label") or item.get("concept_key") or "This concept").strip()
+        target = str(item.get("target_label") or "").strip()
+        value = str(item.get("latest_value") or "").strip()
+        reason = "Your latest check-in is outside your target."
+        if item.get("signal") == "needs_support":
+            reason = "Your latest check-in is below the on-track score range."
+        if value:
+            reason = f"{reason} Recorded: {value}."
+        # Published advice must match this exact concept. A missing lesson must
+        # never turn into advice for another concept in the same pillar.
+        guidance = str((content or {}).get("body") or "").strip()
+        if not guidance:
+            guidance = (
+                f"Choose one manageable change to support {label.lower()} before your next check-in. "
+                + (f"Use your target ({target}) to decide what to change." if target else "Reflect on what got in the way and choose a small step you can repeat.")
+            )
+        available.append({
+            "pillar_key": pillar_key,
+            "pillar_label": item.get("pillar_label") or pillar_label(pillar_key),
+            "concept_key": item.get("concept_key"),
+            "label": label,
+            "is_selected": item is selected,
+            "status": "off_track",
+            "signal": item.get("signal"),
+            "anchor_date": item.get("anchor_date"),
+            "score": item.get("current_score"),
+            "target_label": item.get("target_label"),
+            "latest_value": item.get("latest_value"),
+            "reason": reason,
+            "guidance": guidance,
+            "matched_by": matched_by,
+            "content": content,
+        })
+    selected_payload = next((item for item in available if item["is_selected"]), {})
+    return {
+        "user_id": int(user_id),
+        "insight_date": (anchor or tracker_today()).isoformat(),
+        "pillar_key": selected_payload.get("pillar_key"),
+        "pillar_label": selected_payload.get("pillar_label"),
+        "concept_key": selected_payload.get("concept_key"),
+        "concept_label": selected_payload.get("label"),
+        "review": {
+            "status": status,
+            "reviewed_count": len(candidates),
+            "off_track_count": counts["off_track"],
+            "on_track_count": counts["on_track"],
+            "unlogged_count": counts["unlogged"],
+            "not_applicable_count": counts["not_applicable"],
+        },
+        "available_concepts": available,
+        "matched_by": selected_payload.get("matched_by"),
+        "content": selected_payload.get("content"),
+    }
+
+
 def get_coach_insight(
     user_id: int,
     *,
     anchor: date | None = None,
     concept_key: str | None = None,
 ) -> dict[str, Any]:
-    if anchor is None and not str(concept_key or "").strip():
-        snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
-        context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
-        selected_pillar = context.get("selected_pillar") if isinstance(context.get("selected_pillar"), dict) else {}
-        focus_concept = context.get("selected_focus_concept") if isinstance(context.get("selected_focus_concept"), dict) else {}
-        selected_pillar_key = str(selected_pillar.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
-        selected_pillar_label = str(selected_pillar.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
-        rows = _load_library_rows(selected_pillar_key)
-        selected_row, matched_by = _select_library_item(
-            rows,
-            concept_key=(focus_concept or {}).get("concept_key"),
-        )
-        return {
-            "user_id": int(user_id),
-            "insight_date": str(context.get("tracker_focus_date") or tracker_today().isoformat()).strip() or tracker_today().isoformat(),
-            "pillar_key": selected_pillar_key,
-            "pillar_label": selected_pillar_label,
-            "concept_key": str((focus_concept or {}).get("concept_key") or "").strip() or None,
-            "concept_label": str((focus_concept or {}).get("label") or "").strip() or None,
-            "available_concepts": [
-                {
-                    "pillar_key": str(item.get("pillar_key") or "").strip().lower() or None,
-                    "pillar_label": str(item.get("pillar_label") or "").strip() or None,
-                    "concept_key": str(item.get("concept_key") or "").strip().lower() or None,
-                    "label": str(item.get("label") or "").strip() or None,
-                    "is_selected": str(item.get("concept_key") or "").strip().lower()
-                    == str((focus_concept or {}).get("concept_key") or "").strip().lower(),
-                }
-                for item in (context.get("focus_concepts") or [])
-                if isinstance(item, dict) and str(item.get("concept_key") or "").strip()
-            ],
-            "matched_by": matched_by,
-            "content": (
-                {
-                    "id": int(getattr(selected_row, "id", 0) or 0),
-                    "pillar_key": str(getattr(selected_row, "pillar_key", "") or "").strip() or None,
-                    "concept_code": _normalized_library_concept(selected_row),
-                    "title": str(getattr(selected_row, "title", "") or "").strip() or None,
-                    "body": str(getattr(selected_row, "body", "") or "").strip() or None,
-                    "podcast_url": str(getattr(selected_row, "podcast_url", "") or "").strip() or None,
-                    "podcast_voice": str(getattr(selected_row, "podcast_voice", "") or "").strip() or None,
-                    "avatar": _library_avatar_payload(selected_row),
-                    "created_at": getattr(selected_row, "created_at", None),
-                }
-                if selected_row is not None
-                else None
-            ),
-        }
-    resolved_anchor = anchor or tracker_today()
-    available_concepts, focus_concept, summary = _select_focus_concepts(
-        user_id,
-        resolved_anchor,
-        preferred_concept_key=concept_key,
-    )
-    weakest_pillar = _select_weakest_pillar(summary)
-    selected_pillar_key = str(
-        (focus_concept or {}).get("pillar_key") or weakest_pillar.get("pillar_key") or "nutrition"
-    ).strip().lower()
-    selected_pillar_label = str(
-        (focus_concept or {}).get("pillar_label") or weakest_pillar.get("label") or selected_pillar_key.title()
-    ).strip()
-    rows = _load_library_rows(selected_pillar_key)
-    selected_row, matched_by = _select_library_item(
-        rows,
-        concept_key=(focus_concept or {}).get("concept_key"),
-    )
-    return {
-        "user_id": int(user_id),
-        "insight_date": resolved_anchor.isoformat(),
-        "pillar_key": selected_pillar_key,
-        "pillar_label": selected_pillar_label,
-        "concept_key": str((focus_concept or {}).get("concept_key") or "").strip() or None,
-        "concept_label": str((focus_concept or {}).get("concept_label") or "").strip() or None,
-        "available_concepts": [
-            {
-                "pillar_key": str(item.get("pillar_key") or "").strip().lower() or None,
-                "pillar_label": str(item.get("pillar_label") or "").strip() or None,
-                "concept_key": str(item.get("concept_key") or "").strip().lower() or None,
-                "label": str(item.get("concept_label") or "").strip() or None,
-                "is_selected": str(item.get("concept_key") or "").strip().lower()
-                == str((focus_concept or {}).get("concept_key") or "").strip().lower(),
-            }
-            for item in available_concepts
-            if str(item.get("concept_key") or "").strip()
-        ],
-        "matched_by": matched_by,
-        "content": (
-            {
-                "id": int(getattr(selected_row, "id", 0) or 0),
-                "pillar_key": str(getattr(selected_row, "pillar_key", "") or "").strip() or None,
-                "concept_code": _normalized_library_concept(selected_row),
-                "title": str(getattr(selected_row, "title", "") or "").strip() or None,
-                "body": str(getattr(selected_row, "body", "") or "").strip() or None,
-                "podcast_url": str(getattr(selected_row, "podcast_url", "") or "").strip() or None,
-                "podcast_voice": str(getattr(selected_row, "podcast_voice", "") or "").strip() or None,
-                "avatar": _library_avatar_payload(selected_row),
-                "created_at": getattr(selected_row, "created_at", None),
-            }
-            if selected_row is not None
-            else None
-        ),
-    }
+    candidates, _ = _review_concepts(int(user_id), anchor)
+    return _build_insight_result(int(user_id), candidates, anchor=anchor, concept_key=concept_key)
 
 
 def _get_json_pref(user_id: int, key: str) -> dict[str, Any] | None:
@@ -430,13 +439,23 @@ def _set_json_pref(user_id: int, key: str, payload: dict[str, Any]) -> None:
         s.commit()
 
 
-def _insight_cache_signature(user_id: int) -> tuple[str, str | None]:
-    snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
-    context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
-    return (
-        str(snapshot.get("context_hash") or "").strip(),
-        str(context.get("plan_date") or "").strip() or None,
+def _review_cache_signature(candidates: list[dict[str, Any]], summary: dict[str, Any]) -> tuple[str, str]:
+    plan_date = tracker_today().isoformat()
+    payload = json.dumps(
+        {"review_version": _INSIGHT_REVIEW_VERSION, "plan_date": plan_date, "concepts": candidates, "summary": summary},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
     )
+    return (
+        hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+        plan_date,
+    )
+
+
+def _insight_cache_signature(user_id: int) -> tuple[str, str]:
+    candidates, summary = _review_concepts(int(user_id))
+    return _review_cache_signature(candidates, summary)
 
 
 def cache_coach_insight(
@@ -458,6 +477,7 @@ def cache_coach_insight(
         int(user_id),
         _INSIGHT_CACHE_KEY,
         {
+            "review_version": _INSIGHT_REVIEW_VERSION,
             "context_hash": resolved_hash,
             "plan_date": resolved_plan_date,
             "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
@@ -475,16 +495,18 @@ def get_or_generate_cached_coach_insight(
 ) -> dict[str, Any]:
     if anchor is not None or str(concept_key or "").strip():
         return get_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
-    context_hash, plan_date = _insight_cache_signature(int(user_id))
+    candidates, summary = _review_concepts(int(user_id))
+    context_hash, plan_date = _review_cache_signature(candidates, summary)
     if not force and context_hash and plan_date:
         cached = _get_json_pref(int(user_id), _INSIGHT_CACHE_KEY) or {}
         if (
-            str(cached.get("context_hash") or "").strip() == context_hash
+            cached.get("review_version") == _INSIGHT_REVIEW_VERSION
+            and str(cached.get("context_hash") or "").strip() == context_hash
             and str(cached.get("plan_date") or "").strip() == plan_date
             and isinstance(cached.get("result"), dict)
         ):
             return dict(cached.get("result") or {})
-    result = get_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
+    result = _build_insight_result(int(user_id), candidates, anchor=anchor, concept_key=concept_key)
     cache_coach_insight(
         int(user_id),
         result,

@@ -130,3 +130,104 @@ test('cue-card score circles are accessible buttons that open their correspondin
     assert.equal(state.progressVersion, 1);
   }
 });
+
+function homeDockHarness() {
+  const source = ts.createSourceFile('panel.tsx', fs.readFileSync('src/app/assessment/[userId]/chat/LatestAssessmentPanel.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const buttons = {};
+  let openSurface;
+  let onSurfaceChange;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node)) {
+      if (node.name.getText(source) === 'openDailyMenuSurface') openSurface = node.initializer.getText(source);
+      if (node.name.getText(source) === 'onHomeSurfaceChange') onSurfaceChange = node.initializer.getText(source);
+    }
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(source) === 'button') {
+      for (const label of ['Checkin', 'Insight', 'Learn']) {
+        if (node.children.some(child => ts.isJsxElement(child) && child.children.some(text => ts.isJsxText(text) && text.text.trim() === label))) {
+          buttons[label] = node.getText(source);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  const state = { activeDockKey: 'checkin', summaryVisible: true, selectedPillarKey: 'nutrition', objectivesModalOpen: true, streakSectionOpen: true };
+  const events = [];
+  const bridgeCalls = [];
+  const context = {
+    exports: {}, require,
+    get activeDockKey() { return state.activeDockKey; },
+    get selectedPillarKey() { return state.selectedPillarKey; },
+    get objectivesModalOpen() { return state.objectivesModalOpen; },
+    get streakSectionOpen() { return state.streakSectionOpen; },
+    closeTracker() { state.selectedPillarKey = null; },
+    closeObjectivesModal() { state.objectivesModalOpen = false; },
+    setSelectedPillarKey(value) { state.selectedPillarKey = value; },
+    setStreakSectionOpen(value) { state.streakSectionOpen = value; },
+    setObjectivesModalOpen(value) { state.objectivesModalOpen = value; },
+    setBiometricsModalOpen() {},
+    setActiveDockKey(value) { state.activeDockKey = value; },
+    setSummaryPanelVisible(value) { state.summaryVisible = value; },
+    homeDockButtonClassName: 'dock', homeDockButtonStyleActive: {}, homeDockButtonStyleInactive: {},
+    InsightIcon: () => null, BiometricsIcon: () => null,
+    window: { healthsenseSetHomeSurface(surface) { bridgeCalls.push(surface); }, dispatchEvent(event) { events.push(event); }, scrollTo() {} },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options?.detail; } },
+  };
+  const evaluate = expression => vm.runInNewContext(`(function () { ${ts.transpileModule(`exports.value = (${expression});`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 },
+  }).outputText} return exports.value; })()`, context);
+  context.openDailyMenuSurface = evaluate(openSurface);
+  return { state, events, bridgeCalls, button: label => evaluate(buttons[label]), receiveSurface: surface => evaluate(onSurfaceChange)({ detail: { surface } }) };
+}
+
+test('Insight opens its own surface from the bottom dock and closes overlapping views', () => {
+  const h = homeDockHarness();
+  const button = h.button('Insight');
+  assert.equal(button.type, 'button');
+  assert.equal(button.props.type, 'button');
+  assert.equal(button.props['aria-pressed'], false);
+  button.props.onClick();
+  assert.deepEqual(h.state, { activeDockKey: 'insight', summaryVisible: false, selectedPillarKey: null, objectivesModalOpen: false, streakSectionOpen: false });
+  assert.deepEqual(h.bridgeCalls, ['coach-insight']);
+  assert.equal(h.events[0].type, 'healthsense-home-surface');
+  assert.equal(h.events[0].detail.surface, 'coach-insight');
+  assert.equal(h.events[0].detail.source, 'summary');
+  assert.equal(h.button('Insight').props['aria-pressed'], true);
+});
+
+test('Insight, Learn and Checkin remain distinct and update the selected dock button', () => {
+  const h = homeDockHarness();
+  h.receiveSurface('coach-insight');
+  assert.equal(h.state.activeDockKey, 'insight');
+  assert.equal(h.state.summaryVisible, false);
+  h.button('Learn').props.onClick();
+  assert.equal(h.state.activeDockKey, 'learn');
+  assert.equal(h.bridgeCalls.at(-1), 'insight');
+  assert.equal(h.button('Insight').props['aria-pressed'], false);
+  h.receiveSurface('coach-insight');
+  h.button('Checkin').props.onClick();
+  assert.equal(h.state.activeDockKey, 'checkin');
+  assert.equal(h.state.summaryVisible, true);
+  assert.equal(h.events.at(-2).detail.surface, 'blank');
+});
+
+test('the home content receives Insight separately from the education surface', () => {
+  const source = ts.createSourceFile('chat.tsx', fs.readFileSync('src/app/assessment/[userId]/chat/AssessmentChatBox.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let callback;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'onSurfaceChange') callback = node.initializer.getText(source);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  const state = {};
+  const receive = vm.runInNewContext(ts.transpileModule(`(${callback})`, { compilerOptions: { target: ts.ScriptTarget.ES2017 } }).outputText, {
+    modernHomeOnly: true,
+    setHomeSurface(value) { state.surface = value; },
+    setHomeSurfaceEntryMode(value) { state.entryMode = value; },
+    setJourneyCompleted(value) { state.complete = value; },
+  });
+  receive({ detail: { surface: 'coach-insight', source: 'summary' } });
+  assert.deepEqual(state, { surface: 'coach-insight', entryMode: 'summary', complete: false });
+  receive({ detail: { surface: 'insight', source: 'summary' } });
+  assert.equal(state.surface, 'insight');
+});

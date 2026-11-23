@@ -623,6 +623,32 @@ export type CoachInsightContent = {
   created_at?: string | null;
 };
 
+export type CoachInsightConcept = {
+  pillar_key?: string | null;
+  pillar_label?: string | null;
+  concept_key?: string | null;
+  label?: string | null;
+  is_selected?: boolean;
+  status?: "off_track";
+  signal?: string | null;
+  anchor_date?: string | null;
+  score?: number | null;
+  target_label?: string | null;
+  latest_value?: string | null;
+  reason?: string | null;
+  guidance?: string | null;
+  content?: CoachInsightContent | null;
+};
+
+export type CoachInsightReview = {
+  status: "off_track" | "on_track" | "insufficient_data";
+  reviewed_count: number;
+  off_track_count: number;
+  on_track_count: number;
+  unlogged_count: number;
+  not_applicable_count: number;
+};
+
 export type CoachInsightResponse = {
   user_id?: number;
   insight_date?: string | null;
@@ -630,13 +656,8 @@ export type CoachInsightResponse = {
   pillar_label?: string | null;
   concept_key?: string | null;
   concept_label?: string | null;
-  available_concepts?: Array<{
-    pillar_key?: string | null;
-    pillar_label?: string | null;
-    concept_key?: string | null;
-    label?: string | null;
-    is_selected?: boolean;
-  }>;
+  review?: CoachInsightReview;
+  available_concepts?: CoachInsightConcept[];
   matched_by?: string | null;
   content?: CoachInsightContent | null;
 };

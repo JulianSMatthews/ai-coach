@@ -20,6 +20,7 @@ import AssessmentPromptCard, {
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import RealtimeSummaryAvatar from "./RealtimeSummaryAvatar";
 import EducationLessonMedia from "@/components/EducationLessonMedia";
+import CoachInsightPanel from "@/components/CoachInsightPanel";
 
 type ChatMessage = {
   id?: number;
@@ -103,7 +104,7 @@ type AssessmentCompletionSummaryMedia = {
   realtimeMaxReplays: number | null;
 };
 
-type HomeSurface = "blank" | "tracking" | "habits" | "insight" | "ask" | "streak";
+type HomeSurface = "blank" | "tracking" | "habits" | "insight" | "coach-insight" | "ask" | "streak";
 type HomeSurfaceEntryMode = "guided" | "summary";
 type EducationExplorerConcept = {
   programme_id?: number | null;
@@ -176,6 +177,11 @@ const HOME_SURFACE_COPY: Record<
     eyebrow: "Learn",
     title: "Current lesson",
     description: "Browse lesson cue cards.",
+  },
+  "coach-insight": {
+    eyebrow: "Insight",
+    title: "Your insights",
+    description: "Review every concept and focus on what needs attention.",
   },
   ask: {
     eyebrow: "Coach",
@@ -2160,8 +2166,8 @@ export default function AssessmentChatBox({
     : "A streak starts with one honest entry, not a perfect week.";
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
   const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
-  const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
-  const homeSurfaceDescription = viewingHomeSurfaceFromSummary && homeSurface !== "blank"
+  const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary && homeSurface !== "coach-insight" ? "Daily view" : homeSurfaceMeta.eyebrow;
+  const homeSurfaceDescription = viewingHomeSurfaceFromSummary && homeSurface !== "blank" && homeSurface !== "coach-insight"
     ? "Review this and close when you are ready."
     : homeSurfaceMeta.description;
   const homePanelHeightClass =
@@ -2742,6 +2748,11 @@ export default function AssessmentChatBox({
       if (surface === "insight") {
         setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("insight");
+        return;
+      }
+      if (surface === "coach-insight") {
+        setHomeSurfaceEntryMode(entryMode);
+        setHomeSurface("coach-insight");
         return;
       }
       if (surface === "habits") {
@@ -3763,6 +3774,8 @@ export default function AssessmentChatBox({
                 </p>
               </div>
             </div>
+          ) : homeSurface === "coach-insight" ? (
+            <CoachInsightPanel userId={userId} />
           ) : homeSurface === "insight" ? (
             (!educationPlan && (educationPlanLoading || !educationPlanError)) ? (
               <div className="flex min-h-full items-center px-4 py-5">

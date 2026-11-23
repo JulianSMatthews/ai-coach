@@ -40,7 +40,7 @@ type LatestAssessmentPanelProps = {
   extendedPillarsEnabled?: boolean;
 };
 
-type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
+type TrackerReturnSurface = "tracking" | "habits" | "insight" | "coach-insight" | "ask";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "reflection" | "purpose" | "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
@@ -1566,7 +1566,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
-  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "learn">("checkin");
+  const [activeDockKey, setActiveDockKey] = useState<"checkin" | "insight" | "learn">("checkin");
   const [setupPillarSelections, setSetupPillarSelections] = useState<Record<string, boolean>>(() =>
     initialSetupPillarSelections(initialSummary, extendedPillarsEnabled),
   );
@@ -3071,10 +3071,10 @@ export default function LatestAssessmentPanel({
     const onHomeSurfaceChange = (event: Event) => {
       const detail = (event as CustomEvent<{ surface?: string }>).detail;
       const surface = String(detail?.surface || "").trim();
-      if (surface === "insight") {
+      if (surface === "insight" || surface === "coach-insight") {
         setStreakSectionOpen(false);
         setObjectivesModalOpen(false);
-        setActiveDockKey("learn");
+        setActiveDockKey(surface === "coach-insight" ? "insight" : "learn");
         setSummaryPanelVisible(false);
       } else if (surface === "streak") {
         setStreakSectionOpen(true);
@@ -3352,10 +3352,10 @@ export default function LatestAssessmentPanel({
     }
   };
 
-  const openDailyMenuSurface = (surface: "tracking" | "habits" | "insight" | "ask") => {
+  const openDailyMenuSurface = (surface: TrackerReturnSurface) => {
     if (typeof window !== "undefined") {
       const bridge = window as Window & {
-        healthsenseSetHomeSurface?: (nextSurface: "tracking" | "habits" | "insight" | "ask") => void;
+        healthsenseSetHomeSurface?: (nextSurface: TrackerReturnSurface) => void;
       };
       bridge.healthsenseSetHomeSurface?.(surface);
       window.dispatchEvent(
@@ -3722,7 +3722,7 @@ export default function LatestAssessmentPanel({
         <div className="fixed inset-x-0 bottom-0 z-[60] bg-[var(--background)] pt-3">
           <div className="mx-auto w-full max-w-[23rem] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
             <div className="pointer-events-auto overflow-hidden rounded-[30px] border border-[var(--chrome-border)] bg-[var(--chrome)] shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-              <div className="grid grid-cols-2 p-1">
+              <div className="grid grid-cols-3 p-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -3757,6 +3757,31 @@ export default function LatestAssessmentPanel({
                   <BiometricsIcon className="h-4 w-4 text-[var(--chrome-text)]" />
                   <span className="text-[12.5px] font-semibold leading-none sm:text-[13.75px]">
                     Checkin
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedPillarKey) {
+                      closeTracker();
+                    }
+                    if (objectivesModalOpen) {
+                      closeObjectivesModal();
+                    }
+                    if (streakSectionOpen) {
+                      setStreakSectionOpen(false);
+                    }
+                    setActiveDockKey("insight");
+                    setSummaryPanelVisible(false);
+                    openDailyMenuSurface("coach-insight");
+                  }}
+                  aria-pressed={activeDockKey === "insight"}
+                  className={homeDockButtonClassName}
+                  style={activeDockKey === "insight" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
+                >
+                  <InsightIcon className="h-4 w-4 text-[var(--chrome-text)]" />
+                  <span className="text-[12.5px] font-semibold leading-none sm:text-[13.75px]">
+                    Insight
                   </span>
                 </button>
                 <button
