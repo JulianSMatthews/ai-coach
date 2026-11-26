@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from . import pillar_tracker as tracker
@@ -39,10 +39,10 @@ def _mean(values: list[int | float]) -> int | None:
     return int(round(sum(values) / len(values))) if values else None
 
 
-def get_pillar_progress(user_id: int, *, _coaching_context: bool = False) -> dict[str, Any]:
-    """Read the current calendar week, without home Monday fallback or generation."""
+def get_pillar_progress(user_id: int, *, anchor: date | None = None, _coaching_context: bool = False) -> dict[str, Any]:
+    """Read the week through the requested day, without carry-forward or generation."""
     tracker.ensure_pillar_tracker_schema()
-    today = tracker.tracker_today()
+    today = min(anchor or tracker.tracker_today(), tracker.tracker_today())
     week_days = tracker._week_days(today)
     elapsed_days = [day for day in week_days if day <= today]
     pillars = []

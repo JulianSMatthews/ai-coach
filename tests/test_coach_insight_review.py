@@ -16,13 +16,9 @@ from app import coach_insight as insight
 class CoachInsightReviewTests(unittest.TestCase):
     def setUp(self):
         self.today = date(2026, 11, 18)
-        self.details = {}
-        self.week_details = {}
         self.pillars = []
         self.clock = self.enterContext(patch.object(insight, "tracker_today", return_value=self.today))
-        self.enterContext(patch.object(insight, "get_pillar_tracker_summary", side_effect=lambda *_a, **_k: {"pillars": self.pillars}))
-        self.detail_calls = self.enterContext(patch.object(insight, "get_pillar_tracker_detail", side_effect=self.detail))
-        self.latest_dates = self.enterContext(patch.object(insight, "_latest_recorded_concept_dates", side_effect=self.recorded_dates, create=True))
+        self.progress = self.enterContext(patch.object(insight, "get_pillar_progress", side_effect=self.progress_payload))
         self.library = self.enterContext(patch.object(insight, "_load_library_rows", return_value=[]))
         self.prefs = {}
         self.enterContext(patch.object(insight, "_get_json_pref", side_effect=lambda user, key: copy.deepcopy(self.prefs.get((user, key)))))
@@ -32,84 +28,55 @@ class CoachInsightReviewTests(unittest.TestCase):
     def week_start(day):
         return day - timedelta(days=day.weekday())
 
-    def detail(self, _user, key, *, anchor=None, **_kwargs):
-        anchor = anchor or self.today
-        return self.week_details.get((key, self.week_start(anchor)), self.details[key])
+    def progress_payload(self, _user, *, anchor=None):
+        through = anchor or self.today
+        return {"week": {"start": self.week_start(through).isoformat(), "through": through.isoformat()}, "pillars": self.pillars}
 
-    def recorded_dates(self, _user, pillar_keys, *, as_of):
-        latest = {}
-        sources = [*self.details.items(), *((key, detail) for (key, _week), detail in self.week_details.items())]
-        for pillar_key, detail in sources:
-            if pillar_key not in pillar_keys:
-                continue
-            for concept in detail.get("concepts") or []:
-                for row in concept.get("week") or []:
-                    day = date.fromisoformat(row["date"])
-                    recorded = bool(row.get("not_applicable")) or any(
-                        row.get(field) is not None
-                        for field in ("value", "value_label", "score", "target_met", "okr_on_track")
-                    )
-                    if not recorded or day > as_of:
-                        continue
-                    key = (pillar_key, concept["concept_key"])
-                    if key not in latest or day > latest[key]:
-                        latest[key] = day
-        return latest
-
-    def concept(self, key, *, score=40, target_met=False, neutral=False, logged=True, day=None):
+    def concept(self, key, *, score=40, target_met=False, neutral=False, logged=True, day=None, historical=False):
         day = day or self.today
-        row = {
-            "date": day.isoformat(),
-            "value_label": "A little" if logged else None,
-            "score": score if logged else None,
-            "target_met": target_met if logged else None,
-            "not_applicable": neutral,
-            "daily_positive": target_met if logged else None,
-        }
         return {
             "concept_key": key,
             "label": key.replace("_", " ").title(),
-            "helper": f"Make time for {key.replace('_', ' ')} today.",
-            "score": score if logged else None,
-            "target_met": target_met if logged else None,
+            "score": score if logged and not neutral else None,
+            "target_met": target_met,
             "target_label": "Your agreed target",
-            "target_period": "day",
-            "value_label": row["value_label"],
-            "not_applicable": neutral,
-            "week": [row],
+            "not_applicable_days_count": int(neutral),
+            "is_historical": historical,
+            "days": [{"date": day.isoformat(), "value_label": "A little" if logged else None,
+                      "not_applicable": neutral}],
         }
 
-    def add_pillar(self, key, concepts, *, active_day=None):
-        self.pillars.append({"pillar_key": key, "label": key.title(), "score": 70})
-        self.details[key] = {
-            "pillar": {"active_date": (active_day or self.today).isoformat()},
-            "concepts": concepts,
-        }
+    def add_pillar(self, key, concepts):
+        self.pillars.append({"pillar_key": key, "label": key.title(), "score": 70, "concepts": concepts})
 
     def result(self, **kwargs):
         return insight.get_coach_insight(1, **kwargs)
 
-    def test_only_off_track_concepts_receive_guidance_using_target_status_before_score(self):
+    def test_only_week_to_date_scores_below_80_receive_guidance(self):
         self.add_pillar("purpose", [
-            self.concept("direction_vision", score=40, target_met=True),
-            self.concept("values_alignment", score=100, target_met=False),
+            self.concept("direction_vision", score=79, target_met=True),
+            self.concept("values_alignment", score=80, target_met=False),
             self.concept("meaning_fulfilment", logged=False),
             self.concept("contribution_connection", neutral=True),
         ])
         result = self.result(anchor=self.today)
-        self.assertEqual([item["concept_key"] for item in result["available_concepts"]], ["values_alignment"])
+        self.assertEqual([item["concept_key"] for item in result["available_concepts"]], ["direction_vision"])
         item = result["available_concepts"][0]
         self.assertEqual(item["status"], "off_track")
-        self.assertTrue(item["reason"])
+        self.assertEqual(item["score"], 79)
+        self.assertEqual(item["reason"], "")
+        self.assertIsNone(item["latest_value"])
         self.assertTrue(item["guidance"])
+        self.assertTrue(item["reflection"])
         self.assertEqual(item["target_label"], "Your agreed target")
-        self.assertEqual(item["latest_value"], "A little")
         self.assertEqual(item["anchor_date"], self.today.isoformat())
         self.assertEqual(result["review"], {
-            "status": "off_track", "reviewed_count": 4, "off_track_count": 1,
-            "on_track_count": 1, "unlogged_count": 1, "not_applicable_count": 1,
+            "status": "off_track", "week_start_date": "2026-11-16", "through_date": "2026-11-18",
+            "reviewed_count": 4, "off_track_count": 1, "on_track_count": 1,
+            "unlogged_count": 1, "not_applicable_count": 1,
             "evidence_start_date": self.today.isoformat(), "evidence_end_date": self.today.isoformat(),
         })
+        self.progress.assert_called_once_with(1, anchor=self.today)
 
     def test_default_review_keeps_all_off_track_concepts_across_all_pillars(self):
         self.add_pillar("purpose", [self.concept(f"purpose_item_{i}") for i in range(6)])
@@ -118,11 +85,10 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertEqual(len(result["available_concepts"]), 12)
         self.assertEqual(result["review"]["reviewed_count"], 12)
         self.assertEqual(result["review"]["off_track_count"], 12)
-        self.assertEqual({call.args[1] for call in self.detail_calls.call_args_list}, {"purpose", "reflection"})
         self.assertTrue(all(item["guidance"] for item in result["available_concepts"]))
 
     def test_all_on_track_has_no_guidance_or_library_lookup(self):
-        self.add_pillar("purpose", [self.concept("direction_vision", score=100, target_met=True)])
+        self.add_pillar("purpose", [self.concept("direction_vision", score=100)])
         result = self.result()
         self.assertEqual(result["review"]["status"], "on_track")
         self.assertEqual(result["available_concepts"], [])
@@ -141,21 +107,19 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertEqual(result["review"]["unlogged_count"], 1)
         self.assertEqual(result["review"]["not_applicable_count"], 1)
         self.assertEqual(result["available_concepts"], [])
-        self.assertIsNone(result["content"])
         self.library.assert_not_called()
 
-    def test_no_concepts_returns_insufficient_data(self):
+    def test_no_concepts_returns_insufficient_data_with_week_window(self):
         result = self.result()
         self.assertEqual(result["review"]["status"], "insufficient_data")
         self.assertEqual(result["review"]["reviewed_count"], 0)
+        self.assertEqual(result["review"]["week_start_date"], "2026-11-16")
+        self.assertEqual(result["review"]["through_date"], "2026-11-18")
         self.assertEqual(result["available_concepts"], [])
         self.assertIsNone(result["content"])
 
     def test_partial_on_track_review_does_not_claim_unlogged_concepts_are_on_track(self):
-        self.add_pillar("purpose", [
-            self.concept("direction_vision", score=100, target_met=True),
-            self.concept("values_alignment", logged=False),
-        ])
+        self.add_pillar("purpose", [self.concept("direction_vision", score=100), self.concept("values_alignment", logged=False)])
         result = self.result()
         self.assertEqual(result["review"]["status"], "insufficient_data")
         self.assertEqual(result["review"]["on_track_count"], 1)
@@ -163,184 +127,37 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertEqual(result["available_concepts"], [])
 
     def test_preferred_on_track_concept_cannot_override_an_off_track_concept(self):
-        self.add_pillar("purpose", [
-            self.concept("direction_vision", score=100, target_met=True),
-            self.concept("values_alignment"),
-        ])
+        self.add_pillar("purpose", [self.concept("direction_vision", score=100), self.concept("values_alignment")])
         result = self.result(concept_key="direction_vision")
         self.assertEqual(result["concept_key"], "values_alignment")
-        self.assertEqual([item["concept_key"] for item in result["available_concepts"]], ["values_alignment"])
 
-    def test_resolved_tracker_date_controls_evidence_and_ignores_old_miss_after_recovery(self):
-        yesterday = self.today - timedelta(days=1)
-        recovered = self.concept("direction_vision", score=100, target_met=True, day=yesterday)
-        old_miss = self.concept("direction_vision", day=yesterday - timedelta(days=1))["week"][0]
-        recovered["week"].insert(0, old_miss)
-        self.add_pillar("purpose", [recovered], active_day=yesterday)
+    def test_retired_concepts_do_not_receive_assistance_or_count_as_current(self):
+        self.add_pillar("purpose", [self.concept("retired", score=0, historical=True), self.concept("values_alignment", score=100)])
         result = self.result()
+        self.assertEqual(result["review"]["reviewed_count"], 1)
         self.assertEqual(result["review"]["status"], "on_track")
         self.assertEqual(result["available_concepts"], [])
-        self.assertEqual(result["review"]["evidence_start_date"], yesterday.isoformat())
-        self.assertEqual(result["review"]["evidence_end_date"], yesterday.isoformat())
+        self.library.assert_not_called()
 
-    def test_yesterdays_complete_13_concepts_are_not_missing_before_todays_checkin(self):
-        for today in (date(2026, 11, 18), date(2026, 11, 23)):
-            with self.subTest(today=today):
-                self.today = today
-                self.clock.return_value = today
-                self.details.clear()
-                self.week_details.clear()
-                self.pillars.clear()
-                yesterday = today - timedelta(days=1)
-                for pillar, count in (("reflection", 3), ("purpose", 3), ("resilience", 4), ("recovery", 3)):
-                    current = [self.concept(f"{pillar}_item_{i}", logged=False) for i in range(count)]
-                    previous = [self.concept(item["concept_key"], score=100, target_met=True, day=yesterday) for item in current]
-                    self.add_pillar(pillar, current)
-                    if self.week_start(today) == self.week_start(yesterday):
-                        for item, past in zip(current, previous):
-                            item["week"].extend(past["week"])
-                    else:
-                        self.week_details[(pillar, self.week_start(yesterday))] = {
-                            "pillar": {"active_date": yesterday.isoformat()}, "concepts": previous,
-                        }
-                result = self.result()
-                self.assertEqual(result["review"]["reviewed_count"], 13)
-                self.assertEqual(result["review"]["on_track_count"], 13)
-                self.assertEqual(result["review"]["unlogged_count"], 0)
-                self.assertEqual(result["review"]["status"], "on_track")
-                self.assertEqual(result["review"]["evidence_start_date"], yesterday.isoformat())
-                self.assertEqual(result["review"]["evidence_end_date"], yesterday.isoformat())
-                self.assertEqual(result["available_concepts"], [])
+    def test_future_anchor_is_capped_at_today_and_historical_anchor_is_forwarded(self):
+        self.result(anchor=self.today + timedelta(days=10))
+        self.progress.assert_called_once_with(1, anchor=self.today)
+        self.progress.reset_mock()
+        past = self.today - timedelta(days=8)
+        result = self.result(anchor=past)
+        self.progress.assert_called_once_with(1, anchor=past)
+        self.assertEqual(result["insight_date"], past.isoformat())
+        self.assertEqual(result["review"]["week_start_date"], "2026-11-09")
+        self.assertEqual(result["review"]["through_date"], past.isoformat())
 
-    def test_each_concept_uses_its_own_latest_recorded_date(self):
-        yesterday = self.today - timedelta(days=1)
-        today_record = self.concept("values_alignment", score=100, target_met=True)
-        today_record["week"].append(self.concept("values_alignment", day=yesterday)["week"][0])
-        yesterday_record = self.concept("meaning_fulfilment", logged=False)
-        yesterday_record["week"].append(self.concept("meaning_fulfilment", day=yesterday)["week"][0])
-        self.add_pillar("purpose", [today_record, yesterday_record, self.concept("direction_vision", logged=False)])
-        result = self.result()
-        self.assertEqual(result["review"]["on_track_count"], 1)
-        self.assertEqual(result["review"]["off_track_count"], 1)
-        self.assertEqual(result["review"]["unlogged_count"], 1)
-        self.assertEqual(result["review"]["evidence_start_date"], yesterday.isoformat())
-        self.assertEqual(result["review"]["evidence_end_date"], self.today.isoformat())
-        self.assertEqual(result["available_concepts"][0]["concept_key"], "meaning_fulfilment")
-        self.assertEqual(result["available_concepts"][0]["anchor_date"], yesterday.isoformat())
-
-    def test_latest_neutral_answer_suppresses_older_miss_without_becoming_missing(self):
-        yesterday = self.today - timedelta(days=1)
-        neutral = self.concept("adaptability", logged=False)
-        neutral["week"].extend([
-            self.concept("adaptability", day=yesterday - timedelta(days=1))["week"][0],
-            self.concept("adaptability", neutral=True, day=yesterday)["week"][0],
-        ])
-        self.add_pillar("resilience", [neutral])
-        result = self.result()
-        self.assertEqual(result["review"]["not_applicable_count"], 1)
-        self.assertEqual(result["review"]["unlogged_count"], 0)
-        self.assertEqual(result["review"]["off_track_count"], 0)
-        self.assertEqual(result["review"]["evidence_start_date"], yesterday.isoformat())
-        self.assertEqual(result["available_concepts"], [])
-
-    def test_unrecorded_current_row_does_not_inherit_stale_top_level_scores(self):
-        stale = self.concept("values_alignment", logged=False)
-        stale.update(score=0, target_met=False, value_label="An unrelated active date")
-        self.add_pillar("purpose", [stale])
-        result = self.result()
-        self.assertEqual(result["review"]["status"], "insufficient_data")
-        self.assertEqual(result["review"]["unlogged_count"], 1)
-        self.assertIsNone(result["review"]["evidence_start_date"])
-        self.assertIsNone(result["review"]["evidence_end_date"])
-        self.assertEqual(result["available_concepts"], [])
-
-    def test_future_and_empty_rows_do_not_replace_the_latest_genuine_record(self):
-        yesterday = self.today - timedelta(days=1)
-        actual = self.concept("values_alignment", logged=False)
-        actual["week"].extend([
-            self.concept("values_alignment", day=yesterday)["week"][0],
-            self.concept("values_alignment", score=100, target_met=True, day=self.today + timedelta(days=1))["week"][0],
-        ])
-        future_only = self.concept("direction_vision", score=100, target_met=True, day=self.today + timedelta(days=1))
-        self.add_pillar("purpose", [actual, future_only])
-        result = self.result()
-        self.assertEqual(result["review"]["off_track_count"], 1)
-        self.assertEqual(result["review"]["unlogged_count"], 1)
-        self.assertEqual(result["available_concepts"][0]["anchor_date"], yesterday.isoformat())
-        self.assertEqual(result["review"]["evidence_end_date"], yesterday.isoformat())
-
-    def test_explicit_date_uses_that_exact_row_even_when_tracker_active_date_differs(self):
-        yesterday = self.today - timedelta(days=1)
-        concept = self.concept("values_alignment", score=100, target_met=True)
-        concept["week"].append(self.concept("values_alignment", day=yesterday)["week"][0])
-        self.add_pillar("purpose", [concept], active_day=self.today)
-        historical = self.result(anchor=yesterday)
-        self.assertEqual(historical["review"]["off_track_count"], 1)
-        self.assertEqual(historical["available_concepts"][0]["anchor_date"], yesterday.isoformat())
-        current = self.result(anchor=self.today)
-        self.assertEqual(current["review"]["status"], "on_track")
-        self.assertEqual(current["available_concepts"], [])
-        self.latest_dates.assert_not_called()
-
-    def test_explicit_empty_date_does_not_fall_back_to_a_different_recorded_day(self):
-        yesterday = self.today - timedelta(days=1)
-        self.add_pillar("purpose", [self.concept("values_alignment", day=yesterday)], active_day=yesterday)
-        result = self.result(anchor=self.today)
-        self.assertEqual(result["review"]["unlogged_count"], 1)
-        self.assertEqual(result["available_concepts"], [])
-        self.assertIsNone(result["review"]["evidence_start_date"])
-        self.latest_dates.assert_not_called()
-
-    def test_older_history_is_reused_by_week_and_does_not_add_retired_concepts(self):
-        first_day = self.today - timedelta(days=29)
-        second_day = first_day + timedelta(days=1)
-        self.add_pillar("purpose", [
-            self.concept("values_alignment", logged=False),
-            self.concept("meaning_fulfilment", logged=False),
-        ])
-        self.week_details[("purpose", self.week_start(first_day))] = {
-            "pillar": {"active_date": first_day.isoformat()},
-            "concepts": [
-                self.concept("values_alignment", day=first_day),
-                self.concept("meaning_fulfilment", day=second_day),
-                self.concept("retired_concept", day=second_day),
-            ],
-        }
-        result = self.result()
-        self.assertEqual(result["review"]["reviewed_count"], 2)
-        self.assertEqual(result["review"]["off_track_count"], 2)
-        self.assertEqual(result["review"]["evidence_start_date"], first_day.isoformat())
-        self.assertEqual(result["review"]["evidence_end_date"], second_day.isoformat())
-        self.assertEqual({item["concept_key"] for item in result["available_concepts"]}, {"values_alignment", "meaning_fulfilment"})
-        self.assertEqual(self.detail_calls.call_count, 2)
-        self.assertEqual({self.week_start(call.kwargs["anchor"]) for call in self.detail_calls.call_args_list}, {
-            self.week_start(self.today), self.week_start(first_day),
-        })
-
-    def test_older_target_miss_with_high_score_is_explained_as_a_target_miss(self):
-        recorded_day = self.today - timedelta(days=14)
-        self.add_pillar("purpose", [self.concept("values_alignment", logged=False)])
-        self.week_details[("purpose", self.week_start(recorded_day))] = {
-            "pillar": {"active_date": recorded_day.isoformat()},
-            "concepts": [self.concept("values_alignment", score=100, target_met=False, day=recorded_day)],
-        }
-        item = self.result()["available_concepts"][0]
-        self.assertEqual(item["status"], "off_track")
-        self.assertEqual(item["score"], 100)
-        self.assertIn("outside your target", item["reason"])
-        self.assertNotIn("score range", item["reason"])
-
-    def test_cached_yesterday_miss_is_replaced_by_todays_success(self):
-        yesterday = self.today - timedelta(days=1)
-        concept = self.concept("values_alignment", logged=False)
-        concept["week"].append(self.concept("values_alignment", day=yesterday)["week"][0])
+    def test_score_changes_invalidate_cached_weekly_review(self):
+        concept = self.concept("values_alignment", score=70)
         self.add_pillar("purpose", [concept])
         previous = insight.get_or_generate_cached_coach_insight(1)
         self.assertEqual(previous["review"]["off_track_count"], 1)
-        concept["week"].append(self.concept("values_alignment", score=100, target_met=True)["week"][0])
+        concept["score"] = 80
         current = insight.get_or_generate_cached_coach_insight(1)
         self.assertEqual(current["review"]["status"], "on_track")
-        self.assertEqual(current["review"]["evidence_end_date"], self.today.isoformat())
         self.assertEqual(current["available_concepts"], [])
 
     def test_unrelated_concept_library_content_is_never_returned_as_fallback(self):
@@ -366,6 +183,11 @@ class CoachInsightReviewTests(unittest.TestCase):
         items = {item["concept_key"]: item for item in result["available_concepts"]}
         self.assertEqual(items["values_alignment"]["content"]["id"], 18)
         self.assertIsNone(items["meaning_fulfilment"]["content"])
+        for key, item in items.items():
+            self.assertIn(item["label"].lower(), item["reflection"])
+            self.assertTrue(item["reflection"].endswith("?"))
+            self.assertIn("existing", item["reflection"])
+        self.assertNotEqual(items["values_alignment"]["reflection"], items["meaning_fulfilment"]["reflection"])
 
     def library_item(self, key, body):
         return SimpleNamespace(
@@ -373,18 +195,18 @@ class CoachInsightReviewTests(unittest.TestCase):
             body=body, podcast_url=None, podcast_voice=None, tags={}, created_at=None,
         )
 
-    def test_exactly_100_words_and_short_guidance_remain_unchanged(self):
+    def test_short_guidance_and_exactly_100_combined_words_remain_unchanged(self):
         self.add_pillar("purpose", [self.concept("values_alignment")])
-        reason = self.result()["available_concepts"][0]["reason"]
-        budget = 100 - len(reason.split())
+        reflection = self.result()["available_concepts"][0]["reflection"]
+        budget = 100 - len(reflection.split())
         for count in (8, budget):
             with self.subTest(words=count):
                 body = " ".join(f"word{i}" for i in range(count))
                 self.library.return_value = [self.library_item("values_alignment", body)]
                 item = self.result()["available_concepts"][0]
-                self.assertEqual(item["reason"], reason)
+                self.assertEqual(item["reflection"], reflection)
                 self.assertEqual(item["guidance"], body)
-                self.assertEqual(len(item["reason"].split()) + len(item["guidance"].split()), len(reason.split()) + count)
+                self.assertEqual(len(item["reflection"].split()) + len(item["guidance"].split()), len(reflection.split()) + count)
 
     def test_long_single_sentence_guidance_stops_at_word_boundary_without_changing_library_content(self):
         self.add_pillar("purpose", [self.concept("values_alignment")])
@@ -392,7 +214,7 @@ class CoachInsightReviewTests(unittest.TestCase):
         row = self.library_item("values_alignment", body)
         self.library.return_value = [row]
         item = self.result()["available_concepts"][0]
-        self.assertEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+        self.assertEqual(len(item["reflection"].split()) + len(item["guidance"].split()), 100)
         self.assertTrue(item["guidance"].endswith("…"))
         self.assertFalse(item["guidance"].endswith(" …"))
         self.assertTrue(body.startswith(item["guidance"][:-1]))
@@ -407,7 +229,7 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.library.return_value = [self.library_item("values_alignment", body)]
         item = self.result()["available_concepts"][0]
         self.assertEqual(item["guidance"], complete)
-        self.assertLessEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+        self.assertLessEqual(len(item["reflection"].split()) + len(item["guidance"].split()), 100)
 
     def test_each_concept_has_its_own_100_word_budget(self):
         self.add_pillar("purpose", [self.concept("values_alignment"), self.concept("meaning_fulfilment")])
@@ -418,24 +240,45 @@ class CoachInsightReviewTests(unittest.TestCase):
         items = self.result()["available_concepts"]
         self.assertEqual(len(items), 2)
         for item in items:
-            self.assertEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+            self.assertEqual(len(item["reflection"].split()) + len(item["guidance"].split()), 100)
             self.assertEqual(len(item["content"]["body"].split()), 150)
 
-    def test_fallback_and_long_reason_share_the_limit_while_metadata_stays_complete(self):
+    def test_fallback_keeps_word_limit_and_target_without_recorded_answer_narrative(self):
         concept = self.concept("values_alignment")
         target = " ".join("target" for _ in range(180))
         value = " ".join("recorded" for _ in range(180))
         concept["target_label"] = target
-        concept["week"][0]["value_label"] = value
+        concept["days"][0]["value_label"] = value
         self.add_pillar("purpose", [concept])
         item = self.result()["available_concepts"][0]
-        self.assertTrue(item["reason"])
+        self.assertEqual(item["reason"], "")
         self.assertTrue(item["guidance"])
-        self.assertLessEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
-        self.assertLessEqual(len(item["reason"].split()), 25)
-        self.assertEqual(item["latest_value"], value)
+        self.assertLessEqual(len(item["reflection"].split()) + len(item["guidance"].split()), 100)
+        self.assertLessEqual(len(item["reflection"].split()), 25)
+        self.assertIsNone(item["latest_value"])
         self.assertEqual(item["target_label"], target)
         self.assertIsNone(item["content"])
+
+    def test_reflection_keeps_optional_behaviours_tied_to_the_existing_target(self):
+        self.add_pillar("nutrition", [self.concept("fasting"), self.concept("alcohol")])
+        for item in self.result()["available_concepts"]:
+            self.assertIn(item["label"].lower(), item["reflection"])
+            self.assertIn("existing", item["reflection"])
+            self.assertIn("target", item["reflection"])
+            self.assertTrue(item["reflection"].endswith("?"))
+            self.assertNotIn("increase", item["reflection"].lower())
+            self.assertNotIn("start", item["reflection"].lower())
+
+    def test_previous_cached_review_without_reflection_is_regenerated(self):
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        insight.get_or_generate_cached_coach_insight(1)
+        pref = self.prefs[(1, insight._INSIGHT_CACHE_KEY)]
+        pref["review_version"] = insight._INSIGHT_REVIEW_VERSION - 1
+        pref["result"]["available_concepts"][0].pop("reflection")
+        item = insight.get_or_generate_cached_coach_insight(1)["available_concepts"][0]
+        self.assertTrue(item["reflection"])
+        self.assertTrue(item["guidance"])
+        self.assertLessEqual(len(item["guidance"].split()) + len(item["reflection"].split()), 100)
 
     def test_cached_review_updates_when_a_concept_beyond_the_old_limit_changes(self):
         concepts = [self.concept(f"purpose_item_{i}") for i in range(10)]
@@ -465,7 +308,7 @@ class CoachInsightReviewTests(unittest.TestCase):
         pref["result"]["available_concepts"][0]["guidance"] = " ".join("outdated" for _ in range(150))
         result = insight.get_or_generate_cached_coach_insight(1)
         item = result["available_concepts"][0]
-        self.assertLessEqual(len(item["reason"].split()) + len(item["guidance"].split()), 100)
+        self.assertLessEqual(len(item["reflection"].split()) + len(item["guidance"].split()), 100)
         self.assertNotIn("outdated", item["guidance"])
 
 

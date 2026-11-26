@@ -71,32 +71,36 @@ class NeutralFocusTests(unittest.TestCase):
         self.assertEqual([row['concept_key'] for row in rows], ['emotional_regulation'])
         self.assertEqual(rows[0]['signal'], 'missed_today')
 
-    def test_neutral_current_insight_candidate_is_not_selected_for_old_low_scores(self):
-        concept = self.concept(neutral=True, rows=[
-            self.day(self.yesterday), self.day(self.today, neutral=True),
-        ], score=0)
+    def test_neutral_today_does_not_erase_a_low_week_to_date_insight_score(self):
+        concept = {
+            'concept_key': 'adaptability', 'label': 'Adaptability', 'score': 0,
+            'not_applicable_days_count': 1,
+            'days': [self.day(self.yesterday), self.day(self.today, neutral=True)],
+        }
+        candidate = coach_insight._concept_candidate(self.pillar, concept, anchor=self.today)
+        self.assertFalse(candidate['not_applicable'])
+        self.assertEqual(candidate['current_score'], 0)
+        self.assertEqual(candidate['status'], 'off_track')
+
+    def test_all_neutral_days_are_not_missing_or_off_track_in_insight(self):
+        concept = {
+            'concept_key': 'adaptability', 'label': 'Adaptability', 'score': None,
+            'not_applicable_days_count': 2,
+            'days': [self.day(self.yesterday, neutral=True), self.day(self.today, neutral=True)],
+        }
         candidate = coach_insight._concept_candidate(self.pillar, concept, anchor=self.today)
         self.assertTrue(candidate['not_applicable'])
-        self.assertFalse(candidate['has_signal'])
         self.assertIsNone(candidate['current_score'])
-        self.assertEqual(candidate['recent_misses'], 1)
-        self.assertEqual(candidate['recent_missing'], 0)
-
-    def test_two_neutral_days_are_not_counted_as_missing_in_insight_candidate(self):
-        concept = self.concept(neutral=True, rows=[
-            self.day(self.yesterday, neutral=True), self.day(self.today, neutral=True),
-        ])
-        candidate = coach_insight._concept_candidate(self.pillar, concept, anchor=self.today)
-        self.assertEqual(candidate['recent_missing'], 0)
-        self.assertEqual(candidate['recent_misses'], 0)
-        self.assertIsNone(candidate['recent_average'])
-        self.assertFalse(candidate['has_signal'])
+        self.assertEqual(candidate['status'], 'not_applicable')
 
     def test_preferred_neutral_concept_cannot_override_a_real_insight_issue(self):
-        neutral = self.concept(neutral=True, rows=[self.day(self.today, neutral=True)])
-        actual_issue = self.concept('support_connection', rows=[self.day(self.today)], score=0)
-        with patch.object(coach_insight, 'get_pillar_tracker_summary', return_value={'pillars': [self.pillar]}), \
-             patch.object(coach_insight, 'get_pillar_tracker_detail', return_value={'concepts': [neutral, actual_issue]}):
+        neutral = {'concept_key': 'adaptability', 'label': 'Adaptability', 'score': None,
+                   'not_applicable_days_count': 1, 'days': [self.day(self.today, neutral=True)]}
+        issue = {'concept_key': 'support_connection', 'label': 'Support Connection', 'score': 0,
+                 'not_applicable_days_count': 0, 'days': [self.day(self.today)]}
+        pillar = {**self.pillar, 'concepts': [neutral, issue]}
+        with patch.object(coach_insight, 'get_pillar_progress', return_value={'pillars': [pillar]}), \
+             patch.object(coach_insight, 'tracker_today', return_value=self.today):
             available, selected, _ = coach_insight._select_focus_concepts(
                 1, self.today, preferred_concept_key='adaptability'
             )

@@ -6,18 +6,19 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import and_, desc, or_, select
 
 from .db import SessionLocal
-from .models import ContentLibraryItem, DailyPillarTrackerEntry, UserPreference
+from .models import ContentLibraryItem, UserPreference
 from .okr import _normalize_concept_key
-from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
+from .pillar_tracker import tracker_today
+from .pillar_progress import get_pillar_progress
 from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 
 _PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
-_INSIGHT_REVIEW_VERSION = 4
+_INSIGHT_REVIEW_VERSION = 6
 _INSIGHT_WORD_LIMIT = 100
 
 
@@ -61,147 +62,48 @@ def _concept_candidate(
     *,
     anchor: date,
 ) -> dict[str, Any]:
-    week_by_date = {
-        str((day or {}).get("date") or "").strip(): day
-        for day in (concept_row.get("week") or [])
-        if isinstance(day, dict)
-    }
-    today_iso = anchor.isoformat()
-    yesterday_iso = (anchor - timedelta(days=1)).isoformat()
-    today_row = week_by_date.get(today_iso) or {}
-    yesterday_row = week_by_date.get(yesterday_iso) or {}
-    not_applicable = bool(today_row.get("not_applicable"))
-    recent_rows = [today_row, yesterday_row]
-    recent_scores = [
-        _safe_int((day or {}).get("score"))
-        for day_date, day in week_by_date.items()
-        if day_date <= today_iso
-        if not day.get("not_applicable") and _safe_int((day or {}).get("score")) is not None
-    ]
-    recent_misses = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is False)
-    recent_missing = sum(1 for row in recent_rows if not row.get("not_applicable") and row.get("target_met") is None)
-    current_score = None if not_applicable else _safe_int(today_row.get("score"))
-    recent_average = (
-        int(round(sum(recent_scores) / max(1, len(recent_scores))))
-        if recent_scores
-        else None
+    """Use the same concept score and thresholds as the week-to-date view."""
+    score = _safe_int(concept_row.get("score"))
+    not_applicable = score is None and int(concept_row.get("not_applicable_days_count") or 0) > 0
+    status = (
+        "on_track" if score is not None and score >= 80 else
+        "off_track" if score is not None else
+        "not_applicable" if not_applicable else "unlogged"
     )
-    active_row = today_row
-    target_met = active_row.get("target_met")
-    if target_met is None:
-        target_met = active_row.get("okr_on_track")
-    has_record = not_applicable or any(active_row.get(key) is not None for key in ("value", "value_label", "score", "target_met", "okr_on_track"))
-    if not_applicable:
-        status = "not_applicable"
-    elif not has_record:
-        status = "unlogged"
-    elif target_met is not None:
-        # The user's actual target takes precedence over a generic score band.
-        status = "on_track" if target_met is True else "off_track"
-    elif current_score is not None:
-        status = "on_track" if current_score >= 80 else "off_track"
-    else:
-        status = "unlogged"
-    signal = status
-    if status == "off_track":
-        signal = "needs_support"
-        if target_met is False:
-            if anchor == tracker_today():
-                signal = "missed_today"
-            elif anchor == tracker_today() - timedelta(days=1):
-                signal = "missed_yesterday"
+    evidence_dates = [
+        str(day["date"])
+        for day in concept_row.get("days") or []
+        if isinstance(day, dict) and day.get("date")
+        and (day.get("value_label") is not None or day.get("not_applicable"))
+    ]
     return {
         "pillar_key": str(pillar_row.get("pillar_key") or "").strip().lower(),
         "pillar_label": str(pillar_row.get("label") or "").strip(),
         "pillar_score": _safe_int(pillar_row.get("score")),
         "concept_key": str(concept_row.get("concept_key") or "").strip().lower(),
         "concept_label": str(concept_row.get("label") or "").strip(),
-        "current_score": current_score,
-        "recent_average": recent_average,
-        "recent_misses": recent_misses,
-        "recent_missing": recent_missing,
+        "current_score": score,
         "not_applicable": not_applicable,
-        "has_record": has_record,
-        "target_met": target_met,
-        "has_signal": not not_applicable and bool(recent_misses or current_score is not None or recent_average is not None),
+        "has_record": bool(evidence_dates),
         "status": status,
-        "signal": signal,
-        "anchor_date": today_iso,
+        "signal": "needs_support" if status == "off_track" else status,
+        "anchor_date": anchor.isoformat(),
+        "evidence_dates": evidence_dates,
         "target_label": str(concept_row.get("target_label") or "").strip() or None,
-        "latest_value": str(active_row.get("value_label") or "").strip() or None,
-    }
-
-
-def _latest_recorded_concept_dates(
-    user_id: int,
-    pillar_keys: list[str],
-    *,
-    as_of: date,
-) -> dict[tuple[str, str], date]:
-    if not pillar_keys:
-        return {}
-    with SessionLocal() as session:
-        rows = session.execute(
-            select(
-                DailyPillarTrackerEntry.pillar_key,
-                DailyPillarTrackerEntry.concept_key,
-                func.max(DailyPillarTrackerEntry.score_date),
-            )
-            .where(
-                DailyPillarTrackerEntry.user_id == int(user_id),
-                DailyPillarTrackerEntry.pillar_key.in_(pillar_keys),
-                DailyPillarTrackerEntry.score_date <= as_of,
-                DailyPillarTrackerEntry.value_num.isnot(None),
-            )
-            .group_by(DailyPillarTrackerEntry.pillar_key, DailyPillarTrackerEntry.concept_key)
-        ).all()
-    return {
-        (str(pillar_key).strip().lower(), str(concept_key).strip().lower()): recorded_date
-        for pillar_key, concept_key, recorded_date in rows
     }
 
 
 def _review_concepts(user_id: int, anchor: date | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    current_day = tracker_today()
-    summary = get_pillar_tracker_summary(user_id, anchor=anchor or current_day)
-    pillar_rows = [
-        row for row in summary.get("pillars") or []
-        if isinstance(row, dict) and str(row.get("pillar_key") or "").strip()
+    through = min(anchor or tracker_today(), tracker_today())
+    progress = get_pillar_progress(int(user_id), anchor=through)
+    candidates = [
+        _concept_candidate(pillar, concept, anchor=through)
+        for pillar in progress.get("pillars") or []
+        if isinstance(pillar, dict)
+        for concept in pillar.get("concepts") or []
+        if isinstance(concept, dict) and not concept.get("is_historical")
     ]
-    latest_dates = (
-        _latest_recorded_concept_dates(
-            user_id,
-            [str(row["pillar_key"]).strip().lower() for row in pillar_rows],
-            as_of=current_day,
-        )
-        if anchor is None else {}
-    )
-    candidates: list[dict[str, Any]] = []
-    for pillar_row in pillar_rows:
-        pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
-        requested_anchor = anchor or current_day
-        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=requested_anchor)
-        requested_week = requested_anchor - timedelta(days=requested_anchor.weekday())
-        details_by_week = {requested_week: detail}
-        for concept_row in detail.get("concepts") or []:
-            concept_key = str(concept_row.get("concept_key") or "").strip().lower()
-            recorded_date = anchor or latest_dates.get((pillar_key, concept_key))
-            evidence_concept = {**concept_row, "week": []}
-            if recorded_date is not None and recorded_date <= current_day:
-                recorded_week = recorded_date - timedelta(days=recorded_date.weekday())
-                if recorded_week not in details_by_week:
-                    details_by_week[recorded_week] = get_pillar_tracker_detail(user_id, pillar_key, anchor=recorded_date)
-                evidence_concept = next(
-                    (
-                        item for item in details_by_week[recorded_week].get("concepts") or []
-                        if str(item.get("concept_key") or "").strip().lower() == concept_key
-                    ),
-                    evidence_concept,
-                )
-            # The dated week row is the scoring authority. In particular, an
-            # empty requested day must not inherit another active day's score.
-            candidates.append(_concept_candidate(pillar_row, evidence_concept, anchor=recorded_date or requested_anchor))
-    return candidates, summary
+    return candidates, progress
 
 
 def _rank_off_track_concepts(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -209,7 +111,6 @@ def _rank_off_track_concepts(candidates: list[dict[str, Any]]) -> list[dict[str,
         [row for row in candidates if row.get("status") == "off_track"],
         key=lambda row: (
             row.get("current_score") if row.get("current_score") is not None else 999,
-            -int(row.get("recent_misses") or 0),
             _pillar_rank(str(row.get("pillar_key") or "")),
             str(row.get("concept_label") or ""),
         ),
@@ -386,14 +287,11 @@ def _limit_insight_words(value: str, limit: int) -> str:
     return prefix.rstrip(".,;:!?…") + "…"
 
 
-def _limit_insight_narrative(reason: str, guidance: str) -> tuple[str, str]:
-    """Keep each concept's displayed narrative within one shared word budget."""
-    if len(reason.split()) + len(guidance.split()) <= _INSIGHT_WORD_LIMIT:
-        return reason, guidance
-    # Long recorded values can appear in the reason; retain room for advice.
-    reason = _limit_insight_words(reason, 25)
-    guidance = _limit_insight_words(guidance, _INSIGHT_WORD_LIMIT - len(reason.split()))
-    return reason, guidance
+def _limit_insight_sections(guidance: str, reflection: str) -> tuple[str, str]:
+    """Reserve room for reflection within each concept's shared word budget."""
+    reflection = _limit_insight_words(reflection, 25)
+    guidance = _limit_insight_words(guidance, _INSIGHT_WORD_LIMIT - len(reflection.split()))
+    return guidance, reflection
 
 
 def _build_insight_result(
@@ -413,11 +311,9 @@ def _build_insight_result(
         status = "off_track"
     elif counts["on_track"] and not counts["unlogged"]:
         status = "on_track"
-    evidence_dates = [
-        str(item["anchor_date"])
-        for item in candidates
-        if item.get("has_record") and item.get("anchor_date")
-    ]
+    through = min(anchor or tracker_today(), tracker_today())
+    week_start = through - timedelta(days=through.weekday())
+    evidence_dates = [day for item in candidates for day in item.get("evidence_dates") or []]
     preferred = _normalize_concept_key(concept_key) or None
     selected = next((item for item in off_track if item.get("concept_key") == preferred), None)
     if selected is None:
@@ -432,12 +328,6 @@ def _build_insight_result(
         content = _content_payload(row)
         label = str(item.get("concept_label") or item.get("concept_key") or "This concept").strip()
         target = str(item.get("target_label") or "").strip()
-        value = str(item.get("latest_value") or "").strip()
-        reason = "Your latest check-in is outside your target."
-        if item.get("target_met") is None:
-            reason = "Your latest check-in is below the on-track score range."
-        if value:
-            reason = f"{reason} Recorded: {value}."
         # Published advice must match this exact concept. A missing lesson must
         # never turn into advice for another concept in the same pillar.
         guidance = str((content or {}).get("body") or "").strip()
@@ -446,7 +336,9 @@ def _build_insight_result(
                 f"Choose one manageable change to support {label.lower()} before your next check-in. "
                 + (f"Use your target ({target}) to decide what to change." if target else "Reflect on what got in the way and choose a small step you can repeat.")
             )
-        reason, guidance = _limit_insight_narrative(reason, guidance)
+        reflection_label = _limit_insight_words(label.lower(), 14)
+        reflection = f"What would help you work towards your existing {reflection_label} target this week?"
+        guidance, reflection = _limit_insight_sections(guidance, reflection)
         available.append({
             "pillar_key": pillar_key,
             "pillar_label": item.get("pillar_label") or pillar_label(pillar_key),
@@ -458,22 +350,25 @@ def _build_insight_result(
             "anchor_date": item.get("anchor_date"),
             "score": item.get("current_score"),
             "target_label": item.get("target_label"),
-            "latest_value": item.get("latest_value"),
-            "reason": reason,
+            "latest_value": None,
+            "reason": "",
             "guidance": guidance,
+            "reflection": reflection,
             "matched_by": matched_by,
             "content": content,
         })
     selected_payload = next((item for item in available if item["is_selected"]), {})
     return {
         "user_id": int(user_id),
-        "insight_date": (anchor or tracker_today()).isoformat(),
+        "insight_date": through.isoformat(),
         "pillar_key": selected_payload.get("pillar_key"),
         "pillar_label": selected_payload.get("pillar_label"),
         "concept_key": selected_payload.get("concept_key"),
         "concept_label": selected_payload.get("label"),
         "review": {
             "status": status,
+            "week_start_date": week_start.isoformat(),
+            "through_date": through.isoformat(),
             "reviewed_count": len(candidates),
             "off_track_count": counts["off_track"],
             "on_track_count": counts["on_track"],

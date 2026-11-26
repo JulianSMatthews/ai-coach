@@ -4,12 +4,9 @@ import { useEffect, useState } from "react";
 import type { CoachInsightConcept, CoachInsightResponse } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import PillarIcon from "@/components/PillarIcon";
+import GuidanceIcon from "@/components/GuidanceIcon";
 
 const CONCEPT_INSIGHT_MAX_WORDS = 100;
-
-function wordCount(text: string): number {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
 
 function limitWords(text: string, maxWords: number): string {
   const value = text.trim();
@@ -40,7 +37,8 @@ function reviewIsValid(payload: CoachInsightResponse | null, userId: string): pa
     typeof concept.concept_key === "string" && Boolean(concept.concept_key.trim()) &&
     typeof concept.pillar_key === "string" && Boolean(concept.pillar_key.trim()) &&
     typeof concept.label === "string" && Boolean(concept.label.trim()) &&
-    typeof concept.guidance === "string" && Boolean(concept.guidance.trim())
+    typeof concept.guidance === "string" && Boolean(concept.guidance.trim()) &&
+    (concept.reflection == null || typeof concept.reflection === "string")
   ) && (
     review.status === "off_track" ? review.off_track_count > 0 :
     review.status === "on_track" ? review.off_track_count === 0 && review.on_track_count > 0 && review.unlogged_count === 0 :
@@ -68,13 +66,12 @@ function evidenceDateRange(start?: string | null, end?: string | null): string |
 
 function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
   const palette = getPillarPalette(concept.pillar_key);
-  const recordedDate = evidenceDate(concept.anchor_date);
-  let reason = (concept.reason || "").trim();
-  let guidance = (concept.guidance || "").trim();
-  if (wordCount(reason) + wordCount(guidance) > CONCEPT_INSIGHT_MAX_WORDS) {
-    reason = limitWords(reason, 25);
-    guidance = limitWords(guidance, CONCEPT_INSIGHT_MAX_WORDS - wordCount(reason));
-  }
+  const reflectionLabel = limitWords((concept.label || "this concept").toLowerCase(), 14);
+  const reflection = limitWords(
+    concept.reflection?.trim() || `What would help you work towards your existing ${reflectionLabel} target this week?`,
+    25,
+  );
+  const guidance = limitWords(concept.guidance || "", CONCEPT_INSIGHT_MAX_WORDS - reflection.split(/\s+/).length);
   return (
     <article className="overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--surface)]" aria-label={`${concept.label}: off track`}>
       <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-4">
@@ -85,19 +82,19 @@ function ConceptGuidance({ concept }: { concept: CoachInsightConcept }) {
           <p className="text-xs text-[var(--text-secondary)]">{concept.pillar_label || palette.label}</p>
           <h3 className="mt-0.5 text-lg font-semibold leading-snug text-[var(--text-primary)]">{concept.label}</h3>
         </div>
-        <span className="shrink-0 rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]">Off track</span>
       </div>
       <div className="space-y-4 px-5 py-5">
-        {reason ? <p className="text-sm leading-6 text-[var(--text-secondary)]">{reason}</p> : null}
-        {concept.latest_value || concept.target_label ? (
-          <dl className="grid gap-3 rounded-2xl bg-[var(--surface-muted)] p-4 text-sm sm:grid-cols-2">
-            {concept.latest_value ? <div><dt className="text-xs text-[var(--text-secondary)]">Latest check-in{recordedDate ? ` · ${recordedDate}` : ""}</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.latest_value}</dd></div> : null}
-            {concept.target_label ? <div><dt className="text-xs text-[var(--text-secondary)]">Your target</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.target_label}</dd></div> : null}
-          </dl>
-        ) : null}
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <div><dt className="text-xs text-[var(--text-secondary)]">Score to date</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-[var(--text-primary)]">{concept.score == null ? "—" : `${concept.score} / 100`}</dd></div>
+          {concept.target_label ? <div><dt className="text-xs text-[var(--text-secondary)]">Your target</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{concept.target_label}</dd></div> : null}
+        </dl>
         <div>
-          <h4 className="text-sm font-semibold text-[var(--text-primary)]">Your next step</h4>
-          <p className="mt-2 whitespace-pre-line text-[15px] leading-7 text-[var(--text-primary)]">{guidance}</p>
+          <h4 className="text-[var(--text-primary)]"><GuidanceIcon kind="step" /><span className="sr-only">One small step</span></h4>
+          <p className="mt-3 whitespace-pre-line text-lg leading-8 text-[var(--text-primary)] sm:text-xl">{guidance}</p>
+        </div>
+        <div className="border-t border-[var(--border)] pt-5">
+          <h4 className="text-[var(--text-primary)]"><GuidanceIcon kind="reflection" /><span className="sr-only">A moment to reflect</span></h4>
+          <p className="mt-3 whitespace-pre-line text-lg leading-8 text-[var(--text-primary)] sm:text-xl">{reflection}</p>
         </div>
       </div>
     </article>
@@ -146,36 +143,27 @@ export default function CoachInsightPanel({ userId }: { userId: string }) {
 
   const review = result.review;
   const offTrack = (result.available_concepts || []).filter((concept) => concept.status === "off_track");
-  const evidenceRange = evidenceDateRange(review.evidence_start_date, review.evidence_end_date);
+  const weekRange = evidenceDateRange(review.week_start_date, review.through_date);
   const allNotApplicable = review.not_applicable_count > 0 && review.unlogged_count === 0 && review.on_track_count === 0 && review.off_track_count === 0;
   return (
     <section aria-label="Concept insights" className="space-y-5">
       <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-5">
-        <p className="text-xs font-medium uppercase tracking-[0.15em] text-[var(--text-secondary)]">{review.reviewed_count} concepts reviewed</p>
-        {evidenceRange ? <p className="mt-2 text-xs leading-5 text-[var(--text-secondary)]">Based on your latest saved answers · {evidenceRange}</p> : null}
+        <p className="text-xs font-medium uppercase tracking-[0.15em] text-[var(--text-secondary)]">Week to date{weekRange ? ` · ${weekRange}` : ""}</p>
         <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">
           {review.status === "off_track" ? "Where to focus" : review.status === "on_track" ? "You're on track" : allNotApplicable ? "No guidance needed" : "More data needed"}
         </h2>
         <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
           {review.status === "off_track"
-            ? `${review.off_track_count} ${review.off_track_count === 1 ? "concept needs" : "concepts need"} attention. Here are your next steps.`
+            ? "Here are your next steps for concepts needing support this week."
             : review.status === "on_track"
-              ? "Your recorded concepts are meeting their targets. Keep your current rhythm."
+              ? "Your recorded concepts are on track so far this week. Keep your current rhythm."
               : allNotApplicable
-                ? "Your saved answers mark these concepts as not applicable. There are no off-track concepts to guide you on."
+                ? "Your answers this week mark these concepts as not applicable. No guidance is needed."
                 : review.on_track_count > 0
                   ? "Your scored concepts are on track. Some concepts do not yet have scored data to assess."
-                  : "There isn't enough scored check-in data to identify concepts that are off track yet."}
-        </p>
-        <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)]">
-          {review.on_track_count} on track · {review.off_track_count} off track
-          {review.unlogged_count > 0 ? ` · ${review.unlogged_count} without scored data` : ""}
-          {review.not_applicable_count > 0 ? ` · ${review.not_applicable_count} not applicable` : ""}
+                  : "There isn't enough scored check-in data this week to identify concepts needing support yet."}
         </p>
       </div>
-      {review.unlogged_count > 0 && review.status === "off_track" ? (
-        <p className="px-1 text-sm leading-6 text-[var(--text-secondary)]">Guidance uses your latest saved answers. Concepts without scored data are not treated as off track.</p>
-      ) : null}
       {offTrack.map((concept) => <ConceptGuidance key={`${concept.pillar_key}:${concept.concept_key}`} concept={concept} />)}
     </section>
   );

@@ -637,6 +637,7 @@ export type CoachInsightConcept = {
   latest_value?: string | null;
   reason?: string | null;
   guidance?: string | null;
+  reflection?: string | null;
   content?: CoachInsightContent | null;
 };
 
@@ -647,6 +648,8 @@ export type CoachInsightReview = {
   on_track_count: number;
   unlogged_count: number;
   not_applicable_count: number;
+  week_start_date?: string | null;
+  through_date?: string | null;
   evidence_start_date?: string | null;
   evidence_end_date?: string | null;
 };
