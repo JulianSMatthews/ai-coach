@@ -645,6 +645,7 @@ export type CoachInsightReview = {
   status: "off_track" | "on_track" | "insufficient_data";
   reviewed_count: number;
   off_track_count: number;
+  focus_count?: number;
   on_track_count: number;
   unlogged_count: number;
   not_applicable_count: number;

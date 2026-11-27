@@ -16,7 +16,8 @@ vm.runInNewContext(compile('src/components/PillarIcon.tsx'), { exports: iconExpo
 const guidanceIconExports = {};
 vm.runInNewContext(compile('src/components/GuidanceIcon.tsx'), { exports: guidanceIconExports, require });
 
-function sample({ userId = 42, offTrackCount = 2, onTrackCount = 2, unloggedCount = 0, notApplicableCount = 0, extras = [] } = {}) {
+function sample({ userId = 42, offTrackCount = 2, onTrackCount = 2, unloggedCount = 0, notApplicableCount = 0, focusCount = Math.min(offTrackCount, 6), extras = [] } = {}) {
+  const pillarKeys = ['nutrition', 'training', 'recovery', 'resilience', 'reflection', 'purpose'];
   return {
     user_id: userId,
     review: {
@@ -24,12 +25,13 @@ function sample({ userId = 42, offTrackCount = 2, onTrackCount = 2, unloggedCoun
       reviewed_count: offTrackCount + onTrackCount + unloggedCount + notApplicableCount,
       off_track_count: offTrackCount, on_track_count: onTrackCount,
       unlogged_count: unloggedCount, not_applicable_count: notApplicableCount,
+      focus_count: focusCount,
       week_start_date: '2026-11-16', through_date: '2026-11-18',
     },
     available_concepts: [
-      ...Array.from({ length: offTrackCount }, (_, index) => ({
-        status: 'off_track', pillar_key: index % 2 ? 'training' : 'nutrition',
-        pillar_label: index % 2 ? 'Training' : 'Nutrition',
+      ...Array.from({ length: focusCount }, (_, index) => ({
+        status: 'off_track', pillar_key: pillarKeys[index],
+        pillar_label: pillarKeys[index][0].toUpperCase() + pillarKeys[index].slice(1),
         concept_key: `concept_${index + 1}`, label: `Concept ${index + 1}`,
         guidance: `Personal next step ${index + 1}.`, reflection: `Personal reflection ${index + 1}?`,
         reason: `Recorded result ${index + 1} is below your target.`,
@@ -125,23 +127,55 @@ function harness(request = async () => sample(), initialProps = {}) {
   };
 }
 
-test('opening Insight shows every off-track concept with its week-to-date score, target and guidance without a selector or eight-card limit', async t => {
+test('opening Insight shows one focus per pillar with its weekly score, target and guidance while the review counts every off-track concept', async t => {
   const h = harness(async () => sample({ offTrackCount: 11, onTrackCount: 3, unloggedCount: 1, notApplicableCount: 2 }));
   t.after(() => h.unmount()); await h.flush();
-  assert.equal(h.rows().length, 11);
-  for (let index = 1; index <= 11; index++) {
+  assert.equal(h.rows().length, 6);
+  for (let index = 1; index <= 6; index++) {
     assert.equal(h.rows()[index - 1].label, `Concept ${index}: off track`);
     assert.deepEqual(h.rows()[index - 1].guidanceBodies, [`Personal next step ${index}.`, `Personal reflection ${index}?`]);
     assert.match(h.rows()[index - 1].text, new RegExp(`${index + 19} / 100`));
     assert.match(h.rows()[index - 1].text, new RegExp(`${index + 4} target`));
   }
   assert.match(h.text(), /Week to date · 16–18 Nov/);
-  assert.match(h.text(), /next steps for concepts needing support this week/);
+  assert.match(h.text(), /Focus on one concept per pillar needing support this week/);
   assert.doesNotMatch(h.text(), /concepts reviewed|concepts need attention|without scored data|not applicable|Latest check-in|Recorded result|\d+ recorded/);
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].url, '/api/coach-insight?userId=42');
   assert.equal(h.calls[0].options.cache, 'no-store');
   assert.deepEqual(h.buttons(), []);
+});
+
+test('legacy responses with several concepts per pillar show only the lowest score including zero and retain the first concept on ties', async t => {
+  const data = sample({ offTrackCount: 8 });
+  delete data.review.focus_count;
+  const template = data.available_concepts[0];
+  const concepts = [
+    ['nutrition', 'Higher nutrition', 45],
+    ['training', 'Unscored training', null],
+    ['recovery', 'First tied recovery', 20],
+    ['nutrition', 'Zero nutrition', 0],
+    ['nutrition', 'Second zero nutrition', 0],
+    ['training', 'Lowest training', 10],
+    ['training', 'Higher training', 30],
+    ['recovery', 'Second tied recovery', 20],
+  ];
+  data.available_concepts = concepts.map(([pillar_key, label, score], index) => ({
+    ...template, pillar_key, label, score, concept_key: `legacy_${index}`,
+    guidance: `Action for ${label}.`, reflection: `Reflection for ${label}?`,
+  }));
+  const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();
+  assert.deepEqual(h.rows().map(row => row.label), [
+    'Zero nutrition: off track', 'Lowest training: off track', 'First tied recovery: off track',
+  ]);
+  assert.deepEqual(h.rows().map(row => row.guidanceBodies), [
+    ['Action for Zero nutrition.', 'Reflection for Zero nutrition?'],
+    ['Action for Lowest training.', 'Reflection for Lowest training?'],
+    ['Action for First tied recovery.', 'Reflection for First tied recovery?'],
+  ]);
+  assert.match(h.rows()[0].text, /0 \/ 100/);
+  assert.doesNotMatch(h.text(), /Higher nutrition|Unscored training|Second zero nutrition|Higher training|Second tied recovery/);
+  assert.equal(h.calls.length, 1);
 });
 
 test('injected on-track, unlogged and not-applicable concepts never display corrective guidance', async t => {
@@ -360,8 +394,14 @@ test('mismatched users and incomplete or inconsistent reviews are rejected witho
   const nullConcept = sample(); nullConcept.available_concepts.push(null);
   const nullOnTrack = sample({ offTrackCount: 0 }); nullOnTrack.available_concepts.push(null);
   const invalidReflection = sample(); invalidReflection.available_concepts[0].reflection = { private: 'PRIVATE MALFORMED REFLECTION' };
+  const duplicatePillar = sample(); duplicatePillar.available_concepts[1].pillar_key = duplicatePillar.available_concepts[0].pillar_key;
+  const mismatchedFocusCount = sample(); mismatchedFocusCount.review.focus_count = 1;
+  const malformedFocusCounts = [-1, 1.5, '2', 3].map(focusCount => {
+    const data = sample(); data.review.focus_count = focusCount; return data;
+  });
+  const noFocusForOffTrack = sample({ offTrackCount: 2, focusCount: 0 });
   for (const data of [sample({ userId: 99 }), {}, null, wrongTotal, wrongStatus, noGuidance, wrongOffTrackCount, negativeCount, nullConcept, nullOnTrack,
-    invalidReflection,
+    invalidReflection, duplicatePillar, mismatchedFocusCount, noFocusForOffTrack, ...malformedFocusCounts,
     new Response('not JSON', { headers: { 'content-type': 'application/json' } }),
   ]) {
     const h = harness(async () => data); t.after(() => h.unmount()); await h.flush();

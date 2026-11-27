@@ -72,20 +72,83 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertEqual(item["anchor_date"], self.today.isoformat())
         self.assertEqual(result["review"], {
             "status": "off_track", "week_start_date": "2026-11-16", "through_date": "2026-11-18",
-            "reviewed_count": 4, "off_track_count": 1, "on_track_count": 1,
+            "reviewed_count": 4, "off_track_count": 1, "focus_count": 1, "on_track_count": 1,
             "unlogged_count": 1, "not_applicable_count": 1,
             "evidence_start_date": self.today.isoformat(), "evidence_end_date": self.today.isoformat(),
         })
         self.progress.assert_called_once_with(1, anchor=self.today)
 
-    def test_default_review_keeps_all_off_track_concepts_across_all_pillars(self):
+    def test_default_review_counts_all_concepts_but_offers_one_focus_per_pillar(self):
         self.add_pillar("purpose", [self.concept(f"purpose_item_{i}") for i in range(6)])
         self.add_pillar("reflection", [self.concept(f"reflection_item_{i}") for i in range(6)])
         result = self.result()
-        self.assertEqual(len(result["available_concepts"]), 12)
+        self.assertEqual(len(result["available_concepts"]), 2)
+        self.assertEqual(result["review"]["focus_count"], 2)
+        self.assertEqual({item["pillar_key"] for item in result["available_concepts"]}, {"purpose", "reflection"})
         self.assertEqual(result["review"]["reviewed_count"], 12)
         self.assertEqual(result["review"]["off_track_count"], 12)
         self.assertTrue(all(item["guidance"] for item in result["available_concepts"]))
+
+    def test_each_pillar_focus_is_its_lowest_week_to_date_score(self):
+        self.add_pillar("purpose", [
+            self.concept("values_alignment", score=35), self.concept("meaning_fulfilment", score=20),
+            self.concept("contribution_connection", score=90), self.concept("retired", score=0, historical=True),
+        ])
+        self.add_pillar("reflection", [self.concept("emotional_awareness", score=10), self.concept("mindfulness_presence", score=60)])
+        self.add_pillar("resilience", [self.concept("adaptability", neutral=True), self.concept("emotional_regulation", logged=False)])
+        result = self.result()
+        self.assertEqual([(item["pillar_key"], item["concept_key"], item["score"]) for item in result["available_concepts"]],
+                         [("reflection", "emotional_awareness", 10), ("purpose", "meaning_fulfilment", 20)])
+        self.assertEqual(result["review"]["reviewed_count"], 7)
+        self.assertEqual(result["review"]["off_track_count"], 4)
+        self.assertEqual(result["review"]["focus_count"], 2)
+        self.assertEqual(result["review"]["on_track_count"], 1)
+        self.assertEqual(result["review"]["not_applicable_count"], 1)
+        self.assertEqual(result["review"]["unlogged_count"], 1)
+        self.assertEqual({call.args[0] for call in self.library.call_args_list}, {"reflection", "purpose"})
+
+    def test_equal_scores_choose_a_stable_label_then_key_regardless_of_input_order(self):
+        first = self.concept("a_key", score=20)
+        second = self.concept("b_key", score=20)
+        first["label"] = second["label"] = "Same label"
+        third = self.concept("earlier_key", score=20)
+        third["label"] = "Zebra"
+        for concepts in ([second, third, first], [third, first, second]):
+            with self.subTest(order=[item["concept_key"] for item in concepts]):
+                self.pillars.clear()
+                self.add_pillar("purpose", concepts)
+                self.assertEqual(self.result()["available_concepts"][0]["concept_key"], "a_key")
+
+    def test_requested_off_track_alternative_replaces_only_its_own_pillar_focus(self):
+        self.add_pillar("purpose", [self.concept("values_alignment", score=10), self.concept("meaning_fulfilment", score=50)])
+        self.add_pillar("reflection", [self.concept("emotional_awareness", score=20), self.concept("mindfulness_presence", score=60)])
+        result = self.result(concept_key="meaning_fulfilment")
+        self.assertEqual(result["concept_key"], "meaning_fulfilment")
+        self.assertEqual({item["concept_key"] for item in result["available_concepts"]}, {"meaning_fulfilment", "emotional_awareness"})
+        self.assertEqual(result["review"]["off_track_count"], 4)
+        self.assertEqual(result["review"]["focus_count"], 2)
+        self.assertEqual(sum(item["is_selected"] for item in result["available_concepts"]), 1)
+
+    def test_private_focus_selector_uses_the_same_one_per_pillar_rule(self):
+        self.add_pillar("purpose", [self.concept("values_alignment", score=10), self.concept("meaning_fulfilment", score=50)])
+        self.add_pillar("reflection", [self.concept("emotional_awareness", score=20), self.concept("mindfulness_presence", score=60)])
+        available, selected, _ = insight._select_focus_concepts(1, self.today, preferred_concept_key="meaning_fulfilment")
+        self.assertEqual({item["concept_key"] for item in available}, {"meaning_fulfilment", "emotional_awareness"})
+        self.assertEqual(selected["concept_key"], "meaning_fulfilment")
+        available, selected, _ = insight._select_focus_concepts(1, self.today)
+        self.assertEqual({item["concept_key"] for item in available}, {"values_alignment", "emotional_awareness"})
+        self.assertEqual(selected["concept_key"], "values_alignment")
+
+    def test_unlogged_neutral_or_retired_preference_cannot_replace_a_real_focus(self):
+        self.add_pillar("resilience", [
+            self.concept("emotional_regulation", score=10), self.concept("support_connection", logged=False),
+            self.concept("adaptability", neutral=True), self.concept("retired", score=0, historical=True),
+        ])
+        for preferred in ("support_connection", "adaptability", "retired", "unknown"):
+            with self.subTest(preferred=preferred):
+                result = self.result(concept_key=preferred)
+                self.assertEqual([item["concept_key"] for item in result["available_concepts"]], ["emotional_regulation"])
+                self.assertEqual(result["review"]["focus_count"], 1)
 
     def test_all_on_track_has_no_guidance_or_library_lookup(self):
         self.add_pillar("purpose", [self.concept("direction_vision", score=100)])
@@ -173,7 +236,8 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertNotIn("UNRELATED DIRECTION ADVICE", result["available_concepts"][0]["guidance"])
 
     def test_exact_concept_library_content_is_attached_to_its_own_guidance(self):
-        self.add_pillar("purpose", [self.concept("values_alignment"), self.concept("meaning_fulfilment")])
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        self.add_pillar("reflection", [self.concept("mindfulness_presence")])
         self.library.return_value = [SimpleNamespace(
             id=18, pillar_key="purpose", concept_code="values_alignment", title="Values lesson",
             body="Choose one action aligned with your values.", podcast_url=None, podcast_voice=None,
@@ -182,12 +246,12 @@ class CoachInsightReviewTests(unittest.TestCase):
         result = self.result()
         items = {item["concept_key"]: item for item in result["available_concepts"]}
         self.assertEqual(items["values_alignment"]["content"]["id"], 18)
-        self.assertIsNone(items["meaning_fulfilment"]["content"])
+        self.assertIsNone(items["mindfulness_presence"]["content"])
         for key, item in items.items():
             self.assertIn(item["label"].lower(), item["reflection"])
             self.assertTrue(item["reflection"].endswith("?"))
             self.assertIn("existing", item["reflection"])
-        self.assertNotEqual(items["values_alignment"]["reflection"], items["meaning_fulfilment"]["reflection"])
+        self.assertNotEqual(items["values_alignment"]["reflection"], items["mindfulness_presence"]["reflection"])
 
     def library_item(self, key, body):
         return SimpleNamespace(
@@ -232,10 +296,11 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertLessEqual(len(item["reflection"].split()) + len(item["guidance"].split()), 100)
 
     def test_each_concept_has_its_own_100_word_budget(self):
-        self.add_pillar("purpose", [self.concept("values_alignment"), self.concept("meaning_fulfilment")])
+        self.add_pillar("purpose", [self.concept("values_alignment")])
+        self.add_pillar("reflection", [self.concept("mindfulness_presence")])
         self.library.return_value = [
             self.library_item("values_alignment", " ".join("values" for _ in range(150))),
-            self.library_item("meaning_fulfilment", " ".join("meaning" for _ in range(150))),
+            self.library_item("mindfulness_presence", " ".join("mindfulness" for _ in range(150))),
         ]
         items = self.result()["available_concepts"]
         self.assertEqual(len(items), 2)
@@ -260,14 +325,17 @@ class CoachInsightReviewTests(unittest.TestCase):
         self.assertIsNone(item["content"])
 
     def test_reflection_keeps_optional_behaviours_tied_to_the_existing_target(self):
-        self.add_pillar("nutrition", [self.concept("fasting"), self.concept("alcohol")])
-        for item in self.result()["available_concepts"]:
-            self.assertIn(item["label"].lower(), item["reflection"])
-            self.assertIn("existing", item["reflection"])
-            self.assertIn("target", item["reflection"])
-            self.assertTrue(item["reflection"].endswith("?"))
-            self.assertNotIn("increase", item["reflection"].lower())
-            self.assertNotIn("start", item["reflection"].lower())
+        for key in ("fasting", "alcohol"):
+            with self.subTest(concept=key):
+                self.pillars.clear()
+                self.add_pillar("nutrition", [self.concept(key)])
+                item = self.result()["available_concepts"][0]
+                self.assertIn(item["label"].lower(), item["reflection"])
+                self.assertIn("existing", item["reflection"])
+                self.assertIn("target", item["reflection"])
+                self.assertTrue(item["reflection"].endswith("?"))
+                self.assertNotIn("increase", item["reflection"].lower())
+                self.assertNotIn("start", item["reflection"].lower())
 
     def test_previous_cached_review_without_reflection_is_regenerated(self):
         self.add_pillar("purpose", [self.concept("values_alignment")])
@@ -289,6 +357,31 @@ class CoachInsightReviewTests(unittest.TestCase):
         updated = insight.get_or_generate_cached_coach_insight(1)
         self.assertEqual(updated["review"]["off_track_count"], 9)
         self.assertNotIn("purpose_item_9", [item["concept_key"] for item in updated["available_concepts"]])
+
+    def test_cached_focus_changes_when_another_concept_in_the_pillar_becomes_lower(self):
+        first = self.concept("values_alignment", score=30)
+        second = self.concept("meaning_fulfilment", score=40)
+        self.add_pillar("purpose", [first, second])
+        previous = insight.get_or_generate_cached_coach_insight(1)
+        self.assertEqual(previous["concept_key"], "values_alignment")
+        second["score"] = 20
+        updated = insight.get_or_generate_cached_coach_insight(1)
+        self.assertEqual([item["concept_key"] for item in updated["available_concepts"]], ["meaning_fulfilment"])
+        self.assertEqual(updated["concept_key"], "meaning_fulfilment")
+        self.assertEqual(updated["review"]["off_track_count"], 2)
+        self.assertEqual(updated["review"]["focus_count"], 1)
+
+    def test_previous_cache_with_multiple_cards_per_pillar_is_regenerated(self):
+        self.add_pillar("purpose", [self.concept("values_alignment", score=20), self.concept("meaning_fulfilment", score=30)])
+        insight.get_or_generate_cached_coach_insight(1)
+        pref = self.prefs[(1, insight._INSIGHT_CACHE_KEY)]
+        pref["review_version"] = insight._INSIGHT_REVIEW_VERSION - 1
+        pref["result"]["available_concepts"].append(copy.deepcopy(pref["result"]["available_concepts"][0]))
+        pref["result"]["review"].pop("focus_count")
+        result = insight.get_or_generate_cached_coach_insight(1)
+        self.assertEqual([item["concept_key"] for item in result["available_concepts"]], ["values_alignment"])
+        self.assertEqual(result["review"]["off_track_count"], 2)
+        self.assertEqual(result["review"]["focus_count"], 1)
 
     def test_legacy_cache_cannot_reintroduce_guidance_from_the_old_selector(self):
         self.add_pillar("purpose", [self.concept("values_alignment")])

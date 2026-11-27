@@ -18,7 +18,7 @@ from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 _PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
-_INSIGHT_REVIEW_VERSION = 6
+_INSIGHT_REVIEW_VERSION = 7
 _INSIGHT_WORD_LIMIT = 100
 
 
@@ -113,8 +113,28 @@ def _rank_off_track_concepts(candidates: list[dict[str, Any]]) -> list[dict[str,
             row.get("current_score") if row.get("current_score") is not None else 999,
             _pillar_rank(str(row.get("pillar_key") or "")),
             str(row.get("concept_label") or ""),
+            str(row.get("concept_key") or ""),
         ),
     )
+
+
+def _pillar_focus_concepts(
+    candidates: list[dict[str, Any]],
+    *,
+    preferred_concept_key: str | None = None,
+) -> list[dict[str, Any]]:
+    """Offer one evidenced focus per pillar, starting with its lowest score."""
+    ranked = _rank_off_track_concepts(candidates)
+    by_pillar: dict[str, dict[str, Any]] = {}
+    for row in ranked:
+        by_pillar.setdefault(str(row.get("pillar_key") or ""), row)
+    preferred = _normalize_concept_key(preferred_concept_key) or None
+    requested = next((row for row in ranked if row.get("concept_key") == preferred), None)
+    if requested is not None:
+        # A requested alternative replaces that pillar's focus instead of
+        # introducing a second card from the same pillar.
+        by_pillar[str(requested.get("pillar_key") or "")] = requested
+    return _rank_off_track_concepts(list(by_pillar.values()))
 
 
 def _select_focus_concept(user_id: int, anchor: date) -> tuple[dict[str, Any] | None, dict[str, Any]]:
@@ -129,7 +149,7 @@ def _select_focus_concepts(
     preferred_concept_key: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
     candidates, summary = _review_concepts(user_id, anchor)
-    ranked_rows = _rank_off_track_concepts(candidates)
+    ranked_rows = _pillar_focus_concepts(candidates, preferred_concept_key=preferred_concept_key)
     preferred = _normalize_concept_key(preferred_concept_key) or None
     selected = next((row for row in ranked_rows if row.get("concept_key") == preferred), None)
     if selected is None:
@@ -301,7 +321,7 @@ def _build_insight_result(
     anchor: date | None = None,
     concept_key: str | None = None,
 ) -> dict[str, Any]:
-    off_track = _rank_off_track_concepts(candidates)
+    off_track = _pillar_focus_concepts(candidates, preferred_concept_key=concept_key)
     counts = {
         status: sum(1 for item in candidates if item.get("status") == status)
         for status in ("off_track", "on_track", "unlogged", "not_applicable")
@@ -371,6 +391,7 @@ def _build_insight_result(
             "through_date": through.isoformat(),
             "reviewed_count": len(candidates),
             "off_track_count": counts["off_track"],
+            "focus_count": len(available),
             "on_track_count": counts["on_track"],
             "unlogged_count": counts["unlogged"],
             "not_applicable_count": counts["not_applicable"],

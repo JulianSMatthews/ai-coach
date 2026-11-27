@@ -33,17 +33,33 @@ function reviewIsValid(payload: CoachInsightResponse | null, userId: string): pa
   if (counts.reduce((total, count) => total + count, 0) !== review.reviewed_count) return false;
   if (payload.available_concepts.some((concept) => !concept || typeof concept !== "object")) return false;
   const offTrack = payload.available_concepts.filter((concept) => concept?.status === "off_track");
-  return offTrack.length === review.off_track_count && offTrack.every((concept) =>
+  const focusCount = review.focus_count ?? review.off_track_count;
+  if (!Number.isInteger(focusCount) || focusCount < 0 || focusCount > review.off_track_count) return false;
+  if (review.focus_count != null && new Set(offTrack.map((concept) => concept.pillar_key)).size !== offTrack.length) return false;
+  return offTrack.length === focusCount && offTrack.every((concept) =>
     typeof concept.concept_key === "string" && Boolean(concept.concept_key.trim()) &&
     typeof concept.pillar_key === "string" && Boolean(concept.pillar_key.trim()) &&
     typeof concept.label === "string" && Boolean(concept.label.trim()) &&
     typeof concept.guidance === "string" && Boolean(concept.guidance.trim()) &&
     (concept.reflection == null || typeof concept.reflection === "string")
   ) && (
-    review.status === "off_track" ? review.off_track_count > 0 :
+    review.status === "off_track" ? review.off_track_count > 0 && focusCount > 0 :
     review.status === "on_track" ? review.off_track_count === 0 && review.on_track_count > 0 && review.unlogged_count === 0 :
     review.off_track_count === 0
   );
+}
+
+function focusConcepts(concepts: CoachInsightConcept[]): CoachInsightConcept[] {
+  // Older responses can contain several concepts for the same pillar.
+  const focuses = new Map<string, CoachInsightConcept>();
+  const score = (concept: CoachInsightConcept) => typeof concept.score === "number" && Number.isFinite(concept.score) ? concept.score : Infinity;
+  for (const concept of concepts) {
+    if (concept.status !== "off_track") continue;
+    const pillarKey = concept.pillar_key || "";
+    const previous = focuses.get(pillarKey);
+    if (!previous || score(concept) < score(previous)) focuses.set(pillarKey, concept);
+  }
+  return [...focuses.values()];
 }
 
 function evidenceDate(value?: string | null): string | null {
@@ -142,7 +158,7 @@ export default function CoachInsightPanel({ userId }: { userId: string }) {
   }
 
   const review = result.review;
-  const offTrack = (result.available_concepts || []).filter((concept) => concept.status === "off_track");
+  const offTrack = focusConcepts(result.available_concepts || []);
   const weekRange = evidenceDateRange(review.week_start_date, review.through_date);
   const allNotApplicable = review.not_applicable_count > 0 && review.unlogged_count === 0 && review.on_track_count === 0 && review.off_track_count === 0;
   return (
@@ -154,7 +170,7 @@ export default function CoachInsightPanel({ userId }: { userId: string }) {
         </h2>
         <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
           {review.status === "off_track"
-            ? "Here are your next steps for concepts needing support this week."
+            ? "Focus on one concept per pillar needing support this week."
             : review.status === "on_track"
               ? "Your recorded concepts are on track so far this week. Keep your current rhythm."
               : allNotApplicable
