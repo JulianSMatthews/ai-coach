@@ -13,6 +13,7 @@ const helperCode = compile('src/lib/pillarProgress.ts');
 const paletteCode = compile('src/lib/pillars.ts');
 const iconCode = compile('src/components/PillarIcon.tsx');
 const guidanceIconCode = compile('src/components/GuidanceIcon.tsx');
+const guidanceSectionsCode = compile('src/components/ConceptGuidanceSections.tsx');
 
 function sample() {
   const concept = (key, label, score, extra = {}) => ({
@@ -76,13 +77,21 @@ function harness(coachRequest = async body => ({ source: 'ai', pillar_key: body.
   vm.runInNewContext(iconCode, { exports: iconExports, require });
   const guidanceIconExports = {};
   vm.runInNewContext(guidanceIconCode, { exports: guidanceIconExports, require });
+  const guidanceSectionsExports = {};
+  vm.runInNewContext(guidanceSectionsCode, {
+    exports: guidanceSectionsExports,
+    require(name) {
+      if (name === './PillarProgressPanel.module.css') return { default: { guidanceReveal: 'guidance-reveal', reflectionReveal: 'reflection-reveal' } };
+      return name === '@/components/GuidanceIcon' ? guidanceIconExports : require(name);
+    },
+  });
   const exports = {};
   vm.runInNewContext(componentCode, {
     exports, AbortController, URLSearchParams, fetch: fetcher, Error,
     requestAnimationFrame: fn => frames.push(fn),
     require(name) {
       if (name === './PillarProgressPanel.module.css') return { default: { pillarSurface: 'pillar-surface', scoreCircle: 'score-circle', guidanceReveal: 'guidance-reveal', reflectionReveal: 'reflection-reveal' } };
-      return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : name === '@/components/PillarIcon' ? iconExports : name === '@/components/GuidanceIcon' ? guidanceIconExports : require(name);
+      return name === 'react' ? react : name === '@/lib/pillarProgress' ? helperExports : name === '@/lib/pillars' ? paletteExports : name === '@/components/PillarIcon' ? iconExports : name === '@/components/ConceptGuidanceSections' ? guidanceSectionsExports : require(name);
     },
   });
   const text = node => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'object' ? text(node.props?.children) : String(node);

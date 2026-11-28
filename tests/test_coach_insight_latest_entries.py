@@ -31,7 +31,8 @@ class WeeklyInsightEntriesTests(unittest.TestCase):
         self.enterContext(patch.object(tracker, "_load_week_entries", side_effect=self.load_entries))
         self.enterContext(patch.object(tracker, "tracker_concepts_for_pillar", side_effect=lambda pillar, **_kwargs: tracker.PILLAR_TRACKER_CONFIG[pillar]))
         self.enterContext(patch.object(tracker, "_resolve_pillar_targets_for_user", side_effect=self.targets))
-        self.enterContext(patch.object(insight, "_load_library_rows", return_value=[]))
+        self.enterContext(patch.object(insight, "_load_library_rows", side_effect=AssertionError("Selection must not read library advice")))
+        self.enterContext(patch.object(progress, "run_llm_prompt", side_effect=AssertionError("Selection must precede AI generation")))
 
     def targets(self, _user, pillar, concepts):
         return {item.concept_key: replace(tracker._default_resolved_target(pillar, item),
@@ -72,8 +73,10 @@ class WeeklyInsightEntriesTests(unittest.TestCase):
         self.assertEqual(item["concept_key"], "emotional_awareness")
         self.assertEqual(item["score"], 50)
         self.assertEqual(item["anchor_date"], self.today.isoformat())
-        self.assertEqual(item["reason"], "")
-        self.assertIsNone(item["latest_value"])
+        self.assertNotIn("reason", item)
+        self.assertNotIn("latest_value", item)
+        self.assertNotIn("guidance", item)
+        self.assertNotIn("reflection", item)
         self.assertEqual(result["review"]["evidence_start_date"], monday.isoformat())
         self.assertEqual(result["review"]["evidence_end_date"], (monday + timedelta(days=1)).isoformat())
 

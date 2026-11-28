@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -18,8 +17,8 @@ from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 _PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
-_INSIGHT_REVIEW_VERSION = 7
-_INSIGHT_WORD_LIMIT = 100
+_INSIGHT_REVIEW_VERSION = 8
+_INSIGHT_FOCUS_LIMIT = 6
 
 
 def _safe_int(value: Any) -> int | None:
@@ -118,23 +117,9 @@ def _rank_off_track_concepts(candidates: list[dict[str, Any]]) -> list[dict[str,
     )
 
 
-def _pillar_focus_concepts(
-    candidates: list[dict[str, Any]],
-    *,
-    preferred_concept_key: str | None = None,
-) -> list[dict[str, Any]]:
-    """Offer one evidenced focus per pillar, starting with its lowest score."""
-    ranked = _rank_off_track_concepts(candidates)
-    by_pillar: dict[str, dict[str, Any]] = {}
-    for row in ranked:
-        by_pillar.setdefault(str(row.get("pillar_key") or ""), row)
-    preferred = _normalize_concept_key(preferred_concept_key) or None
-    requested = next((row for row in ranked if row.get("concept_key") == preferred), None)
-    if requested is not None:
-        # A requested alternative replaces that pillar's focus instead of
-        # introducing a second card from the same pillar.
-        by_pillar[str(requested.get("pillar_key") or "")] = requested
-    return _rank_off_track_concepts(list(by_pillar.values()))
+def _lowest_scoring_concepts(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Select the six lowest current off-track scores across all pillars."""
+    return _rank_off_track_concepts(candidates)[:_INSIGHT_FOCUS_LIMIT]
 
 
 def _select_focus_concept(user_id: int, anchor: date) -> tuple[dict[str, Any] | None, dict[str, Any]]:
@@ -149,7 +134,7 @@ def _select_focus_concepts(
     preferred_concept_key: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
     candidates, summary = _review_concepts(user_id, anchor)
-    ranked_rows = _pillar_focus_concepts(candidates, preferred_concept_key=preferred_concept_key)
+    ranked_rows = _lowest_scoring_concepts(candidates)
     preferred = _normalize_concept_key(preferred_concept_key) or None
     selected = next((row for row in ranked_rows if row.get("concept_key") == preferred), None)
     if selected is None:
@@ -293,27 +278,6 @@ def _content_payload(row: ContentLibraryItem | None) -> dict[str, Any] | None:
     }
 
 
-def _limit_insight_words(value: str, limit: int) -> str:
-    text = value.strip()
-    words = list(re.finditer(r"\S+", text))
-    if len(words) <= limit:
-        return text
-    if limit <= 0:
-        return ""
-    prefix = text[:words[limit - 1].end()]
-    endings = list(re.finditer(r'''[.!?][”’"')\]]*(?=\s|$)''', prefix))
-    if endings:
-        return prefix[:endings[-1].end()]
-    return prefix.rstrip(".,;:!?…") + "…"
-
-
-def _limit_insight_sections(guidance: str, reflection: str) -> tuple[str, str]:
-    """Reserve room for reflection within each concept's shared word budget."""
-    reflection = _limit_insight_words(reflection, 25)
-    guidance = _limit_insight_words(guidance, _INSIGHT_WORD_LIMIT - len(reflection.split()))
-    return guidance, reflection
-
-
 def _build_insight_result(
     user_id: int,
     candidates: list[dict[str, Any]],
@@ -321,7 +285,9 @@ def _build_insight_result(
     anchor: date | None = None,
     concept_key: str | None = None,
 ) -> dict[str, Any]:
-    off_track = _pillar_focus_concepts(candidates, preferred_concept_key=concept_key)
+    # Selection completes before the client requests the same on-demand AI
+    # coaching used by an individual concept. This endpoint supplies no advice.
+    off_track = _lowest_scoring_concepts(candidates)
     counts = {
         status: sum(1 for item in candidates if item.get("status") == status)
         for status in ("off_track", "on_track", "unlogged", "not_applicable")
@@ -338,27 +304,10 @@ def _build_insight_result(
     selected = next((item for item in off_track if item.get("concept_key") == preferred), None)
     if selected is None:
         selected = off_track[0] if off_track else None
-    library_by_pillar: dict[str, list[ContentLibraryItem]] = {}
     available = []
     for item in off_track:
         pillar_key = str(item.get("pillar_key") or "")
-        if pillar_key not in library_by_pillar:
-            library_by_pillar[pillar_key] = _load_library_rows(pillar_key)
-        row, matched_by = _select_library_item(library_by_pillar[pillar_key], concept_key=item.get("concept_key"))
-        content = _content_payload(row)
         label = str(item.get("concept_label") or item.get("concept_key") or "This concept").strip()
-        target = str(item.get("target_label") or "").strip()
-        # Published advice must match this exact concept. A missing lesson must
-        # never turn into advice for another concept in the same pillar.
-        guidance = str((content or {}).get("body") or "").strip()
-        if not guidance:
-            guidance = (
-                f"Choose one manageable change to support {label.lower()} before your next check-in. "
-                + (f"Use your target ({target}) to decide what to change." if target else "Reflect on what got in the way and choose a small step you can repeat.")
-            )
-        reflection_label = _limit_insight_words(label.lower(), 14)
-        reflection = f"What would help you work towards your existing {reflection_label} target this week?"
-        guidance, reflection = _limit_insight_sections(guidance, reflection)
         available.append({
             "pillar_key": pillar_key,
             "pillar_label": item.get("pillar_label") or pillar_label(pillar_key),
@@ -370,12 +319,6 @@ def _build_insight_result(
             "anchor_date": item.get("anchor_date"),
             "score": item.get("current_score"),
             "target_label": item.get("target_label"),
-            "latest_value": None,
-            "reason": "",
-            "guidance": guidance,
-            "reflection": reflection,
-            "matched_by": matched_by,
-            "content": content,
         })
     selected_payload = next((item for item in available if item["is_selected"]), {})
     return {
@@ -399,8 +342,6 @@ def _build_insight_result(
             "evidence_end_date": max(evidence_dates) if evidence_dates else None,
         },
         "available_concepts": available,
-        "matched_by": selected_payload.get("matched_by"),
-        "content": selected_payload.get("content"),
     }
 
 

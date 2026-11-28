@@ -593,52 +593,17 @@ export type DailyHabitPlanResponse = {
   generated_at?: string | null;
 };
 
-export type CoachInsightContent = {
-  id?: number;
-  pillar_key?: string | null;
-  concept_code?: string | null;
-  title?: string | null;
-  body?: string | null;
-  podcast_url?: string | null;
-  podcast_voice?: string | null;
-  avatar?: {
-    url?: string | null;
-    video_url?: string | null;
-    videoUrl?: string | null;
-    result_url?: string | null;
-    resultUrl?: string | null;
-    title?: string | null;
-    script?: string | null;
-    poster_url?: string | null;
-    character?: string | null;
-    style?: string | null;
-    voice?: string | null;
-    status?: string | null;
-    job_id?: string | null;
-    error?: string | null;
-    generated_at?: string | null;
-    source?: string | null;
-    summary_url?: string | null;
-  } | null;
-  created_at?: string | null;
-};
-
 export type CoachInsightConcept = {
-  pillar_key?: string | null;
+  pillar_key: string;
   pillar_label?: string | null;
-  concept_key?: string | null;
-  label?: string | null;
+  concept_key: string;
+  label: string;
   is_selected?: boolean;
-  status?: "off_track";
+  status: "off_track";
   signal?: string | null;
   anchor_date?: string | null;
-  score?: number | null;
+  score: number;
   target_label?: string | null;
-  latest_value?: string | null;
-  reason?: string | null;
-  guidance?: string | null;
-  reflection?: string | null;
-  content?: CoachInsightContent | null;
 };
 
 export type CoachInsightReview = {
@@ -664,8 +629,6 @@ export type CoachInsightResponse = {
   concept_label?: string | null;
   review?: CoachInsightReview;
   available_concepts?: CoachInsightConcept[];
-  matched_by?: string | null;
-  content?: CoachInsightContent | null;
 };
 
 export type EducationLessonContent = {
